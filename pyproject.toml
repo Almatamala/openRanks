@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openranks"
+version = "0.1.0"
+description = "openRanks — L1: 5 clips listos y su unión en un solo vídeo vertical"
+readme = "README.md"
+requires-python = ">=3.11"
+# Núcleo deliberadamente stdlib: sin numpy, sin wrappers de ffmpeg (el plan §7.6 pide
+# que la lógica de decisión se testee sin FFmpeg, sin torch y sin red).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  # Solo para desarrollo local: descarga ffmpeg/ffprobe estáticos dentro del repo.
+  "static-ffmpeg>=2",
+]
+
+[project.scripts]
+openranks = "openranks.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["openranks*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "integration: requiere ffmpeg/ffprobe reales (se salta si no están)",
+]
