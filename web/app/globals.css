@@ -1,0 +1,645 @@
+:root {
+  --bg: #0d0f14;
+  --panel: #171a22;
+  --panel-2: #1f232d;
+  --border: #2c313d;
+  --text: #f2f4f8;
+  --muted: #a7adba;
+  --accent: #ffd60a;
+  --accent-ink: #1a1400;
+  --ok: #34d399;
+  --bad: #f87171;
+  --focus: #7dd3fc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--focus);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 80px;
+}
+
+header.top h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  letter-spacing: -0.01em;
+}
+
+header.top p {
+  margin: 0 0 26px;
+  color: var(--muted);
+}
+
+.top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.top-row > div {
+  min-width: 0;
+}
+
+.top-row button {
+  flex: none;
+  margin-top: 4px;
+}
+
+@media (max-width: 620px) {
+  .top-row {
+    flex-direction: column;
+  }
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 22px;
+  align-items: start;
+}
+
+@media (max-width: 940px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.card h2 .step {
+  display: inline-block;
+  min-width: 26px;
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+
+.slot {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.slot .rank {
+  text-align: center;
+}
+
+.slot .rank .num {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1.1;
+}
+
+.slot .rank .when {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.slot .fields {
+  display: grid;
+  gap: 8px;
+}
+
+.slot input[type="file"] {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+label.field {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+input[type="text"] {
+  width: 100%;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+}
+
+input[type="text"]:focus {
+  border-color: var(--focus);
+}
+
+.counter {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.counter.over {
+  color: var(--bad);
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+}
+
+.options label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text);
+  font-size: 15px;
+}
+
+select {
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 15px;
+  font-family: inherit;
+}
+
+button {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 12px 20px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.alert {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 14px;
+  font-size: 15px;
+}
+
+.alert.error {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+.alert.ok {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  color: #bbf7d0;
+}
+
+.progress {
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ffd60a, #f59e0b);
+  transition: width 0.4s ease;
+}
+
+/* Antes del primer avance no hay porcentaje honesto: mejor una barra que se mueve
+   sola que un 0 % congelado. */
+.progress.indeterminate span {
+  width: 35% !important;
+  animation: slide 1.4s ease-in-out infinite;
+  transition: none;
+}
+
+@keyframes slide {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.phase {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.phase.clock {
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint.eta {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.preset summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.preset h3 {
+  margin: 18px 0 6px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.preset-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.preset-table th,
+.preset-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.preset-table th {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.preset-table td.value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.preset-table td.what {
+  color: var(--muted);
+}
+
+.hint.where {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+video {
+  width: 100%;
+  max-height: 62vh;
+  border-radius: 12px;
+  background: #000;
+  display: block;
+}
+
+.cover {
+  width: 100%;
+  max-width: 220px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.downloads {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+}
+
+.downloads li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+
+.downloads li:last-child {
+  border-bottom: 0;
+}
+
+.downloads .size {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+details.log summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+pre.log {
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+footer.note {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 30px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+/* Selector de color por palabra del título (blanco → amarillo → azul). */
+.words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.words .word {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #0b0d12;
+  color: var(--text);
+}
+
+.words .word.yellow {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.words .word.blue {
+  background: #3b82f6;
+  color: #071229;
+  border-color: transparent;
+}
+
+/* Menú lateral de la plantilla (los ajustes del preset editable). */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.66);
+  z-index: 40;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(920px, 96vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 24px;
+  overflow: auto;
+}
+
+.drawer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawer-top h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 340px);
+  gap: 26px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+@media (max-width: 760px) {
+  .drawer-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.drawer-controls {
+  display: grid;
+  gap: 16px;
+}
+
+.control {
+  display: grid;
+  gap: 6px;
+}
+
+.control.switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.value-pill {
+  display: inline-block;
+  min-width: 44px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 6px;
+}
+
+.drawer-stage {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.preview-switch {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.preview-switch button {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.hint.center {
+  text-align: center;
+  margin: 0;
+}
+
+.hint.ok {
+  color: var(--ok);
+}
+
+/* Móvil con la plantilla dentro: el marco es decorativo, la imagen es el render real. */
+.phone {
+  position: relative;
+  width: min(300px, 100%);
+  aspect-ratio: 9 / 19.5;
+  background: #05070b;
+  border: 10px solid #05070b;
+  border-radius: 34px;
+  box-shadow: inset 0 0 0 2px var(--border), 0 18px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* La pantalla del móvil: 9:16, donde vive la vista previa (en vivo o el render). */
+.phone-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  overflow: hidden;
+}
+
+.phone-notch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 84px;
+  height: 18px;
+  border-radius: 999px;
+  background: #05070b;
+  border: 1px solid var(--border);
+  z-index: 2;
+}
+
+.phone-screen {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
+.phone-screen.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}

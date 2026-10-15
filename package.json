@@ -1,0 +1,13 @@
+{
+  "name": "openranks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "openRanks — atajos del repo. El panel vive en web/; esto solo lo arranca desde la raíz.",
+  "scripts": {
+    "predev": "npm --prefix web install --no-audit --no-fund --silent",
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix web run start",
+    "typecheck": "npm --prefix web run typecheck"
+  }
+}

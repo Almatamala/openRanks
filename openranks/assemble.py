@@ -2,6 +2,10 @@
 
 Secuencia: medir → validar → normalizar cada clip (dos pasadas de ``loudnorm``) →
 unir → verificar → manifiesto. Todo automático: no hay pasos manuales (ADR-8).
+
+Con ``edit=True`` encadena además **L2** (la edición del estándar) sobre el
+``union.mp4``: es la conveniencia del panel, pero L2 vive en su propio módulo y
+solo lee archivos + manifiesto (contrato entre capas, §12).
 """
 
 from __future__ import annotations
@@ -17,7 +21,9 @@ from .core.config import Config
 from .core.manifest import build_manifest, sha256_file, utc_now, write_manifest
 from .core.media import MediaInfo, probe, validate_normalized, validate_ready_clip
 from .core.plan import AssemblyPlan, build_plan
+from .core.progress import SPAN_FULL, Progress, ProgressCallback
 from .core.runner import run, tail_lines, version_of
+from .overlay import OverlayResult, render as render_overlay
 
 Logger = Callable[[str], None]
 
@@ -41,6 +47,7 @@ class AssemblyResult:
     total_measured_s: float | None = None
     loudness: dict = field(default_factory=dict)
     extra_warnings: tuple[str, ...] = ()
+    overlay: OverlayResult | None = None
 
     @property
     def warnings(self) -> tuple[str, ...]:
@@ -62,6 +69,11 @@ class AssemblyResult:
             lines.append(f"   loudness medida {self.loudness['input_i']} LUFS")
         for segment in self.plan.segments:
             lines.append(f"   #{segment.position:<2} {segment.output_name} ({segment.label})")
+        if self.overlay is not None:
+            lines.append(
+                f"   edición: {self.overlay.ranking.name}"
+                + ("" if self.overlay.cover is None else f" + {self.overlay.cover.name}")
+            )
         for warning in self.warnings:
             lines.append(f"   aviso: {warning}")
         return "\n".join(lines)
@@ -78,15 +90,28 @@ def assemble(
     config: Config | None = None,
     ffmpeg: str | None = None,
     ffprobe: str | None = None,
-    fit: str = "cover",
+    fit: str | None = None,
     transition_s: float = 0.0,
     transition: str = "slideup",
     cold_open_s: float = 0.0,
+    edit: bool = False,
+    zoom: float = 0.0,
+    style_overrides: dict | None = None,
     log: Logger | None = None,
+    progress: ProgressCallback | None = None,
 ) -> AssemblyResult:
-    """Ejecuta L1 completo y devuelve los artefactos."""
+    """Ejecuta L1 completo y, con ``edit=True``, también L2 sobre la unión.
+
+    ``progress`` recibe el avance en porcentaje real (§RF-9.3): el panel lo usa para
+    la barra y para estimar el tiempo restante. Es opcional: sin callback, el
+    ensamblado se comporta igual.
+    """
     say = log or _noop
+    track = Progress(progress, span=SPAN_FULL)
     cfg = config or Config.from_env()
+    # Sin elección explícita manda la configuración (`contain` por defecto: no
+    # recorta los clips, el operador asume que ya vienen bien).
+    fit = fit or cfg.fit
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")
     ffprobe_bin = ff.resolve_binary(ffprobe, "OPENRANKS_FFPROBE", "ffprobe")
 
@@ -99,6 +124,7 @@ def assemble(
     started_at = utc_now()
 
     # 1) Medir y validar las fuentes: un clip que no vale no se ensambla a medias.
+    track.preparing(f"Midiendo los {len(binding.items)} clips")
     say(f"midiendo {len(binding.items)} clips de entrada")
     infos: dict[int, MediaInfo] = {}
     source_entries: list[dict] = []
@@ -131,7 +157,9 @@ def assemble(
     normalized: list[Path] = []
     outputs: list[dict] = []
     collected: list[str] = []
-    for segment in plan.segments:
+    for index, segment in enumerate(plan.segments):
+        where = "el adelanto del #1" if segment.is_cold_open else f"el clip #{segment.position}"
+        track.normalizing(index, len(plan.segments), f"Preparando {where} ({index + 1} de {len(plan.segments)})")
         destination = (work_dir if segment.is_cold_open else clips_dir) / segment.output_name
         info = probe(ffprobe_bin, segment.source)
         measured = None
@@ -164,6 +192,7 @@ def assemble(
 
     # 4) Unión: copia de streams si no hay transición; si la hay, recodifica.
     union = out_dir / "union.mp4"
+    track.joining("Uniendo los cinco clips en vertical")
     if transition_s > 0:
         say(f"uniendo {len(normalized)} tramos con transición {transition} ({transition_s}s)")
         completed = run(
@@ -213,6 +242,25 @@ def assemble(
     payload["measured"]["warnings"] = list(collected)
     manifest_path = write_manifest(out_dir / "manifest.json", payload)
 
+    # 7) L2 (opcional): la edición del estándar sobre la unión recién hecha.
+    overlay_result: OverlayResult | None = None
+    if edit:
+        say("añadiendo la edición (L2)")
+        overlay_result = render_overlay(
+            out_dir,
+            style_overrides=style_overrides,
+            zoom=zoom,
+            config=cfg,
+            ffmpeg=ffmpeg_bin,
+            ffprobe=ffprobe_bin,
+            log=say,
+            track=track,
+        )
+        for warning in overlay_result.warnings:
+            say(f"  aviso: {warning}")
+
+    track.finishing("Listo")
+
     return AssemblyResult(
         out_dir=out_dir,
         clips=tuple(clips_dir / segment.output_name for segment in plan.segments if not segment.is_cold_open),
@@ -222,6 +270,7 @@ def assemble(
         total_measured_s=union_info.duration_s,
         loudness=loudness,
         extra_warnings=tuple(collected),
+        overlay=overlay_result,
     )
 
 

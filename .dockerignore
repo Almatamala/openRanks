@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+venv
+demo
+out
+tools
+docs
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+*.egg-info
+web/node_modules
+web/.next
+web/.jobs
+web/*.tsbuildinfo

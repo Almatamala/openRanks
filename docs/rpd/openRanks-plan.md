@@ -6,7 +6,7 @@
 | **Estado** | Borrador para aprobación · revisión previa integrada (pendiente de decisión) |
 | **Fecha** | 10-oct-2026 (plan) · 13-oct-2026 (revisión integrada) |
 | **Alcance de este documento** | RPD (qué y por qué) + Plan de ejecución (cómo, en qué orden, con qué criterios de salida) + Revisión previa (bloqueantes, herramientas existentes, edición tipo CapCut) |
-| **Decisiones ya tomadas** | (1) **servicio nuevo**, reutilizando código de OpenShorts como librería/referencia; (2) MVP con entradas **YouTube + subida local** |
+| **Decisiones ya tomadas** | (1) **servicio nuevo**, reutilizando código de OpenShorts como librería/referencia; (2) MVP con entradas **YouTube + subida local**; (3) **interfaz única, cómoda y fácil de usar** (ADR-9, RF-9) |
 | **Repo de referencia** | **OpenShorts** (repositorio vecino, no este): de él se copia/adapta código con licencia **MIT**, con cabecera de origen y NOTICE. Su directorio `cloud/` es licencia comercial y **no se copia** nunca. |
 | **Archivo único** | Este documento consolida y sustituye a `rankings-mascotas.md` y `rankings-revision-previa.md`, y vive aquí, junto al código que describe (`openranks/`) |
 
@@ -27,6 +27,19 @@ documento; su equivalencia con las capas está en la tabla de §12.
 | **2** | **L2 · Editor de plantilla** | Sobre el vídeo del punto 1, **toda la edición del estándar**: badges de posición, rótulos por clip, transiciones + swoosh, zoom inicial, música/sfx, CTA y cover. Herramienta: la que cumpla el estándar — renderer propio (Remotion) o FFmpeg/ASS (§20). **Render automático y estilo bloqueado** (regla dura) | Extracción automática de clips |
 | **3** | **L3 · Extractora** | **Los 5 clips del punto 1 obtenidos solos** desde un vídeo largo: segmentación, screening, scoring y selección (§RF-2…RF-5) — *el riesgo técnico real* | Montaje y publicación |
 | **4** | **L4 · Integrador** | **Una sola herramienta**: una entrada (URL o archivo) → short publicado, encadenando L1→L2→L3 con revisión humana, cola, panel, publicación y operación | — |
+
+**Estado de implementación (14-oct-2026).** Las prioridades **1 y 2 ya están construidas** en
+`openranks/` y `web/`: L1 escribe los 5 clips + `union.mp4` + `manifest.json` y L2 añade la edición del
+preset sobre esa unión (`ranking.mp4` + `cover.jpg` + `spec.json`), sin volver a montar el vídeo al cambiar
+solo un texto. Dos desvíos respecto a lo escrito aquí, ambos deliberados: el overlay de L2 se implementa por
+ahora con la **ruta de respaldo que ya documenta §20.1** (script **ASS** sobre el `union.mp4`, con `xfade`
+para las transiciones y `zoompan` para el zoom del primer clip) en vez de Remotion, y el panel de RF-9 es
+**Next.js** (App Router) en `web/`, no React + Vite. El contrato entre capas no cambia: L2 solo lee
+`union.mp4` + `manifest.json`, así que cambiar de renderer más adelante no toca L1 ni el panel.
+El panel además cumple tres cosas de §RF-9 que conviene anotar: publica **porcentaje medido** (no un
+spinner) y con él estima el tiempo restante; enseña el **preset bloqueado** valor por valor con el
+archivo donde se cambia (via `openranks preset`); y la API se levanta en **Docker** con el motor y
+FFmpeg dentro de la imagen, para no depender de nada instalado en el host.
 
 **Contrato entre capas (lo que hace posible el orden).** Cada capa consume la salida de la anterior como
 **archivos + manifiesto**, nunca como llamadas acopladas. L1 produce `clips/*.mp4` + `union.mp4` +
@@ -208,6 +221,7 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
 | 8 | Revisión humana: aprobar / rechazar / sustituir un clip y editar **solo los textos del vídeo** (título y nombres de los puestos; el copy de publicación es un campo aparte) |
 | 9 | Publicación vía Upload-Post a TikTok, IG Reels, YouTube Shorts (inmediata o programada) |
 | 10 | Metro de coste por fuente, por clip y por render; trazabilidad completa de prompts y versiones de modelo |
+| 11 | Interfaz de operación: **un solo panel cómodo** que cubre el flujo completo (ingesta, clips, ranking, revisión, publicación) sin terminal ni otras herramientas (RF-9) |
 
 ### 4.2 Fuera del MVP (v2+)
 
@@ -250,6 +264,9 @@ Historias de usuario (con criterio de aceptación resumido):
   segmentos distintos del mismo compilado solo si el operador lo permite), sin repetir el mismo tipo de chiste.
 - **US-5** *Como operador quiero publicar sin salir del panel* → el render aprobado se publica en las 3 redes
   con título y descripción, y queda registrado con su id remoto.
+- **US-6** *Como operador quiero hacer todo desde un panel cómodo y no desde la terminal* → pego el enlace (o
+  subo los clips), veo el avance de cada fase y publico sin abrir otra herramienta: la UI nunca me enseña JSON
+  ni rutas, y cada error trae un botón para reintentar (RF-9).
 
 ---
 
@@ -387,6 +404,55 @@ calibración de 120 clips; **coste medio ≤ 0,003 USD por clip puntuado** (ver 
 4. `GET /analytics?render_id=` devuelve las métricas disponibles por Upload-Post (lectura, sin promesas de
    retención que la API no dé).
 
+### RF-9 — Interfaz de operación (un solo panel, cómodo y fácil de usar)
+
+**El panel es la única superficie del producto.** El operador no usa terminal, ni `curl`, ni un editor de
+vídeo, ni una segunda web: si una tarea del flujo de §5 no se puede cerrar desde el panel, el entregable no
+está terminado. La UI es propia (`web/`, React + Vite; no se reutiliza el frontend de OpenShorts, §10.5).
+
+1. **Un solo sitio, flujo completo.** El panel cubre las cinco etapas —ingesta, revisión de clips, creación
+   del ranking, revisión del render y publicación— sin cambiar de herramienta. La navegación sigue el orden
+   del flujo (§5), no el de las tablas de la base de datos.
+2. **Mínimos pasos.** Iniciar una ingesta = pegar una URL o arrastrar un archivo + un botón. Aprobar un
+   ranking = 1 acción. Sustituir un clip = ≤ 3 acciones (abrir el puesto, elegir sustituto, confirmar).
+   Ningún paso obligatorio pide escribir un id, una ruta ni un fragmento de JSON.
+3. **Estado y progreso siempre visibles.** Cada job muestra su **fase con nombre humano** (preparar la
+   entrada, separar en clips, descartar los que no valen, puntuar, montar el vídeo), su avance y una
+   estimación; nunca un spinner mudo. Las
+   operaciones de más de 2 s no bloquean el panel y el operador puede seguir trabajando en otro ranking.
+4. **Errores accionables, en lenguaje humano.** Cada fallo se muestra como *qué pasó + qué hacer + botón de
+   reintentar*. Prohibido en la UI: `stack traces`, rutas de fichero, ids internos, JSON crudo y códigos de
+   error sin traducir. Reintentar reanuda desde la fase que falló, sin repetir el trabajo ya hecho (§10.3).
+5. **Revisión dentro del panel.** El render se previsualiza *inline* (9:16) junto a los 5 clips con su score,
+   su motivo y sus miniaturas. Aprobar, rechazar y sustituir están a un clic, con **atajos de teclado**
+   (aprobar / rechazar / clip siguiente / anterior): el operador revisa decenas por día.
+6. **Los dos textos editables se editan en su sitio.** Título y nombres de los puestos se editan sobre la
+   previsualización, con **validación en vivo** de §9.5 (contador de caracteres y aviso cuando el texto se
+   reducirá o se recortará) y una **vista previa del encaje** antes de confirmar. Guardar re-renderiza solo
+   la capa de overlay (§RF-7.6) y refresca la previsualización sin recargar la página.
+7. **Nada del trabajo en curso se pierde.** El panel persiste formularios, selección y textos sin guardar, y
+   avisa antes de descartarlos; los envíos repetidos son idempotentes. Recargar o cerrar el navegador nunca
+   borra una ingesta, un ranking ni una revisión a medias, porque el estado vive en el servidor (§10.3).
+8. **Legibilidad y accesibilidad.** Contraste AA sobre fondo oscuro, texto legible, navegación completa por
+   teclado con foco visible, controles etiquetados (no iconos mudos) y confirmación explícita antes de
+   publicar. Diseño *desktop-first* (la revisión de vídeo pide pantalla grande) pero consultable en móvil.
+9. **Cero jerga interna.** La UI habla el idioma del operador ("pegar enlace", "descartado por…", "por
+   debajo del corte"), nunca los nombres de las tablas, las rutas de la API ni los valores de los enums.
+10. **El panel no decide nada por su cuenta.** Toda acción pasa por la API con las mismas validaciones
+    (§RF-7.4): la UI es una vista del estado, no una segunda fuente de verdad.
+
+**Criterio de aceptación.**
+
+- **Prueba de sesión única**: un recorrido completo (URL o archivo → short publicado) se realiza dentro del
+  panel, sin terminal ni otra aplicación; se comprueba con la grabación de esa sesión y **ningún** paso puede
+  exigir salir del navegador.
+- **Prueba de manos libres**: una persona que no ha visto el sistema, y sin instrucciones escritas, revisa y
+  publica un ranking ya renderizado en **≤ 5 min** y sin preguntar.
+- **Cobertura de acciones**: toda operación de RF-1…RF-8 que el operador deba poder ejecutar tiene su control
+  en el panel, y hay un test E2E (§13.1) que recorre US-1→US-5 solo con la UI.
+- **Cero datos técnicos**: ante cualquiera de los fallos del set de pruebas de §13.2, la UI ofrece una acción
+  de recuperación y no muestra rutas, ids internos ni JSON (test de contrato sobre los textos del panel).
+
 ---
 
 ## 7. Diseño técnico
@@ -482,6 +548,10 @@ decisión abierta: el modelo puntúa, el código decide (regla heredada del repo
                                                  └──────────────┘
 ```
 
+- **La UI es el punto de entrada único** (RF-9): el panel `web/` (React + Vite, propio) cubre el flujo
+  completo y habla solo con la API; ninguna fase exige terminal, `curl` ni un editor externo. L1 y L2 ya
+  publican su salida en el panel (los 6 archivos descargables, el `ranking.mp4` previsualizable) y L4 lo cierra
+  con la orquestación de punta a punta.
 - **Cola en Postgres** (`jobs` con `SELECT … FOR UPDATE SKIP LOCKED`), no Redis: menos piezas, transaccional
   con los datos, suficiente para ~50 fuentes/día. Si el volumen sube, se cambia el adaptador sin tocar las fases.
 - **Sin GPU en el camino crítico**: YOLOv8n en CPU (~40–80 ms/frame), PySceneDetect en CPU, Gemini remoto.
@@ -648,6 +718,25 @@ operador; la implementación soporta los dos y el spec queda registrado por rend
 *(→ B4, §18: `hold_s` necesita semántica explícita y la duración total debe descontar el solape de las
 transiciones.)*
 
+#### 9.2.1 Estado en la implementación actual (L1/L2 v0.1)
+
+Desviaciones respecto al JSON de arriba, ya decididas con el operador; todas viven en
+`openranks/core/overlay.py` (`DEFAULT_STYLE`) y `openranks/core/specs.py`:
+
+| Tema | Cómo está |
+| --- | --- |
+| Color del título | Base blanco con contorno negro; el **número** va en acento y mayor (§3). Además, el operador marca **palabras** con `*amarillo*` y `_azul_`; las marcas no se dibujan |
+| Fondo del título | Opcional (`title.background`): caja negra opaca detrás del título |
+| Escalera | Cinco casillas fijas; **🥇🥈🥉** en el podio (fuente monocroma `medal_font`; la de color se dibuja como caja vacía) y el número en el resto; color por puesto (`RANK_COLORS`) |
+| Turno | La casilla **activa** se ve nítida durante su clip; las demás **se atenúan y difuminan** (`dim_alpha`, `dim_blur`) |
+| Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx`), no en una banda fija; visible solo durante su clip |
+| Encaje del clip | `contain` por defecto: no recorta, añade barras si hace falta (`OPENRANKS_FIT`) |
+| Preset editable | Una **parte** se ajusta y guarda desde el panel (menú lateral): `font`, `title.size`, `title.background`, `rank_ladder.{size,x,y_top,y_bottom}`. Se guarda un único preset y el motor lo lee por `OPENRANKS_PRESET_FILE` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
+| Vista previa | `openranks preview` dibuja el overlay sobre negro con el mismo `build_ass` del render, sin montar nada; el panel además lo pinta **en vivo** (SVG, sin FFmpeg) con los mismos números, para ver los ajustes al instante |
+
+ADR-8 sigue en pie en lo esencial: **el render es automático y no hay editor de montaje**; lo que cambia es que
+el operador puede fijar (y guardar) unos pocos ajustes de la plantilla en vez de editarlos en el código.
+
 ### 9.3 Composición Remotion `RankingTop5`
 
 - Props tipadas (`src/lib/types.ts`) y validadas; el renderer rechaza props que no cumplen el esquema
@@ -781,6 +870,24 @@ nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv -l 1            
 El objetivo de la capa L4 es comparar tres configuraciones (solo `backend`; `backend`+`frontend`; los tres) y decidir
 la del despliegue con la tabla de medidas delante, no con la intuición.
 
+### 10.6 Usabilidad de la interfaz
+
+La interfaz es un requisito de producto (ADR-9) y su detalle funcional está en **RF-9**. Estas son las
+cifras con las que se verifica:
+
+| Medida | Objetivo |
+| --- | --- |
+| Tiempo hasta la primera acción | desde abrir el panel, ≤ 2 clics para iniciar una ingesta o abrir un ranking en curso |
+| Respuesta del panel | toda acción responde en ≤ 300 ms (o muestra progreso); sin pantallas congeladas |
+| Progreso por fase | cada job muestra fase, avance y estimación, refrescado ≤ 5 s |
+| Revisión de un ranking | aprobar = 1 acción; rechazar o sustituir ≤ 3 acciones, con atajos de teclado |
+| Previsualización | el render se ve y se navega sin descargarlo ni volver a renderizar |
+| Errores | el 100 % de los estados de error tiene acción de recuperación y ningún texto técnico crudo |
+| Sesión única | el flujo completo (RF-1…RF-8) se cierra sin terminal ni otra aplicación |
+
+El panel no bloquea el pipeline: si el operador cierra el navegador, los jobs siguen en la cola (§10.3) y al
+volver el panel reconstruye el estado desde la API, no desde el cliente.
+
 ---
 
 ## 11. Legal y cumplimiento (bloqueante, no opcional)
@@ -883,12 +990,12 @@ OpenShorts se copia/adapta (no se reescribe).
 | Entregable | Detalle |
 | --- | --- |
 | Orquestador | una entrada (URL o archivo) → L3 → L1 → L2 → render, encima de la cola de `jobs` |
-| Panel único | subir clips a mano (L1), revisar el ranking, aprobar / rechazar / sustituir |
+| Panel único (RF-9) | el flujo completo en un solo sitio: pegar URL o subir los clips (L1), tabla de clips con score y motivo, crear el ranking, previsualizar el render, aprobar / rechazar / sustituir y editar los dos textos con validación en vivo; progreso por fase, errores accionables y atajos de teclado |
 | Publicación | Upload-Post inmediato y programado, `TIKTOK_POST_MODE`, títulos por plataforma, `publications` |
 | Trazabilidad | `review_decisions`, ledger de coste y manifiesto por render |
 | Endurecimiento | recalibración con los rechazos reales, dedupe entre rankings, runbook, prueba de 50 fuentes/día |
 | Huella de cómputo | la tabla de medidas de §10.5 (solo `backend` vs. con `frontend` vs. los tres, y convivencia con OpenShorts) |
-| **Salida (criterio)** | 20 shorts publicados sin intervención manual salvo la revisión, con una sola herramienta de punta a punta |
+| **Salida (criterio)** | 20 shorts publicados sin intervención manual salvo la revisión, con una sola herramienta de punta a punta y **sin salir del panel**: las pruebas de sesión única y manos libres de RF-9 en verde |
 
 ### 12.1 Backlog priorizado (v2)
 
@@ -915,6 +1022,9 @@ OpenShorts se copia/adapta (no se reescribe).
   el renderer rechaza props inválidas (test en TS, patrón `composition-metadata.test.ts` del repo).
 - **Contrato de publicación**: el payload multipart a Upload-Post se valida con un mock (nunca una publicación real
   en CI).
+- **E2E de panel** (navegador automatizado, p. ej. Playwright): recorre US-1→US-5 solo por la UI (RF-9)
+  —pegar o subir, progreso por fase, aprobar, editar los dos textos y publicar contra un mock—; falla si un
+  paso obliga a salir del panel o si aparece un mensaje con datos técnicos crudos.
 
 ### 13.2 Evaluación (offline, con datos reales)
 
@@ -969,6 +1079,7 @@ orden por capas, el set se cosecha de los recortes manuales de L1 en vez de etiq
 | ADR-6 | El **LLM puntúa, el código decide** | Heredado de `clip_selection.score_batches`: la comparación y las cuotas se hacen donde son medibles |
 | ADR-7 | **Construcción de atrás hacia delante por capas**: L1 (5 clips + vídeo vertical) → L2 (edición del estándar) → L3 (extractora) → L4 (una sola herramienta) | Decisión del operador: primero existe el producto terminado —formato y edición validados, algo publicable desde la semana 2— y después se automatiza su entrada. Contrato entre capas = **archivos + manifiesto**, así L2 y L3 no se conocen. Invierte «el riesgo primero»: la extracción es la prio 3, con spike temprano de 2–3 días y con el set de evaluación cosechado de los recortes manuales de L1. El riesgo mayor (contenido ajeno sin capa propia, §11) lo cubren justamente L1/L2 |
 | ADR-8 | **Render 100 % automático y superficie editable = solo texto**: título del vídeo + nombre de cada puesto. Nada del montaje se edita a mano | Decisión del operador. El estándar visual lo fija el preset y no el operador por vídeo, así que el resultado es reproducible y comparable entre rankings, el trabajo humano se reduce a elegir y revisar, y el render nunca espera a nadie. Deja fuera la ruta B de §20 (borrador para retocar a mano) y obliga a reglas de encaje automático del texto (§9.5) |
+| ADR-9 | **La interfaz es un requisito de producto, no un extra**: un **panel único** (React + Vite, propio) cubre el flujo completo de punta a punta, con progreso por fase, errores accionables, revisión y edición de texto en el mismo sitio | Decisión del operador: el producto debe ser cómodo y fácil de usar. El valor del servicio es ahorrar trabajo humano, y eso se pierde si el operador necesita terminal, `curl` o un editor para cerrar el flujo. Fija el alcance de L4 (el «panel único» es su entregable principal) y convierte la usabilidad en criterio de aceptación medible (RF-9, §10.6), no en una aspiración |
 
 ---
 
@@ -1430,6 +1541,7 @@ renderer sin rehacer el pipeline.
 | 14 | §9, nuevo | Exportación OTIO + nota de la ruta CapCut con sus limitaciones (§20.2–20.3) |
 | 15 | Encabezado, §12, §15 | Orden de prioridades por capas L0–L4 (prioridades 1–4 del operador) + ADR-7, con la tabla de equivalencia L↔M |
 | 16 | Encabezado, ADR-8, §9.2, §9.5, RF-7, §20.4 | Superficie editable = solo texto (título + nombres de los puestos) y render 100 % automático: saca la ruta B del producto, añade §9.5 (encaje del texto) y `PATCH /renders/{id}/texts` |
+| 17 | Encabezado, §4.1, §5 (US-6), §6 (RF-9), §7.5, §10.6, §12 L4, §13.1, ADR-9 | Interfaz como requisito de producto: panel único, cómodo y fácil de usar, con criterios de aceptación medibles (sesión única, manos libres, cobertura de acciones, cero datos técnicos) |
 
 ---
 

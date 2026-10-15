@@ -10,6 +10,9 @@ def test_defaults_match_the_l1_output_criterion():
     assert config.items == 5
     assert config.total == (1080, 1920)
     assert config.fps == 30
+    # Por defecto se agranda a la banda central (recortando solo laterales); el clip
+    # entero sin recortar queda con `contain` y el recorte total con `cover`.
+    assert config.fit == "band"
     assert config.pix_fmt == "yuv420p"
     assert config.loudness_lufs == -14.0
     assert config.true_peak_db == -1.0
@@ -31,6 +34,7 @@ def test_from_env_overrides_every_knob(monkeypatch):
     monkeypatch.setenv("OPENRANKS_HEIGHT", "1280")
     monkeypatch.setenv("OPENRANKS_MIN_TOTAL_SECONDS", "20")
     monkeypatch.setenv("OPENRANKS_PRESET", "veryfast")
+    monkeypatch.setenv("OPENRANKS_FIT", "cover")
 
     config = Config.from_env()
     assert config.items == 3
@@ -38,6 +42,7 @@ def test_from_env_overrides_every_knob(monkeypatch):
     assert config.loudness_lufs == -12.5
     assert config.min_total_seconds == 20.0
     assert config.preset == "veryfast"
+    assert config.fit == "cover"
 
 
 def test_empty_env_values_fall_back_to_defaults(monkeypatch):
@@ -48,5 +53,6 @@ def test_empty_env_values_fall_back_to_defaults(monkeypatch):
 def test_manifest_view_is_reproducible():
     payload = Config().to_manifest()
     assert payload["target"] == "1080x1920"
+    assert payload["fit"] == "band"
     assert payload["audio"]["loudness_lufs"] == -14.0
     assert payload["bands"]["total_seconds"] == [30.0, 58.0]

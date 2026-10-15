@@ -36,6 +36,11 @@ class Config:
     target_width: int = 1080
     target_height: int = 1920
     fps: int = 30
+    # Cómo encaja un clip en el marco vertical. `band` (por defecto) lo agranda hasta
+    # llenar una banda central de 1080x1184 (~62 % del alto) recortando **laterales** y
+    # nunca arriba/abajo; `contain` no recorta nada (el clip apaisado se ve pequeño) y
+    # `cover` recorta para llenar los 1080x1920 enteros.
+    fit: str = "band"
     video_codec: str = "libx264"
     crf: int = 19
     preset: str = "medium"
@@ -76,6 +81,7 @@ class Config:
         return {
             "items": self.items,
             "target": f"{self.target_width}x{self.target_height}",
+            "fit": self.fit,
             "fps": self.fps,
             "video": {"codec": self.video_codec, "crf": self.crf, "preset": self.preset, "pix_fmt": self.pix_fmt},
             "audio": {
@@ -100,6 +106,7 @@ class Config:
             target_width=_env_int("OPENRANKS_WIDTH", cls.target_width),
             target_height=_env_int("OPENRANKS_HEIGHT", cls.target_height),
             fps=_env_int("OPENRANKS_FPS", cls.fps),
+            fit=_env_str("OPENRANKS_FIT", cls.fit),
             crf=_env_int("OPENRANKS_CRF", cls.crf),
             preset=_env_str("OPENRANKS_PRESET", cls.preset),
             audio_bitrate=_env_str("OPENRANKS_AUDIO_BITRATE", cls.audio_bitrate),

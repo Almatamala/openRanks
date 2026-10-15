@@ -16,7 +16,9 @@ from .core.binding import BindingError, load_binding
 from .core.config import Config
 from .core.ffmpeg import TRANSITIONS, ToolNotFound, TransitionError
 from .core.plan import PlanError
+from .core.progress import PROGRESS_PREFIX, ProgressEvent
 from .core.runner import ToolError
+from .overlay import OverlayError, preview, render
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -34,14 +36,73 @@ def _build_parser() -> argparse.ArgumentParser:
     assembly = subparsers.add_parser("assemble", help="normaliza los 5 clips y los une en vertical")
     assembly.add_argument("--input", required=True, help="binding JSON: {title, items:[{position,path,label}]}")
     assembly.add_argument("--out", required=True, help="directorio de salida (clips/, union.mp4, manifest.json)")
-    assembly.add_argument("--fit", choices=("cover", "contain"), default="cover", help="cover recorta, contain añade barras")
+    assembly.add_argument(
+        "--fit",
+        choices=("band", "contain", "cover"),
+        default=None,
+        help="band (por defecto) agranda el clip hasta llenar la banda central de 1184 px y recorta laterales; "
+        "contain lo encaja entero sin recortar; cover recorta para llenar todo el marco",
+    )
     assembly.add_argument("--transition-seconds", type=float, default=0.0, help="solape entre clips (0 = corte seco, unión por copia)")
     assembly.add_argument("--transition", choices=TRANSITIONS, default="slideup", help="tipo de transición si hay solape")
     assembly.add_argument("--cold-open-seconds", type=float, default=0.0, help="adelanto del #1 al principio (B1 del plan); 0 = desactivado")
+    assembly.add_argument("--edit", action="store_true", help="encadena L2: añade la edición del estándar (ranking.mp4 + cover)")
+    assembly.add_argument("--zoom", type=float, default=0.0, help="zoom de entrada del primer clip en L2 (0.08 = 8 %%; 0 = sin zoom)")
     assembly.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     assembly.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    assembly.add_argument(
+        "--progress",
+        action="store_true",
+        help="emite el avance en porcentaje real por stderr (lo consume el panel para la barra y el tiempo restante)",
+    )
     assembly.add_argument("--json", action="store_true", help="salida legible por máquina")
     assembly.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    render_cmd = subparsers.add_parser(
+        "render",
+        help="L2 solo: re-compone la edición sobre un union.mp4 ya ensamblado (segundos, no minutos)",
+    )
+    render_cmd.add_argument("--dir", required=True, help="directorio que ya produjo `assemble` (con union.mp4 y manifest.json)")
+    render_cmd.add_argument("--input", default=None, help="binding JSON opcional del que tomar los textos (título y nombres)")
+    render_cmd.add_argument("--title", default=None, help="sobrescribe el título del vídeo")
+    render_cmd.add_argument(
+        "--label",
+        action="append",
+        default=None,
+        metavar="POS=TEXTO",
+        help="sobrescribe el nombre de un puesto (repetible), p. ej. --label 1=GATO VOLADOR",
+    )
+    render_cmd.add_argument("--zoom", type=float, default=None, help="zoom de entrada del primer clip (por defecto, el del preset)")
+    render_cmd.add_argument("--font", default=None, help="familia tipográfica del overlay (por defecto Arial)")
+    render_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    render_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    render_cmd.add_argument("--progress", action="store_true", help="emite el avance en porcentaje real por stderr")
+    render_cmd.add_argument("--json", action="store_true", help="salida legible por máquina")
+    render_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    preview_cmd = subparsers.add_parser(
+        "preview",
+        help="vista previa del overlay sobre fondo negro (PNG), sin clips ni vídeo montado",
+    )
+    preview_cmd.add_argument("--out", required=True, help="ruta del PNG de salida")
+    preview_cmd.add_argument("--title", default="", help="título a dibujar")
+    preview_cmd.add_argument(
+        "--label",
+        action="append",
+        default=None,
+        metavar="POS=TEXTO",
+        help="nombre de un puesto (repetible), p. ej. --label 1=GATO VOLADOR",
+    )
+    preview_cmd.add_argument("--font", default=None, help="familia tipográfica del overlay")
+    preview_cmd.add_argument("--at", type=float, default=None, help="segundo del fotograma (por defecto, el final)")
+    preview_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    preview_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+
+    preset = subparsers.add_parser(
+        "preset",
+        help="enseña los ajustes de la plantilla de la edición (L2) y dónde se cambian",
+    )
+    preset.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
 
     probe = subparsers.add_parser("probe", help="inspecciona archivos con ffprobe")
     probe.add_argument("files", nargs="+")
@@ -53,6 +114,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="aplica el contrato de clip de entrada (duración máxima, lado corto, ...) y devuelve 2 si falla",
     )
     return parser
+
+
+def _progress_sink() -> "callable[[ProgressEvent], None]":
+    """Reporter que escribe una línea JSON por evento en **stderr**.
+
+    En stderr para que stdout siga siendo solo el resultado (`--json`) y para que el
+    panel pueda separarlo de los avisos de FFmpeg por el prefijo.
+    """
+
+    def _emit(event: ProgressEvent) -> None:
+        print(PROGRESS_PREFIX + json.dumps(event.to_json(), ensure_ascii=False), file=sys.stderr, flush=True)
+
+    return _emit
 
 
 def _configure_output() -> None:
@@ -77,7 +151,98 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "probe":
         return _run_probe(args)
+    if args.command == "render":
+        return _run_render(args)
+    if args.command == "preset":
+        return _run_preset(args)
+    if args.command == "preview":
+        return _run_preview(args)
     return _run_assemble(args)
+
+
+def _run_preset(args: argparse.Namespace) -> int:
+    """Listado de los ajustes del preset bloqueado (ADR-8): qué es cada uno y dónde vive."""
+    from .core.overlay import EDITABLE_SECTIONS, describe_style, get_style
+
+    style = get_style()
+    rows = describe_style(style)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "preset": style.get("theme"),
+                    "font": style.get("font"),
+                    "where": "openranks/core/overlay.py (DEFAULT_STYLE) · openranks/core/specs.py (RANK_COLORS)",
+                    "settings": rows,
+                    # Lo que el panel puede cambiar y guardar, ya resuelto.
+                    "editable": {
+                        "font": style.get("font"),
+                        "title": {
+                            "size": style["title"]["size"],
+                            "background": bool(style["title"]["background"]),
+                        },
+                        "rank_ladder": {
+                            "size": style["rank_ladder"]["size"],
+                            "x": style["rank_ladder"]["x"],
+                            "y_top": style["rank_ladder"]["y_top"],
+                            "y_bottom": style["rank_ladder"]["y_bottom"],
+                        },
+                    },
+                    "editable_keys": {section: list(keys) for section, keys in EDITABLE_SECTIONS.items()},
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return EXIT_OK
+
+    group = None
+    for row in rows:
+        if row["group"] != group:
+            group = row["group"]
+            print(f"\n{group}")
+            print(f"  {row['where']}")
+        print(f"  {row['key']:<26} {row['value']}")
+    return EXIT_OK
+
+
+def _run_preview(args: argparse.Namespace) -> int:
+    """Vista previa del preset sobre negro: no monta nada, solo dibuja el overlay."""
+    config = Config.from_env()
+    try:
+        labels = _parse_label_overrides(args.label)
+        result = preview(
+            args.out,
+            title=args.title or "",
+            labels=labels or None,
+            font=args.font,
+            at_s=args.at,
+            config=config,
+            ffmpeg=args.ffmpeg,
+        )
+    except BindingError as exc:
+        print(f"entrada inválida: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (OverlayError, ToolError, ToolNotFound) as exc:
+        print(f"fallo la vista previa: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "path": str(result.path),
+                    "at_s": result.at_s,
+                    "preset": result.spec.get("preset"),
+                    "total_duration_s": result.spec["total_duration_s"],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(result.summary())
+    return EXIT_OK
 
 
 def _run_assemble(args: argparse.Namespace) -> int:
@@ -95,7 +260,10 @@ def _run_assemble(args: argparse.Namespace) -> int:
             transition_s=args.transition_seconds,
             transition=args.transition,
             cold_open_s=args.cold_open_seconds,
+            edit=args.edit,
+            zoom=args.zoom,
             log=say,
+            progress=_progress_sink() if args.progress else None,
         )
     except (BindingError, PlanError) as exc:
         print(f"entrada inválida: {exc}", file=sys.stderr)
@@ -105,15 +273,81 @@ def _run_assemble(args: argparse.Namespace) -> int:
         return EXIT_FAILED
 
     if args.json:
+        payload = {
+            "out_dir": str(result.out_dir),
+            "clips": [str(path) for path in result.clips],
+            "union": str(result.union),
+            "manifest": str(result.manifest_path),
+            "total_duration_s": result.total_measured_s,
+            "loudness_lufs": result.loudness.get("input_i"),
+            "warnings": list(result.warnings),
+        }
+        if result.overlay is not None:
+            payload.update(
+                {
+                    "ranking": str(result.overlay.ranking),
+                    "cover": None if result.overlay.cover is None else str(result.overlay.cover),
+                    "spec": str(result.overlay.spec_path),
+                }
+            )
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        print(result.summary())
+    return EXIT_OK
+
+
+def _parse_label_overrides(raw: list[str] | None) -> dict[int, str]:
+    labels: dict[int, str] = {}
+    for entry in raw or []:
+        position, _, text = entry.partition("=")
+        if not _:
+            raise BindingError(f"--label espera POS=TEXTO y llegó {entry!r}")
+        try:
+            labels[int(position)] = text
+        except ValueError as exc:
+            raise BindingError(f"--label con posición no numérica: {position!r}") from exc
+    return labels
+
+
+def _run_render(args: argparse.Namespace) -> int:
+    """L2 solo: cambia textos o rehace la edición sin volver a montar el vídeo."""
+    config = Config.from_env()
+    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
+    try:
+        labels = _parse_label_overrides(args.label)
+        title = args.title
+        if args.input:
+            binding = load_binding(args.input, config)
+            title = title if title is not None else binding.title
+            for item in binding.items:
+                labels.setdefault(item.position, item.label)
+        result = render(
+            args.dir,
+            title=title,
+            labels=labels or None,
+            font=args.font,
+            zoom=args.zoom,
+            config=config,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            log=say,
+            progress=_progress_sink() if args.progress else None,
+        )
+    except BindingError as exc:
+        print(f"entrada inválida: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (OverlayError, ToolError, ToolNotFound, TransitionError) as exc:
+        print(f"fallo el render: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
         print(
             json.dumps(
                 {
-                    "out_dir": str(result.out_dir),
-                    "clips": [str(path) for path in result.clips],
-                    "union": str(result.union),
-                    "manifest": str(result.manifest_path),
-                    "total_duration_s": result.total_measured_s,
-                    "loudness_lufs": result.loudness.get("input_i"),
+                    "ranking": str(result.ranking),
+                    "cover": None if result.cover is None else str(result.cover),
+                    "spec": str(result.spec_path),
+                    "total_duration_s": result.spec["total_duration_s"],
                     "warnings": list(result.warnings),
                 },
                 indent=2,

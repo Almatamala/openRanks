@@ -168,6 +168,45 @@ def test_cli_assemble_writes_the_union(ffmpeg_bin, ffprobe_bin, synthetic_clips,
     assert payload["loudness_lufs"] is not None
 
 
+def test_cli_progress_is_a_real_growing_percentage(
+    ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path, monkeypatch, capsys
+):
+    """La barra del panel se alimenta de esto: porcentaje medido, nunca inventado."""
+    from openranks.core.progress import parse_event
+
+    monkeypatch.setenv("OPENRANKS_WIDTH", "180")
+    monkeypatch.setenv("OPENRANKS_HEIGHT", "320")
+    monkeypatch.setenv("OPENRANKS_CRF", "34")
+    monkeypatch.setenv("OPENRANKS_PRESET", "ultrafast")
+    code = main(
+        [
+            "assemble",
+            "--input",
+            str(write_binding(synthetic_clips)),
+            "--out",
+            str(tmp_path / "prog"),
+            "--edit",
+            "--progress",
+            "--quiet",
+            "--ffmpeg",
+            ffmpeg_bin,
+            "--ffprobe",
+            ffprobe_bin,
+        ]
+    )
+    assert code == 0
+    events = [parse_event(line) for line in capsys.readouterr().err.splitlines()]
+    events = [event for event in events if event]
+
+    percents = [event["percent"] for event in events]
+    assert len(events) >= 8, events
+    assert percents == sorted(percents), percents  # nunca hacia atrás
+    assert percents[0] == 5.0  # arranca al medir los clips
+    assert percents[-1] == 100.0  # y termina en el 100
+    assert len(set(percents)) > 5  # granular: da para estimar el tiempo restante
+    assert all(event["label"] for event in events)  # cada avance se puede leer
+
+
 def test_cli_reports_bad_input(tmp_path, ffmpeg_bin, ffprobe_bin):
     broken = tmp_path / "broken.json"
     broken.write_text("{no soy json", encoding="utf-8")

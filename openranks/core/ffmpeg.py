@@ -14,6 +14,11 @@ from pathlib import Path
 
 from .config import Config
 
+# Alto de la **banda** del encuadre por defecto: cuántos píxeles del marco vertical
+# puede ocupar el clip. 1184/1920 = 61,7 %, el encuadre de referencia del operador
+# (agrandar y recortar laterales, nunca arriba/abajo).
+BAND_HEIGHT = 1184
+
 # Transiciones aceptadas (nombres de ``xfade``). ``slideup`` es el equivalentes
 # más cercano al "pull in" de CapCut del formato de referencia (§3 del plan).
 TRANSITIONS = (
@@ -58,13 +63,20 @@ def resolve_binary(explicit: str | None, env_var: str, name: str) -> str:
     )
 
 
-def video_filter(config: Config, fit: str = "cover") -> str:
+def video_filter(config: Config, fit: str = "band") -> str:
     """Cadena de vídeo para llevar cualquier fuente al marco vertical.
 
-    ``cover`` rellena el marco recortando (lo que hace el modo TRACK con un sujeto
-    centrado); ``contain`` encaja sin recortar y rellena con negro.
+    ``band`` (por defecto) agranda el clip hasta llenar una **banda central** de
+    ``width`` x ``BAND_HEIGHT`` (el ~62 % del alto): recorta **los laterales** si hace
+    falta y **nunca** arriba o abajo, así que un clip apaisado se ve grande y centrado
+    en vez de pequeño. El resto del marco va en negro.
+
+    ``contain`` encaja el clip entero sin recortar nada (un clip apaisado queda con
+    barras negras y se ve pequeño) y ``cover`` recorta para llenar los 1080x1920
+    enteros (se pierde buena parte del encuadre original).
     """
     width, height = config.total
+    band = max(2, min(height, int(BAND_HEIGHT)))
     if fit == "cover":
         base = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
     elif fit == "contain":
@@ -72,8 +84,19 @@ def video_filter(config: Config, fit: str = "cover") -> str:
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
         )
+    elif fit == "band":
+        # Se escala por el lado que más agrande: llenar el ancho o llenar la banda.
+        # ``iw``/``ih`` son los de la fuente, así que vale para cualquier tamaño de
+        # entrada sin tener que leerlo antes. Los lados impares se redondean a par.
+        grow = f"max({width}/iw\\,{band}/ih)"
+        base = (
+            f"scale=w='trunc(iw*{grow}/2)*2':h='trunc(ih*{grow}/2)*2':flags=bicubic,"
+            # El ancho sobrante se recorta (centrado); el alto nunca se recorta.
+            f"crop=w='min(iw\\,{width})':h='min(ih\\,{height})':x='(iw-ow)/2':y='(ih-oh)/2',"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
+        )
     else:
-        raise ValueError(f"fit desconocido: {fit!r} (usa 'cover' o 'contain')")
+        raise ValueError(f"fit desconocido: {fit!r} (usa 'band', 'contain' o 'cover')")
     # setsar=1 es obligatorio para que la unión por copia de streams no falle.
     return f"{base},setsar=1,fps={config.fps},format={config.pix_fmt}"
 
@@ -140,7 +163,7 @@ def normalize_argv(
     *,
     config: Config,
     has_audio: bool,
-    fit: str = "cover",
+    fit: str = "band",
     measured: dict | None = None,
     limit_s: float | None = None,
     duration_s: float | None = None,

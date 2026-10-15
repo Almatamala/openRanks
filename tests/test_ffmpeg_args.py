@@ -28,6 +28,25 @@ LOUDNORM_STDERR = """
 """
 
 
+def test_video_filter_band_fills_the_band_and_crops_only_the_sides():
+    chain = ff.video_filter(CONFIG, "band")
+    # Se escala por el lado que más agrande: llenar el ancho (1080/iw) o la banda
+    # (1184/ih), con el alto de la banda en la cadena.
+    assert "max(1080/iw\\,1184/ih)" in chain
+    assert ff.BAND_HEIGHT == 1184
+    # El sobrante se recorta **solo** a lo ancho y se centra; el alto nunca se recorta.
+    assert "crop=w='min(iw\\,1080)':h='min(ih\\,1920)'" in chain
+    assert "x='(iw-ow)/2':y='(ih-oh)/2'" in chain
+    # Lo que quede vacío arriba/abajo se rellena de negro (encaje centrado).
+    assert "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black" in chain
+    assert "setsar=1" in chain and "fps=30" in chain and "format=yuv420p" in chain
+
+
+def test_video_filter_band_is_the_default_fit():
+    assert ff.video_filter(CONFIG) == ff.video_filter(CONFIG, "band")
+    assert CONFIG.fit == "band"
+
+
 def test_video_filter_cover_crops_to_the_vertical_frame():
     chain = ff.video_filter(CONFIG, "cover")
     assert "scale=1080:1920:force_original_aspect_ratio=increase" in chain

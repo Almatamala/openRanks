@@ -1,0 +1,30 @@
+# Levanta la API de openRanks (panel Next.js + motor Python + FFmpeg) en un solo
+# contenedor, con los trabajos en un volumen para que sobrevivan a un reinicio.
+#
+#   docker compose up --build      →  http://localhost:3000
+#
+# Nota: los servicios `postgres`, `minio`, `worker` y `renderer` que dibuja el plan
+# (§7.7) son de **L4** y todavía no existen en el código. Este compose levanta lo que
+# hoy hay: L1 + L2 con su panel. Cuando lleguen esas piezas, se añaden aquí.
+name: openranks
+
+services:
+  panel:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: openranks-panel:dev
+    ports:
+      - "3000:3000"
+    environment:
+      OPENRANKS_ROOT: /app
+      OPENRANKS_PYTHON: python3
+      OPENRANKS_JOBS_DIR: /data/jobs
+      # `Arial` no existe en la imagen; el overlay ASS resuelve la fuente por nombre.
+      OPENRANKS_FONT: DejaVu Sans
+    volumes:
+      - jobs:/data/jobs
+    restart: unless-stopped
+
+volumes:
+  jobs:
