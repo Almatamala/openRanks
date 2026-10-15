@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from openranks.core.config import Config
+
+PANEL_LIMITS = Path(__file__).resolve().parents[1] / "web" / "lib" / "limits.ts"
 
 
 def test_defaults_match_the_l1_output_criterion():
@@ -19,6 +23,20 @@ def test_defaults_match_the_l1_output_criterion():
     assert (config.min_total_seconds, config.max_total_seconds) == (30.0, 58.0)
 
 
+def test_the_ranking_goes_from_five_to_ten_positions():
+    config = Config()
+    assert (config.items, config.items_min, config.items_max) == (5, 5, 10)
+    assert Config.from_env().items == 5
+
+
+def test_the_panel_offers_the_same_positions_as_the_engine():
+    """Regresión: el selector del panel no puede ofrecer un ranking que el motor rechace."""
+    source = PANEL_LIMITS.read_text(encoding="utf-8")
+    config = Config()
+    assert f"export const POSITIONS_MIN = {config.items_min};" in source
+    assert f"export const POSITIONS_MAX = {config.items_max};" in source
+
+
 def test_text_limits_match_the_plan_9_5():
     config = Config()
     assert config.title_layer_chars == 28
@@ -28,7 +46,7 @@ def test_text_limits_match_the_plan_9_5():
 
 
 def test_from_env_overrides_every_knob(monkeypatch):
-    monkeypatch.setenv("OPENRANKS_ITEMS", "3")
+    monkeypatch.setenv("OPENRANKS_ITEMS", "8")
     monkeypatch.setenv("OPENRANKS_LOUDNESS_LUFS", "-12.5")
     monkeypatch.setenv("OPENRANKS_WIDTH", "720")
     monkeypatch.setenv("OPENRANKS_HEIGHT", "1280")
@@ -37,7 +55,7 @@ def test_from_env_overrides_every_knob(monkeypatch):
     monkeypatch.setenv("OPENRANKS_FIT", "cover")
 
     config = Config.from_env()
-    assert config.items == 3
+    assert config.items == 8
     assert config.total == (720, 1280)
     assert config.loudness_lufs == -12.5
     assert config.min_total_seconds == 20.0

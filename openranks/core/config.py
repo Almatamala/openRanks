@@ -29,8 +29,11 @@ class Config:
     1080x1920, 30 fps, yuv420p, audio a −14 LUFS.
     """
 
-    # Cuántos puestos tiene el ranking. L1 asume 5 (el formato TOP 5).
+    # Cuántos puestos tiene el ranking. El formato va del TOP 5 al TOP 10 y el panel
+    # lo fija por trabajo (`OPENRANKS_ITEMS`); el defecto es el TOP 5 de siempre.
     items: int = 5
+    items_min: int = 5
+    items_max: int = 10
 
     # Formato de salida.
     target_width: int = 1080

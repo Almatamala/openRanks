@@ -45,6 +45,21 @@ def test_wrong_item_count_is_rejected():
         validate_binding(Binding(title="TOP 5 GATOS", items=_items(4)), Config(), check_paths=False)
 
 
+def test_a_ranking_of_up_to_ten_positions_is_valid():
+    for count in (5, 7, 10):
+        binding = Binding(title=f"TOP {count} GATOS", items=_items(count))
+        validate_binding(binding, Config(items=count), check_paths=False)
+        assert [item.position for item in binding.ordered] == list(range(count, 0, -1))
+
+
+def test_a_ranking_outside_the_format_is_rejected():
+    # Ni tres puestos ni once: el formato va del TOP 5 al TOP 10.
+    with pytest.raises(BindingError, match="admite de 5 a 10 puestos"):
+        validate_binding(Binding(title="TOP 3 GATOS", items=_items(3)), Config(items=3), check_paths=False)
+    with pytest.raises(BindingError, match="admite de 5 a 10 puestos"):
+        validate_binding(Binding(title="TOP 11 GATOS", items=_items(11)), Config(items=11), check_paths=False)
+
+
 def test_label_over_char_limit_is_rejected():
     items = list(_items())
     items[0] = ClipItem(position=1, path=items[0].path, label="X" * 25)

@@ -102,7 +102,8 @@ def preview(
     """Dibuja el preset sobre **negro** en un PNG, sin clips y sin montar nada.
 
     Reutiliza el **mismo** `build_ass` que el render final sobre una línea temporal
-    sintética de un TOP 5, así que lo que se ve aquí es lo que saldrá en el vídeo.
+    sintética con tantos puestos como el ranking (`config.items`, de 5 a 10), así que lo
+    que se ve aquí es lo que saldrá en el vídeo.
     """
     cfg = config or Config.from_env()
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")
@@ -110,11 +111,12 @@ def preview(
     if font:
         style["font"] = font
 
+    count = max(1, int(cfg.items))
     segments = [
         {"position": position, "label": f"PUESTO {position}", "duration_s": PREVIEW_SEGMENT_S}
-        for position in (5, 4, 3, 2, 1)
+        for position in range(count, 0, -1)
     ]
-    final_labels = {position: f"PUESTO {position}" for position in range(1, 6)}
+    final_labels = {position: f"PUESTO {position}" for position in range(1, count + 1)}
     if labels:
         final_labels.update({int(position): text for position, text in labels.items()})
 

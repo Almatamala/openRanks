@@ -18,10 +18,10 @@ jobs:
           python-version: "3.12"
 
       # El camino crítico es FFmpeg: se instala de verdad para que los tests de
-      # integración (L1 y L2) corran en vez de saltarse. `fonts-dejavu-core` es la
-      # fuente que dibuja el overlay ASS.
+      # integración (L1 y L2) corran en vez de saltarse. Las fuentes son las que dibuja
+      # el overlay ASS por nombre (`fonts-urw-base35` trae la geométrica `URW Gothic`).
       - name: Instalar FFmpeg y fuentes
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-urw-base35
 
       - name: Instalar el paquete
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"

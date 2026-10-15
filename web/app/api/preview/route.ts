@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 
+import { clampPositions, positionsFor } from "@/lib/limits";
 import { PROJECT_ROOT, resolveEngine } from "@/lib/paths";
 import { PRESET_PATH, sanitizePreset } from "@/lib/preset";
 
@@ -25,8 +26,21 @@ export async function GET(request: Request) {
   const title = url.searchParams.get("title") ?? "";
   const outPath = path.join(os.tmpdir(), `openranks-preview-${randomUUID()}.png`);
 
-  const argv = ["-m", "openranks", "preview", "--out", outPath, "--title", title, "--json"];
-  for (const position of [1, 2, 3, 4, 5]) {
+  // El ranking de la vista previa tiene los puestos que diga el panel (de 5 a 10).
+  const positions = clampPositions(url.searchParams.get("positions"));
+  const argv = [
+    "-m",
+    "openranks",
+    "preview",
+    "--out",
+    outPath,
+    "--title",
+    title,
+    "--items",
+    String(positions),
+    "--json",
+  ];
+  for (const position of positionsFor(positions)) {
     const label = url.searchParams.get(`label${position}`);
     if (label) argv.push("--label", `${position}=${label}`);
   }

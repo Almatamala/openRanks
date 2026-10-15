@@ -5,7 +5,8 @@ import { pipeline } from "node:stream/promises";
 
 import { NextResponse } from "next/server";
 
-import { TOTAL_POSITIONS, inputDir, isSafeId, patchStatus, readStatus, uploadedPositions } from "@/lib/jobs";
+import { inputDir, isSafeId, patchStatus, readStatus, uploadedPositions } from "@/lib/jobs";
+import { POSITIONS_MAX } from "@/lib/limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (!isSafeId(id)) return NextResponse.json({ error: "Trabajo no válido." }, { status: 400 });
 
   const slot = Number(position);
-  if (!Number.isInteger(slot) || slot < 1 || slot > TOTAL_POSITIONS) {
+  if (!Number.isInteger(slot) || slot < 1 || slot > POSITIONS_MAX) {
     return NextResponse.json({ error: "Ese puesto no existe." }, { status: 400 });
   }
   if (!readStatus(id)) return NextResponse.json({ error: "Ese trabajo ya no existe." }, { status: 404 });

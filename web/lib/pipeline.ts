@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, writeFileSync } from "node:fs";
 
+import { clampPositions } from "./limits";
 import {
   appendLog,
   bindingPath,
@@ -11,6 +12,7 @@ import {
   type JobRequest,
   type JobStatus,
   readStatus,
+  TOTAL_POSITIONS,
   uploadedPositions,
 } from "./jobs";
 import { PROJECT_ROOT, resolveEngine } from "./paths";
@@ -47,14 +49,16 @@ export function isRunning(id: string): boolean {
 
 /**
  * Escribe el binding, arranca `openranks assemble --edit` y devuelve el trabajo
- * ya en marcha. El motor hace **L1 y L2** en una sola pasada: normaliza los 5
- * clips, los une y compone la edición.
+ * ya en marcha. El motor hace **L1 y L2** en una sola pasada: normaliza los clips,
+ * los une y compone la edición.
  */
 export async function startJob(id: string, request: JobRequest): Promise<JobStatus> {
   if (running.has(id)) throw new JobError("Ese montaje ya está en marcha.");
 
+  const expected = clampPositions(request.positions ?? TOTAL_POSITIONS);
   const positions = uploadedPositions(id);
-  if (positions.length !== 5) throw new JobError("Faltan clips: hacen falta los cinco puestos.");
+  if (positions.length !== expected)
+    throw new JobError(`Faltan clips: hacen falta los ${expected} puestos del ranking.`);
 
   // El binding guarda rutas **relativas al propio JSON** (§RF-1), así que el
   // trabajo es portable y el manifiesto nunca filtra rutas del host.
@@ -80,6 +84,8 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
     "--out",
     renderDir(id),
     "--edit",
+    "--items",
+    String(expected),
     "--transition-seconds",
     String(request.transitionSeconds ?? 0),
     "--transition",
@@ -108,8 +114,15 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
 
   const child = spawn(engine.python.command, argv, {
     cwd: PROJECT_ROOT,
-    // El montaje usa el preset guardado (si existe) para no divergir de la vista previa.
-    env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", OPENRANKS_PRESET_FILE: PRESET_PATH },
+    // El montaje usa el preset guardado (si existe) para no divergir de la vista previa,
+    // y el número de puestos de **este** trabajo.
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1",
+      OPENRANKS_PRESET_FILE: PRESET_PATH,
+      OPENRANKS_ITEMS: String(expected),
+    },
     windowsHide: true,
   });
   running.set(id, child);

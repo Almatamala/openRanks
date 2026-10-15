@@ -1,4 +1,4 @@
-"""Ensamblador L1: 5 clips listos y su unión en un solo vídeo vertical (§12).
+"""Ensamblador L1: los clips listos y su unión en un solo vídeo vertical (§12).
 
 Secuencia: medir → validar → normalizar cada clip (dos pasadas de ``loudnorm``) →
 unir → verificar → manifiesto. Todo automático: no hay pasos manuales (ADR-8).
@@ -192,7 +192,7 @@ def assemble(
 
     # 4) Unión: copia de streams si no hay transición; si la hay, recodifica.
     union = out_dir / "union.mp4"
-    track.joining("Uniendo los cinco clips en vertical")
+    track.joining(f"Uniendo los {len(normalized)} clips en vertical")
     if transition_s > 0:
         say(f"uniendo {len(normalized)} tramos con transición {transition} ({transition_s}s)")
         completed = run(

@@ -11,14 +11,19 @@ import { JOBS_DIR } from "./paths";
  */
 export interface EditablePreset {
   font: string;
+  italic: boolean;
   title: { size: number; background: boolean };
   rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
 }
 
 export const PRESET_PATH = path.join(JOBS_DIR, "preset.json");
 
-/** Familias que la imagen de Docker trae instaladas (más Symbola para las medallas). */
-export const FONT_CHOICES = ["DejaVu Sans", "Liberation Sans", "DejaVu Serif", "Symbola"] as const;
+/**
+ * Familias que la imagen de Docker trae instaladas (más Symbola para las medallas).
+ * `URW Gothic` es la **sans-serif geométrica**. Tiene que ser la misma lista que
+ * `FONT_FAMILIES` en `openranks/core/overlay.py`: hay un test que lo comprueba.
+ */
+export const FONT_CHOICES = ["DejaVu Sans", "Liberation Sans", "DejaVu Serif", "URW Gothic", "Symbola"] as const;
 
 /** Rangos de los deslizadores: espejo del lienzo 1080x1920. */
 export const PRESET_RANGES = {
@@ -51,6 +56,7 @@ export function sanitizePreset(input: unknown): EditablePreset {
   const ladder = (raw.rank_ladder ?? {}) as Partial<EditablePreset["rank_ladder"]>;
   return {
     font: pickFont(raw.font),
+    italic: Boolean(raw.italic),
     title: {
       size: clamp(title.size, PRESET_RANGES.titleSize, 104),
       background: Boolean(title.background),

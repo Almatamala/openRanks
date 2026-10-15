@@ -109,11 +109,12 @@ def test_medals_only_reach_the_podium():
     assert not any("#" in badge_text(position, ladder) for position in range(1, 6))
 
 
-def test_rank_colours_are_gold_silver_bronze():
+def test_rank_colours_are_gold_silver_bronze_and_white_from_four_on():
     assert rank_color(1) == "#D4AF37"
     assert rank_color(2) == "#C0C0C0"
     assert rank_color(3) == "#CD7F32"
-    assert rank_color(4) == rank_color(5)
+    # Del 4 en adelante el número va en blanco (el azul competía con el rótulo).
+    assert all(rank_color(position) == "#FFFFFF" for position in range(4, 11))
 
 
 def test_badge_ladder_puts_five_bottom_and_one_top():
@@ -121,6 +122,15 @@ def test_badge_ladder_puts_five_bottom_and_one_top():
     assert badge_y(5, ladder) == pytest.approx(ladder["y_bottom"])
     assert badge_y(1, ladder) == pytest.approx(ladder["y_top"])
     assert badge_y(4, ladder) > badge_y(3, ladder) > badge_y(2, ladder)
+
+
+def test_badge_ladder_spreads_as_many_positions_as_the_ranking_has():
+    ladder = DEFAULT_STYLE["rank_ladder"]
+    for count in (5, 7, 10):
+        ys = [badge_y(position, ladder, slots=count) for position in range(count, 0, -1)]
+        assert ys[0] == pytest.approx(ladder["y_bottom"])
+        assert ys[-1] == pytest.approx(ladder["y_top"])
+        assert ys == sorted(ys, reverse=True)
 
 
 def _spec(transition_s: float = 0.0, cold_open: bool = False) -> dict:
@@ -181,6 +191,8 @@ def test_each_label_arrives_with_its_clip_and_stays():
     assert [item["from_s"] for item in labels] == [0.0, 7.0, 14.0, 21.0, 28.0]
     # …y se queda hasta el final: el texto se **acumula**, no se sustituye.
     assert {item["to_s"] for item in labels} == {35.0}
+    # Mientras su puesto tiene el turno se ve nítido; después se atenúa con él.
+    assert [item["active_to_s"] for item in labels] == [7.0, 14.0, 21.0, 28.0, 35.0]
 
 
 def test_cold_open_has_no_badge_but_keeps_the_windows_aligned():
@@ -209,3 +221,51 @@ def test_editable_surface_is_only_text():
 
 def test_labels_from_segments_reads_the_plan():
     assert labels_from_segments(_segments()) == {position: f"PUESTO {position}" for position in range(1, 6)}
+
+
+def test_a_ranking_of_ten_positions_builds_ten_slots():
+    spec = build_spec(
+        title="TOP 10 GATOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 11)},
+        segments=_segments(5.0, count=10),
+        transition_s=0.0,
+        transition="cut",
+        cold_open_s=0.0,
+        style=get_style(),
+        config=Config(items=10),
+    )
+    slots = spec["rank_ladder"]["slots"]
+    labels = spec["clip_labels"]
+    assert [slot["position"] for slot in slots] == list(range(10, 0, -1))
+    assert len(labels) == 10
+    assert spec["total_duration_s"] == pytest.approx(50.0)
+    # El último (el 1) queda arriba y el primero (el 10) abajo.
+    assert slots[-1]["y"] < slots[0]["y"]
+
+
+def test_the_title_is_fitted_to_the_space_it_has():
+    """El título nunca se sale del marco: se reparte en renglones y, si hace falta, baja.
+
+    220 px de alto no caben con este texto, así que el spec guarda el tamaño **ajustado**
+    y los renglones ya repartidos.
+    """
+    style = get_style({"title": {"size": 220}})
+    spec = build_spec(
+        title="TOP 8 MOMENTOS LOCOS DE GATOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 9)},
+        segments=_segments(6.0, count=8),
+        transition_s=0.0,
+        transition="cut",
+        cold_open_s=0.0,
+        style=style,
+        config=Config(items=8),
+    )
+    title = spec["title"]
+    assert title["size"] < 220
+    assert 1 < len(title["lines"]) <= Config().title_layers_max
+    # Las palabras no se pierden ni se reordenan al repartirlas.
+    words = [word["text"] for line in title["lines"] for word in line]
+    assert words == "TOP 8 MOMENTOS LOCOS DE GATOS".split()
+    # El número conserva su color y su escala aunque cambie de renglón.
+    number = next(word for line in title["lines"] for word in line if word["text"] == "8")
+    assert number["color"] == DEFAULT_STYLE["title"]["accent"] and number["scale"] == 1.35

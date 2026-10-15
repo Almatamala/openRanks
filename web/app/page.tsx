@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { LIMITS, labelErrors, labelFromFilename, titleErrors } from "@/lib/limits";
+import { clampPositions, LIMITS, labelErrors, POSITIONS_MAX, POSITIONS_MIN, positionsFor, titleErrors } from "@/lib/limits";
 import { formatDuration } from "@/lib/progress";
-import { cycleColor, titleSpans, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
+import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
 
 type Artifact = { path: string; label: string; kind: "video" | "image" | "json"; bytes: number };
 
@@ -36,12 +36,14 @@ interface PresetSetting {
 /** La parte de la plantilla que el panel puede ajustar y guardar. */
 interface EditablePreset {
   font: string;
+  italic: boolean;
   title: { size: number; background: boolean };
   rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
 }
 
 type StylePatch = {
   font?: string;
+  italic?: boolean;
   title?: Partial<EditablePreset["title"]>;
   rank_ladder?: Partial<EditablePreset["rank_ladder"]>;
 };
@@ -63,6 +65,7 @@ interface Preset {
   saved: EditablePreset | null;
   hasSaved: boolean;
   fonts: string[];
+  fontNotes: Record<string, string>;
   ranges: PresetRanges;
 }
 
@@ -82,8 +85,19 @@ const TRANSITIONS = [
 
 const STORE_KEY = "openranks.panel.v1";
 
-function initialSlots(): Slot[] {
-  return LIMITS.positions.map((position) => ({ position, file: null, label: "" }));
+/** Puestos que ofrece el panel: del TOP 5 al TOP 10. */
+const POSITION_CHOICES = Array.from(
+  { length: POSITIONS_MAX - POSITIONS_MIN + 1 },
+  (_, index) => POSITIONS_MIN + index,
+);
+
+function initialSlots(count: number): Slot[] {
+  return positionsFor(count).map((position) => ({ position, file: null, label: "" }));
+}
+
+/** `TOP 5 MOMENTOS` → `TOP 8 MOMENTOS`: el número del título sigue al de puestos. */
+function retitleForCount(title: string, count: number): string {
+  return title.replace(/^(\s*top\s*)\d+/i, (_, head: string) => `${head}${count}`);
 }
 
 function humanSize(bytes: number): string {
@@ -93,7 +107,8 @@ function humanSize(bytes: number): string {
 }
 
 export default function Page() {
-  const [slots, setSlots] = useState<Slot[]>(initialSlots);
+  const [positions, setPositions] = useState(POSITIONS_MIN);
+  const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("TOP 5 MOMENTOS");
   const [transition, setTransition] = useState<string>("pullin");
   const [coldOpen, setColdOpen] = useState(false);
@@ -104,8 +119,8 @@ export default function Page() {
   const [job, setJob] = useState<Job | null>(null);
   const [preset, setPreset] = useState<Preset | null>(null);
   const [presetError, setPresetError] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<"live" | "render">("live");
   const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [style, setStyle] = useState<EditablePreset | null>(null);
   const [savedStyle, setSavedStyle] = useState<EditablePreset | null>(null);
@@ -144,17 +159,18 @@ export default function Page() {
         transition?: string;
         coldOpen?: boolean;
         zoom?: boolean;
+        positions?: number;
         labels?: Record<string, string>;
       };
+      const count = clampPositions(saved.positions ?? POSITIONS_MIN);
       if (saved.title) setTitle(saved.title);
       if (saved.transition) setTransition(saved.transition);
       if (typeof saved.coldOpen === "boolean") setColdOpen(saved.coldOpen);
       if (typeof saved.zoom === "boolean") setZoom(saved.zoom);
-      if (saved.labels) {
-        setSlots((current) =>
-          current.map((slot) => ({ ...slot, label: saved.labels?.[String(slot.position)] ?? slot.label })),
-        );
-      }
+      setPositions(count);
+      setSlots(
+        positionsFor(count).map((position) => ({ position, file: null, label: saved.labels?.[String(position)] ?? "" })),
+      );
     } catch {
       // Un almacén corrupto no puede impedir usar el panel.
     }
@@ -163,41 +179,58 @@ export default function Page() {
   useEffect(() => {
     const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label]));
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, transition, coldOpen, zoom, labels }));
+      window.localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify({ title, transition, coldOpen, zoom, positions, labels }),
+      );
     } catch {
       // Sin espacio o en modo privado: seguir, el estado vive en el servidor igual.
     }
-  }, [slots, title, transition, coldOpen, zoom]);
+  }, [slots, title, transition, coldOpen, zoom, positions]);
 
-  // Los valores no editables (tamaños de rótulo, colores, CTA…) los manda el motor en
-  // su listado: así la vista previa en vivo usa los **mismos números** que el render.
-  const settingsMap = useMemo(
-    () => Object.fromEntries((preset?.settings ?? []).map((setting) => [setting.key, setting.value])),
-    [preset],
-  );
-  const labelMap = useMemo(
-    () => Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()])),
-    [slots],
-  );
-
-  // El render del motor (FFmpeg) no es instantáneo: se pide solo al pulsar, para
-  // comprobar el resultado exacto; mientras se ajusta manda la vista en vivo.
+  // El render del motor (FFmpeg) **no es instantáneo**: dibuja el overlay sobre negro
+  // pero tarda unos segundos, así que se pide con retardo y nunca en vivo.
   const pedirRender = useCallback(() => {
-    const params = new URLSearchParams({ title: title.trim() });
+    const params = new URLSearchParams({ title: title.trim(), positions: String(positions) });
     for (const slot of slots) params.set(`label${slot.position}`, slot.label.trim());
     if (style) params.set("style", JSON.stringify(style));
     setPreviewFailed(false);
+    setRendering(true);
     setRenderUrl(`/api/preview?${params.toString()}&t=${Date.now()}`);
-    setPreviewMode("render");
-  }, [title, slots, style]);
+  }, [title, slots, style, positions]);
+
+  // El render exacto es **implícito**: no hay botón que lo pida. Se pide solo, con una
+  // pausa, cuando cambia el título, un rótulo o la plantilla: arrastrar un deslizador no
+  // lanza un FFmpeg por cada tirón.
+  useEffect(() => {
+    if (!style) return;
+    const timer = window.setTimeout(() => pedirRender(), 900);
+    return () => window.clearTimeout(timer);
+  }, [style, pedirRender]);
+
+  // Cambiar los puestos deja la escalera a medida: se conservan los clips y los nombres
+  // que ya estaban puestos y el número del título sigue al del ranking.
+  const cambiarPuestos = useCallback((raw: number) => {
+    const count = clampPositions(raw);
+    setPositions(count);
+    setSlots((current) => {
+      const byPosition = new Map(current.map((slot) => [slot.position, slot]));
+      return positionsFor(count).map(
+        (position) => byPosition.get(position) ?? { position, file: null, label: "" },
+      );
+    });
+    setTitle((current) => retitleForCount(current, count));
+  }, []);
 
   const setSlot = useCallback((position: number, patch: Partial<Slot>) => {
     setSlots((current) => current.map((slot) => (slot.position === position ? { ...slot, ...patch } : slot)));
   }, []);
 
+  // Al elegir el archivo solo se guarda el archivo: el nombre del puesto lo escribe el
+  // operador (el panel no le pone texto solo por el nombre del fichero).
   const onPick = useCallback(
     (position: number, file: File | null) => {
-      setSlot(position, { file, label: file ? labelFromFilename(file.name) || "" : "" });
+      setSlot(position, { file });
     },
     [setSlot],
   );
@@ -209,6 +242,7 @@ export default function Page() {
       current
         ? {
             font: patch.font ?? current.font,
+            italic: patch.italic ?? current.italic,
             title: { ...current.title, ...patch.title },
             rank_ladder: { ...current.rank_ladder, ...patch.rank_ladder },
           }
@@ -272,6 +306,21 @@ export default function Page() {
     }
   }, []);
 
+  // Lo que el motor necesita para arrancar: el mismo cuerpo lo usan «Montar» y
+  // «Volver a intentarlo», así que se construye en un solo sitio.
+  const startPayload = useCallback(() => {
+    const chosen = TRANSITIONS.find((option) => option.key === transition) ?? TRANSITIONS[0];
+    return {
+      title: title.trim(),
+      labels: Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()])),
+      positions,
+      transitionSeconds: chosen.seconds,
+      transition: chosen.type,
+      coldOpenSeconds: coldOpen ? 2 : 0,
+      zoom: zoom ? 0.08 : 0,
+    };
+  }, [slots, title, positions, transition, coldOpen, zoom]);
+
   const montar = useCallback(async () => {
     if (problemList(slots, title).length > 0) {
       setError(problemList(slots, title)[0]);
@@ -294,19 +343,10 @@ export default function Page() {
         if (!response.ok) throw new Error((await response.json())?.error ?? "No se pudo subir un clip.");
       }
 
-      const chosen = TRANSITIONS.find((option) => option.key === transition) ?? TRANSITIONS[0];
-      const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()]));
       const started = await fetch(`/api/jobs/${created.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          labels,
-          transitionSeconds: chosen.seconds,
-          transition: chosen.type,
-          coldOpenSeconds: coldOpen ? 2 : 0,
-          zoom: zoom ? 0.08 : 0,
-        }),
+        body: JSON.stringify(startPayload()),
       });
       if (!started.ok) throw new Error((await started.json())?.error ?? "No se pudo arrancar el montaje.");
 
@@ -316,7 +356,7 @@ export default function Page() {
     } finally {
       if (runToken.current === token) setBusy(false);
     }
-  }, [slots, title, transition, coldOpen, zoom, poll]);
+  }, [slots, title, startPayload, poll]);
 
   const reintentar = useCallback(async () => {
     if (!job) {
@@ -327,19 +367,10 @@ export default function Page() {
     setBusy(true);
     setError(null);
     try {
-      const chosen = TRANSITIONS.find((option) => option.key === transition) ?? TRANSITIONS[0];
-      const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()]));
       const started = await fetch(`/api/jobs/${job.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          labels,
-          transitionSeconds: chosen.seconds,
-          transition: chosen.type,
-          coldOpenSeconds: coldOpen ? 2 : 0,
-          zoom: zoom ? 0.08 : 0,
-        }),
+        body: JSON.stringify(startPayload()),
       });
       if (!started.ok) throw new Error((await started.json())?.error ?? "No se pudo reintentar.");
       await poll(job.id, token);
@@ -348,7 +379,7 @@ export default function Page() {
     } finally {
       if (runToken.current === token) setBusy(false);
     }
-  }, [job, slots, title, transition, coldOpen, zoom, poll, montar]);
+  }, [job, poll, montar, startPayload]);
 
   const running = busy || job?.state === "running" || job?.state === "uploading";
 
@@ -370,27 +401,29 @@ export default function Page() {
       ? Math.max(0, ((tick - startedAtMs) / 1000 / measured) * (100 - measured))
       : null;
   const eta = etaFromMeasurement ?? (running ? (job?.etaSeconds ?? null) : null);
-  const etaRatio = etaFromMeasurement ?? job?.etaSeconds ?? null;
-  const spread = etaRatio !== null && elapsed !== null && elapsed > 0 ? etaRatio / (etaRatio + elapsed) : 0.5;
 
   const ranking = job?.artifacts.find((artifact) => artifact.path === "ranking.mp4");
   const cover = job?.artifacts.find((artifact) => artifact.path === "cover.jpg");
   const fileUrl = (path: string) => `/api/jobs/${job?.id}/files?path=${encodeURIComponent(path)}`;
 
-  // Móvil con la vista previa dentro: en vivo (instantánea) o el render exacto del motor.
+  // Móvil con el **render exacto** dentro: es el motor el que dibuja el overlay sobre
+  // negro, así que lo que se ve es lo que saldrá en el vídeo. No hay vista «en vivo»:
+  // la réplica del navegador no cuadraba con el render y mentía.
   const previewPanel = (
     <>
       <Phone>
-        {previewMode === "render" && renderUrl ? (
+        {renderUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             className="phone-screen"
             src={renderUrl}
             alt="Render exacto del overlay sobre fondo negro"
-            onError={() => setPreviewFailed(true)}
+            onLoad={() => setRendering(false)}
+            onError={() => {
+              setRendering(false);
+              setPreviewFailed(true);
+            }}
           />
-        ) : style ? (
-          <LivePreview style={style} title={title} labels={labelMap} settings={settingsMap} />
         ) : (
           <div className="phone-screen empty">Preparando…</div>
         )}
@@ -400,18 +433,11 @@ export default function Page() {
           No se pudo dibujar el render exacto del motor.
         </div>
       ) : null}
-      <div className="preview-switch">
-        <button
-          type="button"
-          className={previewMode === "live" ? "primary" : "secondary"}
-          onClick={() => setPreviewMode("live")}
-        >
-          En vivo
-        </button>
-        <button type="button" className={previewMode === "render" ? "primary" : "secondary"} onClick={pedirRender} disabled={!style}>
-          Render exacto
-        </button>
-      </div>
+      <p className="hint center">
+        Lo dibuja el motor, así que <strong>los cambios tardan unos segundos</strong> en verse: se pide solo cuando
+        dejas de mover los controles.
+      </p>
+      {rendering ? <p className="hint center">Dibujando el overlay…</p> : null}
     </>
   );
 
@@ -420,9 +446,9 @@ export default function Page() {
       <header className="top">
         <div className="top-row">
           <div>
-            <h1>openRanks · montar un TOP 5</h1>
+            <h1>openRanks · montar un TOP {positions}</h1>
             <p>
-              Sube cinco clips y escribe dos cosas: el título y el nombre de cada puesto. El montaje —orden, unión,
+              Sube los clips y escribe dos cosas: el título y el nombre de cada puesto. El montaje —orden, unión,
               transiciones y edición— es automático.
             </p>
           </div>
@@ -436,18 +462,39 @@ export default function Page() {
         <div>
           <section className="card">
             <h2>
-              <span className="step">1</span>Tus cinco clips
+              <span className="step">1</span>Tus {positions} clips
             </h2>
             <p className="hint">
-              El orden es el del vídeo: el <strong>#5</strong> abre y el <strong>#1</strong> cierra, que es el mejor.
-              Los clips se dan por buenos: se encajan <strong>enteros, sin recortar</strong>, a 9:16 y 30 fps, con el
-              audio normalizado.
+              El orden es el del vídeo: el <strong>#{positions}</strong> abre y el <strong>#1</strong> cierra, que es el
+              mejor. Los clips se dan por buenos: se encajan a 9:16 y 30 fps (banda central, sin recortar arriba ni
+              abajo) con el audio normalizado.
             </p>
+            <div className="options">
+              <div>
+                <label className="field" htmlFor="positions">
+                  Cuántos puestos tiene el ranking
+                </label>
+                <select
+                  id="positions"
+                  value={positions}
+                  disabled={running}
+                  onChange={(event) => cambiarPuestos(Number(event.target.value))}
+                >
+                  {POSITION_CHOICES.map((count) => (
+                    <option key={count} value={count}>
+                      {count} puestos (TOP {count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {slots.map((slot) => (
               <div className="slot" key={slot.position}>
                 <div className="rank">
                   <div className="num">#{slot.position}</div>
-                  <div className="when">{slot.position === 5 ? "abre" : slot.position === 1 ? "cierra" : ""}</div>
+                  <div className="when">
+                    {slot.position === positions ? "abre" : slot.position === 1 ? "cierra" : ""}
+                  </div>
                 </div>
                 <div className="fields">
                   <input
@@ -584,16 +631,11 @@ export default function Page() {
 
         <div>
           <section className="card">
-            <h2>Vista previa de la plantilla</h2>
+            <h2>Render exacto de la plantilla</h2>
             <p className="hint">
-              El motor dibuja el texto sobre <strong>fondo negro</strong> antes de montar: es exactamente el overlay
-              que llevará el vídeo.
+              El motor dibuja el texto sobre <strong>fondo negro</strong> antes de montar: es el overlay que llevará el
+              vídeo, con sus tipografías y sus medidas, no una imitación del navegador.
             </p>
-            {previewFailed ? (
-              <div className="alert error" role="alert">
-                No se pudo dibujar la vista previa.
-              </div>
-            ) : null}
             {previewPanel}
             <div className="actions">
               <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
@@ -694,8 +736,9 @@ export default function Page() {
           <section className="card">
             <h2>Plantilla de la edición</h2>
             <p className="hint">
-              Así está configurado el texto que va sobre el vídeo. Puedes ajustar el tamaño, la posición y la fuente
-              en el menú lateral, con la vista previa sobre negro; se guarda la <strong>última plantilla</strong>.
+              Así está configurado el texto que va sobre el vídeo. Puedes ajustar el tamaño, la posición, la fuente y
+              la cursiva en el menú lateral, con el render exacto sobre negro; se guarda la{" "}
+              <strong>última plantilla</strong>.
             </p>
             <div className="actions">
               <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
@@ -764,7 +807,19 @@ export default function Page() {
                           </option>
                         ))}
                       </select>
+                      {preset?.fontNotes?.[style.font] ? (
+                        <p className="hint">{preset.fontNotes[style.font]}</p>
+                      ) : null}
                     </div>
+
+                    <label className="control switch">
+                      <input
+                        type="checkbox"
+                        checked={style.italic}
+                        onChange={(event) => patchStyle({ italic: event.target.checked })}
+                      />
+                      Letras cursivas (itálica)
+                    </label>
 
                     <RangeControl
                       id="title-size"
@@ -825,7 +880,9 @@ export default function Page() {
                     </div>
                     {savedFlash ? <p className="hint ok">Plantilla guardada. El próximo montaje la usará.</p> : null}
                     {dirty ? (
-                      <p className="hint">La vista previa ya muestra los cambios; guarda para que el montaje los use.</p>
+                      <p className="hint">
+                        El render ya muestra los cambios; guarda para que el próximo montaje los use.
+                      </p>
                     ) : null}
                     {styleError ? (
                       <div className="alert error" role="alert">
@@ -844,7 +901,10 @@ export default function Page() {
 
               <div className="drawer-stage">
                 {previewPanel}
-                <p className="hint center">Se actualiza al instante; «Render exacto» pide el overlay al motor.</p>
+                <p className="hint center">
+                  La plantilla se dibuja con el motor, así que los cambios tardan unos segundos: se pide solo al
+                  terminar de mover un control.
+                </p>
               </div>
             </div>
           </aside>
@@ -861,185 +921,26 @@ export default function Page() {
 
 /** Clave estable para comparar si la plantilla en pantalla difiere de la guardada. */
 function styleKey(value: EditablePreset): string {
-  const { font, title, rank_ladder } = value;
-  return [font, title.size, title.background, rank_ladder.size, rank_ladder.x, rank_ladder.y_top, rank_ladder.y_bottom].join("|");
+  const { font, italic, title, rank_ladder } = value;
+  return [
+    font,
+    italic,
+    title.size,
+    title.background,
+    rank_ladder.size,
+    rank_ladder.x,
+    rank_ladder.y_top,
+    rank_ladder.y_bottom,
+  ].join("|");
 }
 
-/** Móvil: el marco es decorativo, dentro va la vista previa (en vivo o el render). */
+/** Móvil: el marco es decorativo, dentro va el render exacto del motor. */
 function Phone({ children }: { children: ReactNode }) {
   return (
     <div className="phone">
       <span className="phone-notch" aria-hidden="true" />
       <div className="phone-stage">{children}</div>
     </div>
-  );
-}
-
-function settingNumber(settings: Record<string, unknown>, key: string, fallback: number): number {
-  const value = settings[key];
-  return typeof value === "number" ? value : fallback;
-}
-
-function settingString(settings: Record<string, unknown>, key: string, fallback: string): string {
-  const value = settings[key];
-  return typeof value === "string" ? value : fallback;
-}
-
-/**
- * La plantilla dibujada **en vivo** en el navegador.
- *
- * Todos los números (tamaños, posiciones, colores, medallas) vienen del propio motor —
- * los editables del panel y el resto del listado de `/api/preset` — y se pintan sobre
- * un lienzo de 1080x1920, así que un deslizador se ve al instante. La única fórmula
- * replicada es la de `badge_y()` (`openranks/core/specs.py`).
- */
-function LivePreview({
-  style,
-  title,
-  labels,
-  settings,
-}: {
-  style: EditablePreset;
-  title: string;
-  labels: Record<string, string>;
-  settings: Record<string, unknown>;
-}) {
-  const titleRef = useRef<SVGTextElement | null>(null);
-  const [titleWidth, setTitleWidth] = useState(0);
-
-  const ladder = style.rank_ladder;
-  const slots = settingNumber(settings, "rank_ladder.slots", 5);
-  const dx = settingNumber(settings, "clip_label.dx", 132);
-  const titleY = settingNumber(settings, "title.y", 168);
-  const titleStroke = settingNumber(settings, "title.stroke_px", 9);
-  const bgPad = settingNumber(settings, "title.bg_pad", 26);
-  const badgeStroke = settingNumber(settings, "rank_ladder.stroke_px", 10);
-  const labelSize = settingNumber(settings, "clip_label.size", 64);
-  const labelStroke = settingNumber(settings, "clip_label.stroke_px", 8);
-  const ctaY = settingNumber(settings, "cta.y", 1610);
-  const ctaSize = settingNumber(settings, "cta.size", 58);
-  const ctaText = settingString(settings, "cta.text", "");
-  const baseColor = settingString(settings, "title.color", "#FFFFFF");
-  const accent = settingString(settings, "title.accent", "#FFD60A");
-  const accentBlue = settingString(settings, "title.accent_blue", "#3B82F6");
-  const colours = (settings["rank_colors"] ?? {}) as Record<string, string>;
-  const medals = (settings["rank_ladder.medals"] ?? {}) as Record<string, string>;
-
-  const spans = titleSpans(title);
-  const boxed = style.title.background;
-
-  // El ancho real del texto mide la caja negra del título (igual que hace libass).
-  useLayoutEffect(() => {
-    setTitleWidth(titleRef.current?.getBBox().width ?? 0);
-  }, [title, style.title.size, style.font, boxed]);
-
-  // Igual que `badge_y()`: #5 abajo, #1 arriba.
-  const badgeY = (position: number): number => {
-    if (slots <= 1) return ladder.y_bottom;
-    const index = slots - position;
-    return ladder.y_bottom - (ladder.y_bottom - ladder.y_top) * (index / (slots - 1));
-  };
-
-  return (
-    <svg
-      className="phone-screen"
-      viewBox="0 0 1080 1920"
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
-      aria-label="Vista previa de la plantilla sobre fondo negro"
-    >
-      <rect x="0" y="0" width="1080" height="1920" fill="#000000" />
-
-      {boxed && titleWidth > 0 ? (
-        <rect
-          x={540 - titleWidth / 2 - bgPad}
-          y={titleY - (style.title.size * 1.4) / 2}
-          width={titleWidth + bgPad * 2}
-          height={style.title.size * 1.4}
-          fill="#000000"
-        />
-      ) : null}
-
-      <text
-        ref={titleRef}
-        x={540}
-        y={titleY}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontFamily={style.font}
-        fontWeight={800}
-        fontSize={style.title.size}
-        fill={baseColor}
-        stroke="#000000"
-        strokeWidth={titleStroke}
-        strokeLinejoin="round"
-        paintOrder="stroke"
-      >
-        {spans.map((span, index) => (
-          <tspan
-            key={index}
-            fill={span.color === "yellow" ? accent : span.color === "blue" ? accentBlue : baseColor}
-            fontSize={span.scale === 1 ? undefined : style.title.size * span.scale}
-          >
-            {span.text}
-          </tspan>
-        ))}
-      </text>
-
-      {LIMITS.positions.map((position) => (
-        <Fragment key={position}>
-          <text
-            x={ladder.x}
-            y={badgeY(position)}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontFamily={style.font}
-            fontWeight={800}
-            fontSize={ladder.size}
-            fill={colours[String(position)] ?? "#3B82F6"}
-            stroke="#000000"
-            strokeWidth={badgeStroke}
-            strokeLinejoin="round"
-            paintOrder="stroke"
-          >
-            {medals[String(position)] ?? String(position)}
-          </text>
-          <text
-            x={ladder.x + dx}
-            y={badgeY(position)}
-            textAnchor="start"
-            dominantBaseline="central"
-            fontFamily={style.font}
-            fontWeight={700}
-            fontSize={labelSize}
-            fill="#FFFFFF"
-            stroke="#000000"
-            strokeWidth={labelStroke}
-            strokeLinejoin="round"
-            paintOrder="stroke"
-          >
-            {labels[String(position)] ?? ""}
-          </text>
-        </Fragment>
-      ))}
-
-      <text
-        x={540}
-        y={ctaY}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontFamily={style.font}
-        fontWeight={700}
-        fontSize={ctaSize}
-        fill="#FFFFFF"
-        stroke="#000000"
-        strokeWidth={7}
-        strokeLinejoin="round"
-        paintOrder="stroke"
-      >
-        {ctaText}
-      </text>
-    </svg>
   );
 }
 
@@ -1094,7 +995,9 @@ function formatSetting(value: unknown): string {
 /** Reúne los problemas del formulario con el mismo límite que valida el motor (§9.5). */
 function problemList(slots: Slot[], title: string): string[] {
   const list: string[] = [];
-  if (!slots.every((slot) => slot.file)) list.push("Sube los cinco clips.");
+  const pending = slots.filter((slot) => !slot.file);
+  if (pending.length === 1) list.push(`Falta el clip del puesto ${pending[0].position}.`);
+  else if (pending.length > 1) list.push(`Faltan ${pending.length} clips: puestos ${pending.map((slot) => slot.position).join(", ")}.`);
   list.push(...titleErrors(title));
   for (const slot of slots) list.push(...labelErrors(slot.position, slot.label));
   return list;

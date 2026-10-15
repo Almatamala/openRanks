@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isSafeId, patchStatus, readStatus } from "@/lib/jobs";
-import { LIMITS, labelErrors, titleErrors } from "@/lib/limits";
+import { clampPositions, labelErrors, positionsFor, titleErrors } from "@/lib/limits";
 import { JobError, isRunning, startJob } from "@/lib/pipeline";
 
 export const runtime = "nodejs";
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 interface StartBody {
   title?: unknown;
   labels?: unknown;
+  positions?: unknown;
   transitionSeconds?: unknown;
   transition?: unknown;
   coldOpenSeconds?: unknown;
@@ -40,10 +41,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
+  const positions = clampPositions(body.positions);
   const rawLabels = (body.labels ?? {}) as Record<string, unknown>;
   const labels: Record<string, string> = {};
   const problems = [...titleErrors(title)];
-  for (const position of LIMITS.positions) {
+  for (const position of positionsFor(positions)) {
     const label = typeof rawLabels[String(position)] === "string" ? String(rawLabels[String(position)]).trim() : "";
     labels[String(position)] = label;
     problems.push(...labelErrors(position, label));
@@ -56,6 +58,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const started = await startJob(id, {
       title,
       labels,
+      positions,
       transitionSeconds: Math.max(0, Math.min(1.5, toNumber(body.transitionSeconds, 0))),
       transition: typeof body.transition === "string" ? body.transition : "slideup",
       coldOpenSeconds: Math.max(0, Math.min(5, toNumber(body.coldOpenSeconds, 0))),

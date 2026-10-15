@@ -7,13 +7,14 @@ plantilla (L2)** y el **panel de operación** que los encadena
 
 ## Qué entrega cada capa
 
-**L1 — ensamblador.** A partir de **5 clips ya listos** (los aporta el operador, sin
-recortes pendientes):
+**L1 — ensamblador.** A partir de los **clips ya listos** (los aporta el operador, sin
+recortes pendientes). El formato va del **TOP 5 al TOP 10**: se montan 5, 6… hasta 10
+puestos.
 
 | Artefacto | Qué es |
 | --- | --- |
-| `clips/05-<nombre>.mp4` … `clips/01-<nombre>.mp4` | Los 5 clips normalizados y descargables, numerados por **posición del ranking** |
-| `union.mp4` | Los 5 en **un solo vídeo vertical**, en orden de reproducción `#5 → #1` |
+| `clips/05-<nombre>.mp4` … `clips/01-<nombre>.mp4` | Un clip normalizado y descargable por puesto, numerado por **posición del ranking** |
+| `union.mp4` | Todos en **un solo vídeo vertical**, en orden de reproducción `#5 → #1` |
 | `manifest.json` | Fuentes, hashes, plan, formato, loudness medida y versiones |
 
 Formato de salida: **1080x1920, 30 fps, yuv420p, audio a −14 LUFS (pico −1 dBTP)**,
@@ -34,14 +35,18 @@ hasta los 1080x1920 completos si es 9:16.
 | `spec.json` | Las props exactas del render, reproducibles |
 
 Lo que dibuja: **título** con el número en su propio color y a mayor tamaño, y
-**palabras en otro color** a elección (`*amarillo*` / `_azul_` en el propio texto); la
-**escalera de rangos** (`5` abajo → `1` arriba, con **🥇🥈🥉** en el podio y
-oro/plata/bronce por color, **completa desde el primer fotograma**: la casilla de turno
+**palabras en otro color** a elección (`*amarillo*` / `_azul_` en el propio texto). El
+título **se ajusta al hueco que tiene**: si no cabe en un renglón **se reparte en
+varios** (hasta tres) y, si aun así no entra, baja de tamaño, de modo que nunca se sale
+del marco ni pisa la escalera (§9.1). La **escalera de rangos** (último abajo → `1`
+arriba, con **🥇🥈🥉** en el podio y oro/plata/bronce por color; **del 4 en adelante el
+número va en blanco**) está **completa desde el primer fotograma**: la casilla de turno
 está **nítida** y el resto **atenuadas y difuminadas**, tanto las que aún no han llegado
-como las que ya pasaron); el **rótulo de cada puesto**, colocado **al lado de su propia
-casilla**, que **entra con su clip y se queda hasta el final** —los textos se acumulan,
-no se sustituyen—; el
-**CTA** de cierre y, opcionalmente, el **zoom de entrada del primer clip**. Las
+como las que ya pasaron. El **rótulo de cada puesto** va **al lado de su propia
+casilla**, **entra con su clip y se queda hasta el final** —los textos se acumulan, no
+se sustituyen—, y **en cuanto su puesto cede el turno se atenúa y se difumina igual que
+su casilla**: solo el del puesto actual queda nítido. Cierra el
+**CTA** y, opcionalmente, el **zoom de entrada del primer clip**. Las
 transiciones las pone L1 (corte seco,
 *pull-in* ≈ `xfade slideup`, fundido…), y su solape **se descuenta** de la duración
 total (§18 B4).
@@ -56,8 +61,9 @@ overlay** —`openranks render`— sin volver a montar el vídeo.
 
 ## El panel
 
-`web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los 5
-clips, escribir el título y los nombres de los puestos, elegir el tipo de corte,
+`web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los clips
+(de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título y los nombres
+de los puestos, elegir el tipo de corte,
 lanzar el montaje y **ver el resultado en el panel** (9:16 *inline*, portada y
 descargas). Muestra la fase en lenguaje humano («Preparando el clip #4 (2 de 5)»,
 «Uniendo los cinco clips en vertical»), valida el texto antes de gastar un montaje y
@@ -71,18 +77,18 @@ si el tramo actual está costando más de lo previsto, la estimación se estira 
 **Plantilla de la edición.** El panel enseña, valor por valor, cómo está configurado el
 texto sobre el vídeo **y en qué archivo del motor se cambia** (ver «Cómo se ajusta la
 plantilla» más abajo), con un **selector de color por palabra** para el título (blanco →
-amarillo → azul) y una **vista previa sobre fondo negro** que se actualiza **en vivo** mientras
-ajustas, más un «Render exacto» que pinta el overlay con el motor antes de gastar un
-montaje.
+amarillo → azul).
 
 **Menú lateral de la plantilla.** «Ajustar la plantilla» (o el botón **Plantilla** de la
 cabecera) abre un menú lateral con la plantilla como **pantalla de móvil** en el centro y
 los controles al lado: tamaño y posición de la sección de top, tamaño del título y su
-**fondo negro**, y **fuente**. La vista previa es **en vivo**: se redibuja en el navegador
-con los mismos números del motor, así que al arrastrar un deslizador el cambio se ve al
-instante. El botón **Render exacto** pide además el overlay a FFmpeg sobre fondo negro
-(esa es la comprobación fiel). **Guardar plantilla** fija la última (el montaje pasa a
-usarla).
+**fondo negro**, **fuente** (con la sans-serif **geométrica**) y **cursiva**. La vista
+previa es el **render exacto del motor** —FFmpeg dibuja el overlay sobre fondo negro con
+tu script ASS— así que **no puede mentir**; a cambio, **los cambios tardan unos segundos
+en verse**: el panel vuelve a pedirlo solo cuando dejas de mover los controles. No hay
+vista «en vivo» del navegador: la imitación no cuadraba con el render (fuentes, trazos,
+medallas) y engañaba más que ayudaba. **Guardar plantilla** fija la última (el montaje
+pasa a usarla).
 
 ```bash
 npm run dev            # desde la raíz del repo; también vale `cd web && npm run dev`
@@ -128,8 +134,10 @@ docker compose logs -f panel
 docker compose down               # los trabajos quedan en el volumen `jobs`
 ```
 
-La imagen es `node:22-bookworm-slim` con `python3`, `ffmpeg` y `fonts-dejavu-core`
-instalados, así que **no hace falta nada en el host**. `web/Dockerfile` hace el build
+La imagen es `node:22-bookworm-slim` con `python3`, `ffmpeg` y las fuentes del overlay
+(`fonts-dejavu-core`, `fonts-liberation`, `fonts-symbola` para las medallas y
+`fonts-urw-base35`, que trae la sans-serif **geométrica** `URW Gothic` con su cursiva),
+así que **no hace falta nada en el host**. `web/Dockerfile` hace el build
 del panel y el `pip install -e .` del motor; `docker-compose.yml` define el servicio y
 el volumen. Los binarios de FFmpeg de npm se borran en la misma capa: dentro del
 contenedor manda el `ffmpeg` de apt (primero en el orden de resolución) y así la imagen
@@ -163,12 +171,15 @@ O en el panel, en la tarjeta **«Plantilla de la edición»**. Dónde vive cada 
 | Qué quieres tocar | Archivo | Clave |
 | --- | --- | --- |
 | Tipografía | `openranks/core/overlay.py` | `DEFAULT_STYLE["font"]` (o `OPENRANKS_FONT`) |
+| Familias que ofrece el panel (con la **geométrica**) | `openranks/core/overlay.py` + `web/lib/preset.ts` | `FONT_FAMILIES` / `GEOMETRIC_FONT` (`URW Gothic`) |
+| Cursiva (itálica) de todo el texto | `openranks/core/overlay.py` | `DEFAULT_STYLE["italic"]` |
 | Título: altura, tamaño, colores, contorno | `openranks/core/overlay.py` | `DEFAULT_STYLE["title"]` |
+| Cómo se reparte el título (renglones y tamaño mínimo) | `openranks/core/specs.py` | `fit_title()`, `TITLE_SIDE_MARGIN`, `SAFE_TOP` |
 | Palabras en amarillo / azul | `openranks/core/overlay.py` + `openranks/core/specs.py` | `DEFAULT_STYLE["title"]["accent"]` / `["accent_blue"]`, `title_layers()` |
 | Escalera: posición, alturas, tamaño, contorno | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]` |
 | Medallas del podio (🥇🥈🥉) | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]["medals"]` |
 | Casilla activa nítida / resto difuminadas | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]["dim_alpha"]` / `["dim_blur"]` |
-| Rótulo de cada puesto (va al lado de su casilla) | `openranks/core/overlay.py` | `DEFAULT_STYLE["clip_label"]` |
+| Rótulo de cada puesto (va al lado de su casilla y se atenúa al acabar su turno) | `openranks/core/overlay.py` | `DEFAULT_STYLE["clip_label"]` |
 | CTA de cierre | `openranks/core/overlay.py` | `DEFAULT_STYLE["cta"]` |
 | Color por puesto (oro/plata/bronce) | `openranks/core/specs.py` | `RANK_COLORS` |
 | Con qué anima (fundidos, entrada de badges) | `openranks/core/overlay.py` | `build_ass()` |
@@ -176,8 +187,8 @@ O en el panel, en la tarjeta **«Plantilla de la edición»**. Dónde vive cada 
 
 ### Ajustes editables y guardados
 
-En el panel, el botón **«Ajustar la plantilla»** (o «Ajustar la plantilla» sobre la
-vista previa) abre un **menú lateral** con la plantilla como **pantalla de móvil** en el
+En el panel, el botón **«Ajustar la plantilla»** (o el botón **Plantilla** de la
+cabecera) abre un **menú lateral** con la plantilla como **pantalla de móvil** en el
 centro. Ahí se cambia:
 
 | Qué | Clave del preset |
@@ -187,13 +198,18 @@ centro. Ahí se cambia:
 | Altura del `#1` y del `#5` (recorrido de la escalera) | `rank_ladder.y_top` / `y_bottom` |
 | Tamaño de las letras del título | `title.size` |
 | Fondo negro detrás del título | `title.background` |
-| Fuente de la letra | `font` |
+| Fuente de la letra (incluida la sans-serif **geométrica**) | `font` |
+| Letras **cursivas** | `italic` |
+
+El **número de puestos** no vive en la plantilla: se elige por vídeo en el panel (de 5
+a 10) y la escalera se reparte sola entre las alturas guardadas.
 
 El botón **Guardar plantilla** escribe un único preset (se conserva el último) en
 `web/.jobs/preset.json`; el panel se lo pasa al motor por **`OPENRANKS_PRESET_FILE`**, así
-que el montaje usa exactamente lo que enseña la vista previa. **Restablecer** vuelve a
-los valores de fábrica. Solo se aceptan las claves de la tabla (`EDITABLE_SECTIONS`):
-un archivo manipulado no puede colar otros ajustes.
+que el montaje usa exactamente lo que enseña el render de la plantilla. **Restablecer**
+vuelve a los valores de fábrica. Solo se aceptan las claves de la tabla
+(`EDITABLE_SECTIONS` más `font` e `italic`): un archivo manipulado no puede colar otros
+ajustes.
 
 Coordenadas sobre un lienzo de **1080x1920** (la zona segura está en §9.1 del plan).
 Después de tocar algo: `python -m pytest -q` y, para verlo, `openranks preview` (dibuja
@@ -210,6 +226,13 @@ python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --label 
 tiene una fuente con emoji (la imagen de Docker instala `fonts-noto-color-emoji`), la
 casilla puede salir en blanco. Para volver a los números basta con dejar
 `rank_ladder.medals` vacío (`{}`) en el preset.
+
+> **Fuentes.** libass resuelve la tipografía **por nombre**, así que la familia tiene que
+existir en la máquina que renderiza. La imagen de Docker trae las cinco que ofrece el
+panel, incluida la **geométrica** (`URW Gothic`); en un host sin ella (Windows no la
+trae), elegirla cae en la sans-serif por defecto. Si quieres una tipografía propia
+(por ejemplo Jost, Poppins o Futura), es un archivo: el plan (§9.2) ya reserva
+`assets/fonts/` para eso.
 
 ## Instalación (motor)
 
@@ -238,6 +261,7 @@ El código resuelve los binarios en este orden: argumento explícito (`--ffmpeg`
 ```bash
 # 1) Clips de prueba (5 sintéticos de 7 s + binding) para probar sin material propio
 python scripts/make_test_clips.py --out demo
+python scripts/make_test_clips.py --out demo10 --positions 10 --seconds 5
 
 # 2) Ensamblado (L1) y, con --edit, la edición (L2) en la misma pasada
 python -m openranks assemble --input demo/binding.json --out demo/render --edit --transition-seconds 0.35
@@ -277,6 +301,8 @@ texto no cabe, falla el *input*, nunca el render.
 | Flag | Para qué |
 | --- | --- |
 | `--edit` | Encadena L2: añade `ranking.mp4` + `cover.jpg` + `spec.json` |
+| `--items 7` | Puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo) |
+| `--italic` / `--no-italic` | Letras cursivas en el overlay (`openranks render` y `openranks preview`) |
 | `--zoom 0.08` | Zoom de entrada del primer clip (8 %) |
 | `--fit band\|contain\|cover` | `band` (defecto) **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**: un clip apaisado se ve grande y centrado, con negro arriba y abajo. `contain` lo encaja entero sin recortar (y se ve pequeño si es panorámico); `cover` recorta para llenar los 1080x1920 |
 | `--transition-seconds 0.35` | Solape con transición animada (recodifica). `0` = corte seco, unión **por copia de streams** |
@@ -297,8 +323,10 @@ python -m pytest -q
   `test_media.py`, `test_manifest.py`, `test_config.py`, `test_specs.py`,
   `test_overlay_args.py`, `test_progress.py`, `test_preset.py`): sin FFmpeg, sin red.
   Cubre el orden `#5 → #1`, la duración real **descontando el solape** (§18 B4), el
-  cold open, los límites de texto, las ventanas de cada badge/rótulo, el script ASS,
-  los `argv` de FFmpeg, la monotonía del porcentaje y el listado del preset.
+  cold open, los límites de texto, los rankings de 5 a 10 puestos, el encaje del título
+  (renglones y tamaño), las ventanas de cada badge/rótulo (nítido y atenuado), el color
+  de cada puesto, la cursiva, el script ASS, los `argv` de FFmpeg, la monotonía del
+  porcentaje y el listado del preset.
 - **Integración** (`test_assemble_e2e.py`, `test_overlay_e2e.py`, marcados
   `integration`): FFmpeg de verdad sobre clips sintéticos. Comprueba el criterio de
   salida de L1 y, en L2, que `ranking.mp4` es 1080x1920/30 fps/yuv420p con audio, que
@@ -307,8 +335,9 @@ python -m pytest -q
   comprobada con los **dos** FFmpeg que puede usar el panel: el 8.0.1 del venv y el
   6.1.1 que trae npm (20/20 en ambos).
 
-CI (`.github/workflows/ci.yml`) instala FFmpeg y `fonts-dejavu-core`, corre la suite
-completa y compila el panel (`npm ci` + `typecheck` + `build`).
+CI (`.github/workflows/ci.yml`) instala FFmpeg y las fuentes del overlay
+(`fonts-dejavu-core`, `fonts-urw-base35`), corre la suite completa y compila el panel
+(`npm ci` + `typecheck` + `build`).
 
 ### Resultados medidos (clips sintéticos, 1080x1920)
 
@@ -364,8 +393,9 @@ tests/           # núcleo puro + integración real
 
 ## Estado y siguientes pasos
 
-- **L1 y L2 están hechas** (prioridades 1 y 2: 5 clips listos + su unión, y la edición
-  del estándar encima), y el **panel** (RF-9) cubre el flujo de esas dos capas.
+- **L1 y L2 están hechas** (prioridades 1 y 2: los clips listos de un ranking de 5 a 10
+  + su unión, y la edición del estándar encima), y el **panel** (RF-9) cubre el flujo de
+  esas dos capas.
 - El panel **no necesita el venv**: `npm run dev` desde la raíz resuelve un Python
   3.11+ cualquiera y el FFmpeg estático de npm. Si algún día sobran los procesos
   hijos, las alternativas son Docker (una imagen con motor + FFmpeg) o portar el

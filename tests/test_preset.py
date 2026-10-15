@@ -7,12 +7,18 @@ que leer el código a ciegas.
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 
 from openranks.core.overlay import (
     DEFAULT_STYLE,
     EDITABLE_SECTIONS,
+    EDITABLE_TOP_LEVEL,
+    FONT_FAMILIES,
+    FONT_NOTES,
+    GEOMETRIC_FONT,
     STYLE_SOURCES,
     describe_style,
     get_style,
@@ -63,6 +69,39 @@ def test_the_listing_reports_the_font_the_render_will_actually_use(monkeypatch):
 
 def test_a_preset_without_the_theme_falls_back_to_the_default_style():
     assert get_style().get("theme") == DEFAULT_STYLE["theme"]
+
+
+def test_the_geometric_sans_is_offered_with_its_own_note():
+    """La letra sans-serif geométrica tiene que estar en el listado y decir qué es."""
+    rows = {row["key"]: row["value"] for row in describe_style()}
+    assert rows["font.geometrica"] == GEOMETRIC_FONT
+    assert GEOMETRIC_FONT in FONT_FAMILIES
+    assert FONT_NOTES[GEOMETRIC_FONT]
+    assert "geom" in FONT_NOTES[GEOMETRIC_FONT].lower()
+
+
+def test_the_panel_offers_exactly_the_fonts_the_engine_knows():
+    """Regresión: la lista del panel (`web/lib/preset.ts`) no puede quedarse atrás.
+
+    El motor resuelve la fuente por nombre y el panel solo deja guardar familias de su
+    lista blanca: si divergen, el panel ofrecería una fuente que luego se rechaza.
+    """
+    source = (Path(__file__).resolve().parents[1] / "web" / "lib" / "preset.ts").read_text(encoding="utf-8")
+    line = next(entry for entry in source.splitlines() if entry.startswith("export const FONT_CHOICES"))
+    families = tuple(re.findall(r'"([^"]+)"', line))
+    assert families == FONT_FAMILIES
+
+
+def test_the_italic_switch_is_listed_and_can_be_saved(tmp_path, monkeypatch):
+    rows = {row["key"]: row["value"] for row in describe_style()}
+    assert rows["italic"] is False
+    assert "italic" in EDITABLE_TOP_LEVEL
+
+    monkeypatch.setenv("OPENRANKS_PRESET_FILE", _write_preset(tmp_path, {"italic": True}))
+    assert get_style()["italic"] is True
+    # Un valor que no sea booleano no cuela.
+    monkeypatch.setenv("OPENRANKS_PRESET_FILE", _write_preset(tmp_path, {"italic": "sí"}))
+    assert get_style()["italic"] is False
 
 
 @pytest.mark.parametrize(

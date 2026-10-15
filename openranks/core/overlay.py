@@ -27,11 +27,28 @@ from pathlib import Path
 from .config import Config
 from .specs import RANK_COLORS
 
+# Familias que el panel ofrece y que la imagen de Docker trae instaladas. La de fábrica
+# es `Arial` (font por defecto del preset); en el contenedor manda `OPENRANKS_FONT`. La
+# **sans-serif geométrica** es `URW Gothic` (§9.2): trazos circulares tipo Avant Garde,
+# con su propia cursiva (`Book Oblique` / `Demi Oblique`).
+GEOMETRIC_FONT = "URW Gothic"
+FONT_FAMILIES: tuple[str, ...] = ("DejaVu Sans", "Liberation Sans", "DejaVu Serif", GEOMETRIC_FONT, "Symbola")
+FONT_NOTES: dict[str, str] = {
+    "DejaVu Sans": "Grotesca; la fuente con la que renderiza el contenedor.",
+    "Liberation Sans": "Grotesca, clon de Arial: la más parecida a Windows.",
+    "DejaVu Serif": "Con serifas: más editorial.",
+    GEOMETRIC_FONT: "Sans-serif **geométrica** (círculos, tipo Avant Garde) y con cursiva propia.",
+    "Symbola": "Símbolos y emoji monocromos (las medallas del podio).",
+}
+
 # Preset bloqueado (§9.2). El estilo NO es editable por vídeo (ADR-8): solo cambia
 # el texto. Las coordenadas están en el lienzo de 1080x1920.
 DEFAULT_STYLE: dict = {
     "theme": "top5-default",
     "font": "Arial",
+    # Cursiva (itálica) en todo el texto del overlay. Las familias que no traen itálica
+    # de verdad (Symbola, con las medallas) se quedan como están: es cosa de la fuente.
+    "italic": False,
     "palette": {
         "badge_text": "#FFFFFF",
         "stroke": "#000000",
@@ -54,6 +71,8 @@ DEFAULT_STYLE: dict = {
         "x": 176,
         "y_top": 392,
         "y_bottom": 1496,
+        # Casillas que caben en el recorrido de la escalera. Es solo el valor de
+        # referencia: el render usa los puestos reales del ranking (de 5 a 10).
         "slots": 5,
         "orientation": "5_bottom",
         "variant": "ladder",
@@ -89,6 +108,9 @@ EDITABLE_SECTIONS: dict[str, tuple[str, ...]] = {
     "rank_ladder": ("size", "x", "y_top", "y_bottom"),
 }
 
+# Claves de primer nivel que el panel puede cambiar y guardar (la fuente y la cursiva).
+EDITABLE_TOP_LEVEL: tuple[str, ...] = ("font", "italic")
+
 
 # Dónde se toca cada grupo del preset. El operador pregunta "¿dónde ajusto esto?":
 # la respuesta tiene que estar en el propio listado, no en la cabeza de nadie.
@@ -115,6 +137,24 @@ def describe_style(style: dict | None = None) -> list[dict]:
     cta = current["cta"]
     rows: list[tuple[str, str, object, str]] = [
         ("Fuente", "font", current["font"], "Tipografía del overlay; libass la busca **por nombre** (Arial, DejaVu Sans…)."),
+        (
+            "Fuente",
+            "italic",
+            current.get("italic", False),
+            "Cursiva (itálica) en todo el texto del overlay. Cada familia trae la suya; una que no la tenga se queda recta.",
+        ),
+        (
+            "Fuente",
+            "font.opciones",
+            " · ".join(FONT_FAMILIES),
+            "Familias que ofrece el panel, con la nota de cada una en el menú de la plantilla.",
+        ),
+        (
+            "Fuente",
+            "font.geometrica",
+            GEOMETRIC_FONT,
+            "Sans-serif **geométrica** (círculos y trazos uniformes, tipo Avant Garde), con cursiva propia.",
+        ),
         ("Título", "title.y", title["y"], "Altura del título (píxeles desde arriba, lienzo 1080x1920)."),
         ("Título", "title.size", title["size"], "Tamaño del título, en píxeles de alto."),
         ("Título", "title.color", title["color"], "Color del texto del título."),
@@ -131,7 +171,7 @@ def describe_style(style: dict | None = None) -> list[dict]:
         ("Escalera", "rank_ladder.size", ladder["size"], "Tamaño de los números de posición."),
         ("Escalera", "rank_ladder.stroke_px", ladder["stroke_px"], "Grosor del contorno de los números."),
         ("Escalera", "rank_ladder.fade_ms", ladder["fade_ms"], "Fundido de entrada de los números (la escalera ya está puesta desde el fotograma 0)."),
-        ("Escalera", "rank_ladder.variant", ladder["variant"], "`ladder` = cinco casillas fijas; `single_badge` = un badge que cambia (§9.2)."),
+        ("Escalera", "rank_ladder.variant", ladder["variant"], "`ladder` = una casilla fija por puesto; `single_badge` = un badge que cambia (§9.2)."),
         ("Escalera", "rank_ladder.medals", ladder["medals"], "Glifo de cada casilla del podio (🥇🥈🥉); vacío = solo el número."),
         ("Escalera", "rank_ladder.medal_font", ladder["medal_font"], "Fuente del glifo de medalla; debe ser monocroma (la de color sale como caja vacía)."),
         ("Escalera", "rank_ladder.dim_alpha", ladder["dim_alpha"], "Transparencia (0-255) de las casillas que no están en su turno (antes y después)."),
@@ -140,7 +180,12 @@ def describe_style(style: dict | None = None) -> list[dict]:
         ("Rótulo", "clip_label.size", label["size"], "Tamaño del rótulo de cada puesto, en píxeles de alto."),
         ("Rótulo", "clip_label.color", label["color"], "Color del texto del rótulo de cada puesto."),
         ("Rótulo", "clip_label.stroke_px", label["stroke_px"], "Grosor del contorno del rótulo."),
-        ("Rótulo", "clip_label.fade_ms", label["fade_ms"], "Fundido de entrada del rótulo, que luego se queda hasta el final."),
+        (
+            "Rótulo",
+            "clip_label.fade_ms",
+            label["fade_ms"],
+            "Fundido de entrada del rótulo. Se queda hasta el final, pero al acabar el turno de su puesto se atenúa y se difumina igual que su casilla.",
+        ),
         ("CTA", "cta.text", cta["text"], "Texto del cierre (invita a seguir la cuenta)."),
         ("CTA", "cta.y", cta["y"], "Altura del CTA, dentro de la zona segura inferior (§9.1)."),
         ("CTA", "cta.size", cta["size"], "Tamaño del texto del CTA que cierra el vídeo."),
@@ -178,6 +223,8 @@ def load_saved_preset() -> dict:
     saved: dict = {}
     if isinstance(payload.get("font"), str) and payload["font"].strip():
         saved["font"] = payload["font"]
+    if isinstance(payload.get("italic"), bool):
+        saved["italic"] = payload["italic"]
     for section, allowed in EDITABLE_SECTIONS.items():
         value = payload.get(section)
         if not isinstance(value, dict):
@@ -244,13 +291,17 @@ def _escape_text(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
-def _title_text(spec: dict, style: dict) -> str:
-    """Título en una línea con el número en su color y a mayor tamaño (§3)."""
+def _title_line(layers: list[dict], style: dict) -> str:
+    """Un renglón del título, con el número en su color y a mayor tamaño (§3).
+
+    El reparto en renglones lo decidió `fit_title` (`core/specs.py`): aquí solo se
+    pintan las palabras que van en cada uno, con sus marcas de color y escala.
+    """
     base = style["title"]["color"]
     parts: list[str] = []
-    for layer in spec["title"]["layers"]:
-        text = _escape_text(layer["text"])
-        colour = layer["color"]
+    for layer in layers:
+        text = _escape_text(str(layer["text"]))
+        colour = str(layer["color"])
         scale = int(round(float(layer.get("scale", 1.0)) * 100))
         if colour.upper() == base.upper() and scale == 100:
             parts.append(text)
@@ -259,7 +310,13 @@ def _title_text(spec: dict, style: dict) -> str:
             f"{{\\c{ass_color(colour)}\\fscx{scale}\\fscy{scale}}}{text}"
             f"{{\\c{ass_color(base)}\\fscx100\\fscy100}}"
         )
-    return "".join(parts)
+    return " ".join(parts)
+
+
+def _title_text(spec: dict, style: dict) -> str:
+    r"""Título completo: sus renglones, ya repartidos, unidos con el salto de ASS (``\N``)."""
+    lines = spec["title"].get("lines") or [spec["title"]["layers"]]
+    return "\\N".join(_title_line(line, style) for line in lines)
 
 
 def _style_line(
@@ -270,6 +327,7 @@ def _style_line(
     color: str,
     stroke: int,
     bold: bool = True,
+    italic: bool = False,
     border_style: int = 1,
 ) -> str:
     """Línea de estilo ASS.
@@ -279,7 +337,7 @@ def _style_line(
     """
     return (
         f"Style: {name},{font},{size},{ass_color(color)},{ass_color(color)},"
-        f"{ass_color('#000000')},&H00000000,{'-1' if bold else '0'},0,0,0,100,100,0,0,{border_style},"
+        f"{ass_color('#000000')},&H00000000,{'-1' if bold else '0'},{'-1' if italic else '0'},0,0,100,100,0,0,{border_style},"
         f"{stroke},0,5,40,40,40,1"
     )
 
@@ -292,7 +350,12 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     atenuados. Los rótulos entran con su clip y se acumulan hasta el final (§3, §20.1).
     """
     font = style["font"]
+    italic = bool(style.get("italic", False))
     title = style["title"]
+    # El título se dibuja con el tamaño **ya encajado** al hueco (`fit_title`), no con el
+    # que pide el preset: si no cabe, baja y se reparte en renglones.
+    title_size = int(round(float(spec["title"].get("size", title["size"]))))
+    title_anchor = spec["title"].get("anchor_y", title["y"])
     ladder = style["rank_ladder"]
     label = style["clip_label"]
     cta = style["cta"]
@@ -310,20 +373,40 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
-        _style_line("Title", font=font, size=title["size"], color=title["color"], stroke=title["stroke_px"]),
+        _style_line(
+            "Title",
+            font=font,
+            size=title_size,
+            color=title["color"],
+            stroke=title["stroke_px"],
+            italic=italic,
+        ),
         _style_line(
             "TitleBg",
             font=font,
-            size=title["size"],
+            size=title_size,
             color=title["color"],
             stroke=int(title.get("bg_pad", 26)),
+            italic=italic,
             border_style=3,
         ),
         _style_line(
-            "Badge", font=font, size=ladder["size"], color=style["palette"]["badge_text"], stroke=ladder["stroke_px"]
+            "Badge",
+            font=font,
+            size=ladder["size"],
+            color=style["palette"]["badge_text"],
+            stroke=ladder["stroke_px"],
+            italic=italic,
         ),
-        _style_line("Label", font=font, size=label["size"], color=label["color"], stroke=label["stroke_px"]),
-        _style_line("Cta", font=font, size=cta["size"], color=cta["color"], stroke=7),
+        _style_line(
+            "Label",
+            font=font,
+            size=label["size"],
+            color=label["color"],
+            stroke=label["stroke_px"],
+            italic=italic,
+        ),
+        _style_line("Cta", font=font, size=cta["size"], color=cta["color"], stroke=7, italic=italic),
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -338,11 +421,11 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     title_style = "TitleBg" if title.get("background") else "Title"
     lines.append(
         f"Dialogue: 0,{ass_time(title_start)},{ass_time(total)},{title_style},,0,0,0,,"
-        f"{{\\an5\\pos({centre_x},{title['y']})\\fad({int(title['fade_ms'] / 2)},{int(title['fade_ms'] / 2)})}}"
+        f"{{\\an5\\pos({centre_x},{float(title_anchor):g})\\fad({int(title['fade_ms'] / 2)},{int(title['fade_ms'] / 2)})}}"
         f"{_title_text(spec, style)}"
     )
 
-    # Escalera de rangos: las **cinco** casillas están puestas desde el primer fotograma.
+    # Escalera de rangos: **todas** las casillas están puestas desde el primer fotograma.
     # La que tiene el turno se ve nítida (con un pulso al activarse) y el resto se atenúa
     # y se difumina: primero las que aún no han llegado y después las que ya pasaron
     # (§3, §20.1).
@@ -380,13 +463,24 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
             )
 
     # Rótulo por clip: va **al lado** de su casilla, a la misma altura. Entra con su
-    # clip y **se queda hasta el final**: los rótulos se acumulan (§3).
+    # clip y **se queda hasta el final** (§3), pero en cuanto su puesto cede el turno se
+    # atenúa y se difumina **igual que su casilla**: solo destaca el del puesto actual.
     for item in spec["clip_labels"]:
-        lines.append(
-            f"Dialogue: 0,{ass_time(item['from_s'])},{ass_time(item['to_s'])},Label,,0,0,0,,"
-            f"{{\\an4\\pos({item['x']},{item['y']})"
-            f"\\fad({int(label['fade_ms'] / 2)},{int(label['fade_ms'] / 2)})}}{_escape_text(item['text'])}"
-        )
+        anchor = f"\\an4\\pos({item['x']},{item['y']})"
+        body = _escape_text(item["text"])
+        start = max(0.0, float(item["from_s"]))
+        active_end = min(float(item.get("active_to_s", item["to_s"])), total)
+        end = min(float(item["to_s"]), total)
+        if active_end > start:
+            lines.append(
+                f"Dialogue: 0,{ass_time(start)},{ass_time(active_end)},Label,,0,0,0,,"
+                f"{{{anchor}\\fad({int(label['fade_ms'] / 2)},{int(label['fade_ms'] / 2)})}}{body}"
+            )
+        if end > active_end:
+            lines.append(
+                f"Dialogue: 0,{ass_time(active_end)},{ass_time(end)},Label,,0,0,0,,"
+                f"{{{anchor}{dim_cmd}}}{body}"
+            )
 
     # CTA: solo en el cierre.
     item = spec["cta"]

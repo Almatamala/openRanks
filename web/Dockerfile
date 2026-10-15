@@ -7,6 +7,9 @@ FROM node:22-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Las fuentes van dentro de la imagen porque libass resuelve el overlay **por nombre**.
+# `fonts-urw-base35` trae la sans-serif **geométrica** que ofrece el panel (`URW Gothic`,
+# con su cursiva propia: `Book Oblique` / `Demi Oblique`) y Nimbus Sans.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3 \
@@ -15,6 +18,7 @@ RUN apt-get update \
       fonts-dejavu-core \
       fonts-liberation \
       fonts-symbola \
+      fonts-urw-base35 \
       curl \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*

@@ -10,4 +10,5 @@ dist/
 # Salidas del ensamblador, material de prueba y binarios locales de ffmpeg (nunca al repo)
 out/
 demo/
+demo*/
 tools/

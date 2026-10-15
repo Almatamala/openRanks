@@ -20,7 +20,7 @@ from openranks.core.overlay import (
     video_chain,
     zoom_filter,
 )
-from openranks.core.specs import build_spec
+from openranks.core.specs import TITLE_SIDE_MARGIN, build_spec, title_line_width
 
 
 def _style() -> dict:
@@ -76,9 +76,10 @@ def test_ass_script_has_one_event_per_element():
     assert script.startswith("[Script Info]")
     assert "PlayResX: 1080" in script and "PlayResY: 1920" in script
     assert "Style: Badge,Arial,132" in script
-    # 1 título + 5 tramos nítidos + 8 atenuados (las 4 casillas que aún no han llegado y
-    # las 4 ya pasadas; el 1 cierra el vídeo y no se atenúa después) + 5 rótulos + 1 CTA
-    assert script.count("\nDialogue:") == 20
+    # 1 título + 5 tramos nítidos + 8 casillas atenuadas (las 4 que aún no han llegado y
+    # las 4 ya pasadas; el 1 cierra el vídeo y no se atenúa después) + 5 rótulos nítidos
+    # + 4 rótulos atenuados + 1 CTA
+    assert script.count("\nDialogue:") == 24
 
 
 def test_ass_title_puts_the_number_in_accent_and_bigger():
@@ -120,20 +121,30 @@ def test_ass_ladder_is_complete_from_the_start_and_dims_outside_its_turn():
     assert sharp[-1].count("\\alpha") == 0
 
 
-def test_ass_labels_arrive_with_their_clip_and_stay_to_the_end():
+def test_ass_labels_arrive_with_their_clip_and_dim_when_their_turn_ends():
     script = build_ass(_spec(), _style(), Config())
     labels = [line for line in script.splitlines() if ",Label," in line]
-    assert len(labels) == 5
-    # El primero entra con su clip y ya no se va: los rótulos se acumulan.
-    assert labels[0].startswith("Dialogue: 0,0:00:00.00,0:00:35.00") and "RÓTULO 5" in labels[0]
-    # El último entra al final y también se queda hasta el cierre.
-    assert labels[-1].startswith("Dialogue: 0,0:00:28.00,0:00:35.00") and "RÓTULO 1" in labels[-1]
-    # Anclaje a la izquierda (\an4) y a la altura de su casilla, no en una posición fija.
-    assert "\\an4" in labels[0]
+    crisp = [line for line in labels if "\\fad" in line]
+    dim = [line for line in labels if "\\alpha" in line]
+    # 5 nítidos (uno por turno) + 4 atenuados: el del #1 cierra el vídeo y no se atenúa.
+    assert len(crisp) == 5 and len(dim) == 4
+    # El primero entra con su clip, nítido…
+    assert crisp[0].startswith("Dialogue: 0,0:00:00.00,0:00:07.00") and "RÓTULO 5" in crisp[0]
+    # …y en cuanto su puesto cede el turno se queda atenuado hasta el final.
+    assert dim[0].startswith("Dialogue: 0,0:00:07.00,0:00:35.00") and "RÓTULO 5" in dim[0]
+    # Se difumina **igual que su casilla**: las mismas marcas del preset.
     style = _style()
+    alpha = int(style["rank_ladder"]["dim_alpha"])
+    blur = float(style["rank_ladder"]["dim_blur"])
+    assert all(f"\\alpha&H{alpha:02X}&" in line and f"\\blur{blur:g}" in line for line in dim)
+    # El del #1 entra al final y no se atenúa: es el que cierra.
+    assert crisp[-1].startswith("Dialogue: 0,0:00:28.00,0:00:35.00") and "RÓTULO 1" in crisp[-1]
+    assert not any("RÓTULO 1" in line for line in dim)
+    # Anclaje a la izquierda (\an4) y a la altura de su casilla, no en una posición fija.
+    assert "\\an4" in crisp[0]
     x = float(style["rank_ladder"]["x"]) + float(style["clip_label"]["dx"])
     y = float(style["rank_ladder"]["y_bottom"])
-    assert f"\\pos({x},{y})" in labels[0]
+    assert f"\\pos({x},{y})" in crisp[0]
 
 
 def test_ass_title_paints_marked_words_in_the_two_accents():
@@ -241,6 +252,93 @@ def test_cover_argv_seeks_before_the_input():
     assert argv[argv.index("-ss") + 1] == "34.600"
     assert argv.index("-ss") < argv.index("-i")
     assert argv[-1] == "cover.jpg"
+
+
+def _spec_of(count: int, title: str = "TOP 5 GATOS", *, segment_s: float = 7.0) -> dict:
+    segments = [
+        {"position": position, "label": f"PUESTO {position}", "duration_s": segment_s}
+        for position in range(count, 0, -1)
+    ]
+    return build_spec(
+        title=title,
+        labels={position: f"RÓTULO {position}" for position in range(1, count + 1)},
+        segments=segments,
+        transition_s=0.0,
+        transition="cut",
+        cold_open_s=0.0,
+        style=_style(),
+        config=Config(items=count),
+    )
+
+
+def test_ass_title_wraps_into_lines_and_shrinks_until_it_fits():
+    """Un título enorme no se sale del marco: se reparte en renglones y baja de tamaño."""
+    style = _style()
+    style["title"]["size"] = 220
+    spec = build_spec(
+        title="TOP 8 MOMENTOS LOCOS Y CAOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 9)},
+        segments=[
+            {"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(8, 0, -1)
+        ],
+        transition_s=0.0,
+        transition="cut",
+        cold_open_s=0.0,
+        style=style,
+        config=Config(items=8),
+    )
+    lines = spec["title"]["lines"]
+    width = 1080 - 2 * TITLE_SIDE_MARGIN
+    assert 1 < len(lines) <= 3
+    assert spec["title"]["size"] < 220
+    # Ningún renglón se pasa del ancho seguro y el bloque no invade la escalera.
+    assert all(title_line_width(line, spec["title"]["size"]) <= width for line in lines)
+    block = spec["title"]["line_height"] * len(lines)
+    assert spec["title"]["anchor_y"] - block / 2 >= 96 - 0.5
+    assert spec["title"]["anchor_y"] + block / 2 <= 392
+    # En el ASS, los renglones son un salto duro (`\N`) dentro del mismo evento.
+    title_line = next(line for line in build_ass(spec, style, Config(items=8)).splitlines() if ",Title," in line)
+    assert "\\N" in title_line
+    assert f"Style: Title,Arial,{spec['title']['size']}," in build_ass(spec, style, Config(items=8))
+
+
+def test_a_short_title_keeps_the_size_and_the_place_of_the_preset():
+    spec = _spec()
+    assert len(spec["title"]["lines"]) == 1
+    assert spec["title"]["size"] == _style()["title"]["size"]
+    assert spec["title"]["anchor_y"] == pytest.approx(_style()["title"]["y"])
+
+
+def test_the_italic_switch_flips_the_italic_field_of_every_style():
+    def italic_field(script: str, name: str) -> str:
+        line = next(entry for entry in script.splitlines() if entry.startswith(f"Style: {name},"))
+        return line.split(",")[8]  # Bold, Italic, …
+
+    plain = build_ass(_spec(), _style(), Config())
+    cursive = build_ass(_spec(), get_style({"italic": True}), Config())
+    for name in ("Title", "TitleBg", "Badge", "Label", "Cta"):
+        assert italic_field(plain, name) == "0"
+        assert italic_field(cursive, name) == "-1"
+
+
+def test_the_ladder_takes_as_many_badges_as_positions_has_the_ranking():
+    spec = _spec_of(10, "TOP 10 GATOS")
+    slots = spec["rank_ladder"]["slots"]
+    assert spec["rank_ladder"]["count"] == 10 and len(slots) == 10
+    assert [slot["position"] for slot in slots] == list(range(10, 0, -1))
+    # La columna se reparte sola entre las alturas del preset.
+    style = _style()
+    assert slots[0]["y"] == pytest.approx(style["rank_ladder"]["y_bottom"])
+    assert slots[-1]["y"] == pytest.approx(style["rank_ladder"]["y_top"])
+    assert [slot["y"] for slot in slots] == sorted((slot["y"] for slot in slots), reverse=True)
+    # Del 4 en adelante el número va en **blanco**; el podio mantiene sus colores.
+    colours = {slot["position"]: slot["color"] for slot in slots}
+    assert (colours[1], colours[2], colours[3]) == ("#D4AF37", "#C0C0C0", "#CD7F32")
+    assert all(colours[position] == "#FFFFFF" for position in range(4, 11))
+    # Y las diez casillas se dibujan: cada una nítida en su turno.
+    script = build_ass(spec, _style(), Config(items=10))
+    sharp = [line for line in script.splitlines() if ",Badge," in line and "\\t(0,150," in line]
+    assert len(sharp) == 10
 
 
 def test_preview_argv_draws_the_overlay_over_a_black_source():

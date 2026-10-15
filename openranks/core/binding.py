@@ -31,7 +31,7 @@ class ClipItem:
 
 @dataclass(frozen=True)
 class Binding:
-    """Título del vídeo + los N puestos, con sus nombres."""
+    """Título del vídeo + los puestos (de 5 a 10), con sus nombres."""
 
     title: str
     items: tuple[ClipItem, ...]
@@ -90,7 +90,11 @@ def validate_binding(binding: Binding, config: Config | None = None, *, check_pa
     if len(binding.layers) > cfg.title_layers_max:
         errors.append(f"hay {len(binding.layers)} capas de título; el máximo es {cfg.title_layers_max}")
 
-    if len(binding.items) != cfg.items:
+    if not cfg.items_min <= cfg.items <= cfg.items_max:
+        errors.append(
+            f"el ranking admite de {cfg.items_min} a {cfg.items_max} puestos y se configuraron {cfg.items}"
+        )
+    elif len(binding.items) != cfg.items:
         errors.append(f"se esperan {cfg.items} puestos y llegaron {len(binding.items)}")
 
     positions = [item.position for item in binding.items]

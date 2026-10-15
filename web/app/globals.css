@@ -562,17 +562,6 @@ footer.note {
   justify-items: center;
 }
 
-.preview-switch {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-
-.preview-switch button {
-  padding: 8px 14px;
-  font-size: 14px;
-}
-
 .hint.center {
   text-align: center;
   margin: 0;

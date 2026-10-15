@@ -1,8 +1,10 @@
-"""Genera 5 clips sintéticos + un binding para probar L1 a mano.
+"""Genera clips sintéticos + un binding para probar L1 a mano.
 
     python scripts/make_test_clips.py --out demo --seconds 7
+    python scripts/make_test_clips.py --out demo10 --positions 7 --seconds 6
 
-Con los defectos (5 clips de 7 s) el total cae dentro del objetivo de 30–58 s.
+Con los defectos (5 clips de 7 s) el total cae dentro del objetivo de 30–58 s. Con
+`--positions` se puede montar cualquier ranking del formato, del TOP 5 al TOP 10.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openranks.core.ffmpeg import ToolNotFound, resolve_binary  # noqa: E402
+from openranks.core.specs import MAX_POSITIONS, MIN_POSITIONS  # noqa: E402
 
 
 def _resolve_ffmpeg(explicit: str | None) -> str:
@@ -35,13 +38,30 @@ def _resolve_ffmpeg(explicit: str | None) -> str:
         ) from exc
     return resolve_binary(explicit, "OPENRANKS_FFMPEG", "ffmpeg")
 
+# Formas de clip: horizontal, vertical, cuadrado sin audio, ancho y grande.
 SPECS = (
-    ("clip-1.mp4", (320, 240), 440, "GATO VOLADOR"),
-    ("clip-2.mp4", (240, 320), 330, "PERRO CAOS"),
-    ("clip-3.mp4", (320, 320), None, "SORPRESA"),
-    ("clip-4.mp4", (640, 360), 550, "ROBO"),
-    ("clip-5.mp4", (480, 480), 660, "TERNERA"),
+    ((320, 240), 440),
+    ((240, 320), 330),
+    ((320, 320), None),  # sin audio: prueba la inyección de silencio
+    ((640, 360), 550),
+    ((480, 480), 660),
 )
+
+LABELS = ("GATO VOLADOR", "PERRO CAOS", "SORPRESA", "ROBO", "TERNERA")
+
+
+def clip_plan(count: int) -> list[tuple[str, tuple[int, int], int | None, str]]:
+    """`count` clips: las cinco formas de siempre y, si el ranking es más largo, se repiten.
+
+    Los nombres de los cinco primeros puestos son los de siempre; del 6 en adelante se
+    numeran (`PUESTO 6`) para no repetir etiquetas.
+    """
+    plan: list[tuple[str, tuple[int, int], int | None, str]] = []
+    for index in range(1, count + 1):
+        size, freq = SPECS[(index - 1) % len(SPECS)]
+        label = LABELS[index - 1] if index <= len(LABELS) else f"PUESTO {index}"
+        plan.append((f"clip-{index}.mp4", size, freq, label))
+    return plan
 
 
 def make_clip(ffmpeg: str, path: Path, *, size: tuple[int, int], seconds: float, freq: int | None) -> None:
@@ -71,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Clips sintéticos para probar openRanks L1")
     parser.add_argument("--out", default="demo", help="directorio de salida")
     parser.add_argument("--seconds", type=float, default=7.0, help="duración de cada clip")
+    parser.add_argument(
+        "--positions", type=int, choices=range(MIN_POSITIONS, MAX_POSITIONS + 1), default=5, help="puestos del ranking"
+    )
     parser.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     args = parser.parse_args(argv)
 
@@ -80,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     clips_dir.mkdir(parents=True, exist_ok=True)
 
     items = []
-    for index, (name, size, freq, label) in enumerate(SPECS, start=1):
+    for index, (name, size, freq, label) in enumerate(clip_plan(args.positions), start=1):
         path = clips_dir / name
         make_clip(ffmpeg, path, size=size, seconds=args.seconds, freq=freq)
         items.append({"position": index, "path": f"clips/{name}", "label": label})
@@ -88,11 +111,14 @@ def main(argv: list[str] | None = None) -> int:
 
     binding_path = out / "binding.json"
     binding_path.write_text(
-        json.dumps({"title": "TOP 5 PRUEBAS", "items": items}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps({"title": f"TOP {args.positions} PRUEBAS", "items": items}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     print(f"\nbinding: {binding_path}")
-    print(f"prueba:  python -m openranks assemble --input {binding_path} --out {out / 'render'}")
+    print(
+        f"prueba:  python -m openranks assemble --input {binding_path} --out {out / 'render'} "
+        f"--items {args.positions}"
+    )
     return 0
 
 

@@ -10,6 +10,8 @@ export type JobState = "created" | "uploading" | "running" | "done" | "failed";
 export interface JobRequest {
   title: string;
   labels: Record<string, string>;
+  /** Puestos del ranking (de 5 a 10): fija la escalera y el contrato del motor. */
+  positions: number;
   transitionSeconds: number;
   transition: string;
   coldOpenSeconds: number;
@@ -41,6 +43,7 @@ export interface JobStatus {
   result: Record<string, unknown> | null;
 }
 
+/** Puestos por defecto si un trabajo no dice cuántos (los antiguos siguen valiendo). */
 export const TOTAL_POSITIONS = 5;
 
 export function jobDir(id: string): string {
@@ -171,7 +174,8 @@ export function inferPhase(id: string, status: JobStatus): { phase: string; prog
   const clips = path.join(render, "clips");
   if (existsSync(clips) && readdirSync(clips).some((name) => name.endsWith(".mp4")))
     return { phase: "Normalizando los clips", progress: 20 };
-  if (status.uploaded.length < TOTAL_POSITIONS) return { phase: "Subiendo los clips", progress: 2 };
+  if (status.uploaded.length < (status.request.positions ?? TOTAL_POSITIONS))
+    return { phase: "Subiendo los clips", progress: 2 };
   return { phase: "Preparando la entrada", progress: 4 };
 }
 
@@ -224,7 +228,8 @@ export function uploadedPositions(id: string): number[] {
   if (!existsSync(dir)) return [];
   const positions: number[] = [];
   for (const name of readdirSync(dir)) {
-    const match = /^clip-(\d)\.[a-z0-9]+$/i.exec(name);
+    // Uno o dos dígitos: el formato va del TOP 5 al TOP 10.
+    const match = /^clip-(\d{1,2})\.[a-z0-9]+$/i.exec(name);
     if (match) positions.push(Number(match[1]));
   }
   return positions.sort((left, right) => right - left);

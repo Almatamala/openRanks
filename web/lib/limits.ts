@@ -10,8 +10,28 @@ export const LIMITS = {
   titleLayersMax: 3,
   labelChars: 24,
   labelWords: 4,
-  positions: [5, 4, 3, 2, 1],
 } as const;
+
+/**
+ * Puestos del ranking: el formato va del TOP 5 al TOP 10 (§3). Espejo de
+ * `Config.items_min` / `items_max` en `openranks/core/config.py` (hay un test que lo
+ * comprueba, para que el panel no ofrezca lo que el motor rechaza).
+ */
+export const POSITIONS_MIN = 5;
+export const POSITIONS_MAX = 10;
+
+/** Deja el número de puestos dentro del formato. */
+export function clampPositions(count: unknown): number {
+  const value = typeof count === "number" ? count : Number.parseInt(String(count ?? ""), 10);
+  if (!Number.isFinite(value)) return POSITIONS_MIN;
+  return Math.min(POSITIONS_MAX, Math.max(POSITIONS_MIN, Math.round(value)));
+}
+
+/** Las posiciones de un ranking de `count` puestos, del último al primero (`5,4,…,1`). */
+export function positionsFor(count: number): number[] {
+  const size = clampPositions(count);
+  return Array.from({ length: size }, (_, index) => size - index);
+}
 
 export function titleErrors(title: string): string[] {
   const errors: string[] = [];
@@ -35,20 +55,4 @@ export function labelErrors(position: number, label: string): string[] {
   if (text.split(/\s+/).length > LIMITS.labelWords)
     errors.push(`El nombre del #${position} tiene más de ${LIMITS.labelWords} palabras.`);
   return errors;
-}
-
-/** `gato_volador.mp4` → `GATO VOLADOR` (≤ 24 caracteres, ≤ 4 palabras). */
-export function labelFromFilename(filename: string): string {
-  const base = filename.replace(/\.[^.]+$/, "");
-  const words = base
-    .replace(/[_\-.]+/g, " ")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9 ]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, LIMITS.labelWords);
-  const text = words.join(" ").slice(0, LIMITS.labelChars).trim();
-  return text;
 }

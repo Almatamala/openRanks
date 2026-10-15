@@ -53,7 +53,9 @@ export async function GET() {
       ...listing,
       saved,
       hasSaved: saved !== null,
-      fonts: [...FONT_CHOICES],
+      // Las familias y lo que es cada una salen del motor: una sola fuente de verdad.
+      fonts: Array.isArray(listing.fonts) ? listing.fonts : [...FONT_CHOICES],
+      fontNotes: (listing.font_notes as Record<string, string> | undefined) ?? {},
       ranges: PRESET_RANGES,
     });
   } catch (error) {

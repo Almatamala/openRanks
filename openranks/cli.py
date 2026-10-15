@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import TOOL_VERSION
@@ -18,6 +19,7 @@ from .core.ffmpeg import TRANSITIONS, ToolNotFound, TransitionError
 from .core.plan import PlanError
 from .core.progress import PROGRESS_PREFIX, ProgressEvent
 from .core.runner import ToolError
+from .core.specs import MAX_POSITIONS, MIN_POSITIONS
 from .overlay import OverlayError, preview, render
 
 EXIT_OK = 0
@@ -28,14 +30,21 @@ EXIT_BAD_INPUT = 2
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="openranks",
-        description="openRanks — L1: 5 clips listos y su unión en un solo vídeo vertical",
+        description="openRanks — L1: los clips del ranking y su unión en un solo vídeo vertical",
     )
     parser.add_argument("--version", action="version", version=f"openranks {TOOL_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    assembly = subparsers.add_parser("assemble", help="normaliza los 5 clips y los une en vertical")
+    assembly = subparsers.add_parser("assemble", help="normaliza los clips del ranking (5 a 10) y los une en vertical")
     assembly.add_argument("--input", required=True, help="binding JSON: {title, items:[{position,path,label}]}")
     assembly.add_argument("--out", required=True, help="directorio de salida (clips/, union.mp4, manifest.json)")
+    assembly.add_argument(
+        "--items",
+        type=int,
+        choices=range(MIN_POSITIONS, MAX_POSITIONS + 1),
+        default=None,
+        help="puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo)",
+    )
     assembly.add_argument(
         "--fit",
         choices=("band", "contain", "cover"),
@@ -74,6 +83,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     render_cmd.add_argument("--zoom", type=float, default=None, help="zoom de entrada del primer clip (por defecto, el del preset)")
     render_cmd.add_argument("--font", default=None, help="familia tipográfica del overlay (por defecto Arial)")
+    render_cmd.add_argument(
+        "--italic",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="letras cursivas en el overlay (por defecto, lo que diga el preset)",
+    )
     render_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     render_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
     render_cmd.add_argument("--progress", action="store_true", help="emite el avance en porcentaje real por stderr")
@@ -94,6 +109,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="nombre de un puesto (repetible), p. ej. --label 1=GATO VOLADOR",
     )
     preview_cmd.add_argument("--font", default=None, help="familia tipográfica del overlay")
+    preview_cmd.add_argument(
+        "--italic",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="letras cursivas en el overlay (por defecto, lo que diga el preset)",
+    )
+    preview_cmd.add_argument(
+        "--items",
+        type=int,
+        choices=range(MIN_POSITIONS, MAX_POSITIONS + 1),
+        default=None,
+        help="puestos que dibuja la vista previa, de 5 a 10 (por defecto 5)",
+    )
     preview_cmd.add_argument("--at", type=float, default=None, help="segundo del fotograma (por defecto, el final)")
     preview_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     preview_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
@@ -162,7 +190,14 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_preset(args: argparse.Namespace) -> int:
     """Listado de los ajustes del preset bloqueado (ADR-8): qué es cada uno y dónde vive."""
-    from .core.overlay import EDITABLE_SECTIONS, describe_style, get_style
+    from .core.overlay import (
+        EDITABLE_SECTIONS,
+        EDITABLE_TOP_LEVEL,
+        FONT_FAMILIES,
+        FONT_NOTES,
+        describe_style,
+        get_style,
+    )
 
     style = get_style()
     rows = describe_style(style)
@@ -177,6 +212,7 @@ def _run_preset(args: argparse.Namespace) -> int:
                     # Lo que el panel puede cambiar y guardar, ya resuelto.
                     "editable": {
                         "font": style.get("font"),
+                        "italic": bool(style.get("italic", False)),
                         "title": {
                             "size": style["title"]["size"],
                             "background": bool(style["title"]["background"]),
@@ -188,7 +224,13 @@ def _run_preset(args: argparse.Namespace) -> int:
                             "y_bottom": style["rank_ladder"]["y_bottom"],
                         },
                     },
-                    "editable_keys": {section: list(keys) for section, keys in EDITABLE_SECTIONS.items()},
+                    # Familias que ofrece el panel, con la nota de cada una.
+                    "fonts": list(FONT_FAMILIES),
+                    "font_notes": dict(FONT_NOTES),
+                    "editable_keys": {
+                        "top": list(EDITABLE_TOP_LEVEL),
+                        **{section: list(keys) for section, keys in EDITABLE_SECTIONS.items()},
+                    },
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -208,13 +250,14 @@ def _run_preset(args: argparse.Namespace) -> int:
 
 def _run_preview(args: argparse.Namespace) -> int:
     """Vista previa del preset sobre negro: no monta nada, solo dibuja el overlay."""
-    config = Config.from_env()
+    config = _config_with_items(Config.from_env(), args.items)
     try:
         labels = _parse_label_overrides(args.label)
         result = preview(
             args.out,
             title=args.title or "",
             labels=labels or None,
+            style_overrides=_style_overrides(args.italic),
             font=args.font,
             at_s=args.at,
             config=config,
@@ -246,7 +289,7 @@ def _run_preview(args: argparse.Namespace) -> int:
 
 
 def _run_assemble(args: argparse.Namespace) -> int:
-    config = Config.from_env()
+    config = _config_with_items(Config.from_env(), args.items)
     say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
     try:
         binding = load_binding(args.input, config)
@@ -296,6 +339,18 @@ def _run_assemble(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _config_with_items(config: Config, items: int | None) -> Config:
+    """El CLI fija los puestos del ranking sin tocar el entorno (`--items`)."""
+    if items is None or items == config.items:
+        return config
+    return replace(config, items=items)
+
+
+def _style_overrides(italic: bool | None) -> dict | None:
+    """`--italic` / `--no-italic`: un ajuste suelto del preset, sin tocar el archivo."""
+    return None if italic is None else {"italic": italic}
+
+
 def _parse_label_overrides(raw: list[str] | None) -> dict[int, str]:
     labels: dict[int, str] = {}
     for entry in raw or []:
@@ -325,6 +380,7 @@ def _run_render(args: argparse.Namespace) -> int:
             args.dir,
             title=title,
             labels=labels or None,
+            style_overrides=_style_overrides(args.italic),
             font=args.font,
             zoom=args.zoom,
             config=config,
