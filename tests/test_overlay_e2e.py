@@ -154,15 +154,6 @@ def test_preview_draws_the_preset_over_black_without_any_clip(ffmpeg_bin, tmp_pa
     assert len(pixels) > 0 and max(pixels) > 0
 
 
-def test_the_first_clip_zoom_keeps_the_frame_count(ffmpeg_bin, ffprobe_bin, l1_out):
-    result = render(l1_out, zoom=0.08, ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin, config=_fast())
-    assert result.spec["first_clip_zoom"] == pytest.approx(0.08)
-    union = probe(ffprobe_bin, l1_out / "union.mp4")
-    ranking = probe(ffprobe_bin, result.ranking)
-    assert ranking.nb_frames == union.nb_frames
-    assert ranking.duration_s == pytest.approx(union.duration_s, abs=0.1)
-
-
 def test_render_cli_updates_the_texts(ffmpeg_bin, ffprobe_bin, l1_out, capsys):
     from openranks.cli import main
 

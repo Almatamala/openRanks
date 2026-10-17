@@ -15,7 +15,7 @@ from . import TOOL_VERSION
 from .assemble import AssemblyError, assemble
 from .core.binding import BindingError, load_binding
 from .core.config import Config
-from .core.ffmpeg import TRANSITIONS, ToolNotFound, TransitionError
+from .core.ffmpeg import ToolNotFound
 from .core.plan import PlanError
 from .core.progress import PROGRESS_PREFIX, ProgressEvent
 from .core.runner import ToolError
@@ -35,7 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"openranks {TOOL_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    assembly = subparsers.add_parser("assemble", help="normaliza los clips del ranking (5 a 10) y los une en vertical")
+    assembly = subparsers.add_parser(
+        "assemble", help="normaliza los clips del ranking (5 a 10) y los une en vertical con corte seco"
+    )
     assembly.add_argument("--input", required=True, help="binding JSON: {title, items:[{position,path,label}]}")
     assembly.add_argument("--out", required=True, help="directorio de salida (clips/, union.mp4, manifest.json)")
     assembly.add_argument(
@@ -52,11 +54,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="band (por defecto) agranda el clip hasta llenar la banda central de 1184 px y recorta laterales; "
         "contain lo encaja entero sin recortar; cover recorta para llenar todo el marco",
     )
-    assembly.add_argument("--transition-seconds", type=float, default=0.0, help="solape entre clips (0 = corte seco, unión por copia)")
-    assembly.add_argument("--transition", choices=TRANSITIONS, default="slideup", help="tipo de transición si hay solape")
-    assembly.add_argument("--cold-open-seconds", type=float, default=0.0, help="adelanto del #1 al principio (B1 del plan); 0 = desactivado")
+    assembly.add_argument("--cold-open-seconds", type=float, default=0.0, help="adelanto del #1 al principio; 0 = desactivado (por defecto)")
     assembly.add_argument("--edit", action="store_true", help="encadena L2: añade la edición del estándar (ranking.mp4 + cover)")
-    assembly.add_argument("--zoom", type=float, default=0.0, help="zoom de entrada del primer clip en L2 (0.08 = 8 %%; 0 = sin zoom)")
     assembly.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     assembly.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
     assembly.add_argument(
@@ -81,7 +80,6 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="POS=TEXTO",
         help="sobrescribe el nombre de un puesto (repetible), p. ej. --label 1=GATO VOLADOR",
     )
-    render_cmd.add_argument("--zoom", type=float, default=None, help="zoom de entrada del primer clip (por defecto, el del preset)")
     render_cmd.add_argument("--font", default=None, help="familia tipográfica del overlay (por defecto Arial)")
     render_cmd.add_argument(
         "--italic",
@@ -300,18 +298,15 @@ def _run_assemble(args: argparse.Namespace) -> int:
             ffmpeg=args.ffmpeg,
             ffprobe=args.ffprobe,
             fit=args.fit,
-            transition_s=args.transition_seconds,
-            transition=args.transition,
             cold_open_s=args.cold_open_seconds,
             edit=args.edit,
-            zoom=args.zoom,
             log=say,
             progress=_progress_sink() if args.progress else None,
         )
     except (BindingError, PlanError) as exc:
         print(f"entrada inválida: {exc}", file=sys.stderr)
         return EXIT_BAD_INPUT
-    except (AssemblyError, ToolError, ToolNotFound, TransitionError) as exc:
+    except (AssemblyError, ToolError, ToolNotFound) as exc:
         print(f"fallo el ensamblado: {exc}", file=sys.stderr)
         return EXIT_FAILED
 
@@ -382,7 +377,6 @@ def _run_render(args: argparse.Namespace) -> int:
             labels=labels or None,
             style_overrides=_style_overrides(args.italic),
             font=args.font,
-            zoom=args.zoom,
             config=config,
             ffmpeg=args.ffmpeg,
             ffprobe=args.ffprobe,
@@ -392,7 +386,7 @@ def _run_render(args: argparse.Namespace) -> int:
     except BindingError as exc:
         print(f"entrada inválida: {exc}", file=sys.stderr)
         return EXIT_BAD_INPUT
-    except (OverlayError, ToolError, ToolNotFound, TransitionError) as exc:
+    except (OverlayError, ToolError, ToolNotFound) as exc:
         print(f"fallo el render: {exc}", file=sys.stderr)
         return EXIT_FAILED
 

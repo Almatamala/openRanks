@@ -12,10 +12,6 @@ export interface JobRequest {
   labels: Record<string, string>;
   /** Puestos del ranking (de 5 a 10): fija la escalera y el contrato del motor. */
   positions: number;
-  transitionSeconds: number;
-  transition: string;
-  coldOpenSeconds: number;
-  zoom: number;
 }
 
 export interface Artifact {

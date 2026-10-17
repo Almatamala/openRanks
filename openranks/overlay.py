@@ -2,8 +2,7 @@
 
 Sobre el vídeo ya unido se añade **toda la edición del formato**: título con el
 número destacado, la escalera de rangos (``#5`` abajo → ``#1`` arriba), el rótulo
-de cada puesto, el CTA y, opcionalmente, el zoom del primer clip. La salida es
-``ranking.mp4`` + ``spec.json``.
+de cada puesto y el CTA. La salida es ``ranking.mp4`` + ``spec.json``.
 
 Contrato entre capas (§12): L2 **solo** lee ``union.mp4`` y el ``manifest.json`` de
 L1, nunca llama a L1. Y como el estilo está bloqueado (ADR-8), cambiar solo un texto
@@ -125,8 +124,6 @@ def preview(
             title=title,
             labels=final_labels,
             segments=segments,
-            transition_s=0.0,
-            transition="cut",
             cold_open_s=0.0,
             style=style,
             config=cfg,
@@ -168,7 +165,6 @@ def render(
     labels: dict[int, str] | None = None,
     style_overrides: dict | None = None,
     font: str | None = None,
-    zoom: float | None = None,
     config: Config | None = None,
     ffmpeg: str | None = None,
     ffprobe: str | None = None,
@@ -198,7 +194,6 @@ def render(
     loaded = _load_plan(out_dir)
     plan = loaded["plan"]
     segments = plan["segments"]
-    transition_s = float(plan.get("transition_s") or 0.0)
     cold_open_s = float(plan.get("cold_open_s") or 0.0)
 
     # `get_style` ya resuelve `OPENRANKS_FONT`; aquí solo manda un `--font` explícito.
@@ -209,7 +204,6 @@ def render(
     final_labels = dict(labels_from_segments(segments))
     if labels:
         final_labels.update({int(position): text for position, text in labels.items()})
-    zoom_value = float(zoom) if zoom is not None else float(style.get("first_clip_zoom", 0.0) or 0.0)
 
     started_at = utc_now()
     try:
@@ -217,12 +211,9 @@ def render(
             title=final_title,
             labels=final_labels,
             segments=segments,
-            transition_s=transition_s,
-            transition=str(plan.get("transition") or "cut"),
             cold_open_s=cold_open_s,
             style=style,
             config=cfg,
-            zoom=zoom_value,
         )
     except SpecError as exc:
         raise OverlayError("no se pudo construir el spec del overlay", (str(exc),)) from exc
@@ -238,7 +229,7 @@ def render(
     ranking = out_dir / "ranking.mp4"
     if ranking.exists():
         ranking.unlink()  # si no, ffmpeg puede mezclar la salida anterior
-    completed = run(overlay_argv(ffmpeg_bin, union, ranking, ass_file=ass_file, spec=spec, config=cfg))
+    completed = run(overlay_argv(ffmpeg_bin, union, ranking, ass_file=ass_file, config=cfg))
     warnings = _tool_warnings(completed.stderr, where="overlay")
 
     info = probe(ffprobe_bin, ranking)
@@ -276,7 +267,6 @@ def render(
         "edit": {
             "title": final_title,
             "labels": {str(position): text for position, text in sorted(final_labels.items(), reverse=True)},
-            "first_clip_zoom": spec["first_clip_zoom"],
             "note": "(ADR-8) solo el título y los nombres de los puestos son editables",
         },
         "warnings": list(warnings),

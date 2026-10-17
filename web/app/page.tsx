@@ -25,14 +25,6 @@ interface Job {
   result: Record<string, unknown> | null;
 }
 
-interface PresetSetting {
-  group: string;
-  key: string;
-  value: unknown;
-  what: string;
-  where: string;
-}
-
 /** La parte de la plantilla que el panel puede ajustar y guardar. */
 interface EditablePreset {
   font: string;
@@ -59,11 +51,8 @@ interface PresetRanges {
 interface Preset {
   preset: string;
   font: string;
-  where: string;
-  settings: PresetSetting[];
   editable: EditablePreset;
   saved: EditablePreset | null;
-  hasSaved: boolean;
   fonts: string[];
   fontNotes: Record<string, string>;
   ranges: PresetRanges;
@@ -74,14 +63,6 @@ interface Slot {
   file: File | null;
   label: string;
 }
-
-/** Opciones de montaje. El "pull in" de CapCut es el `xfade` más parecido (§3). */
-const TRANSITIONS = [
-  { key: "cut", label: "Corte seco (lo más rápido)", seconds: 0, type: "slideup" },
-  { key: "pullin", label: "Pull-in 0,35 s", seconds: 0.35, type: "slideup" },
-  { key: "pullin-long", label: "Pull-in 0,5 s", seconds: 0.5, type: "slideup" },
-  { key: "fade", label: "Fundido 0,4 s", seconds: 0.4, type: "fade" },
-] as const;
 
 const STORE_KEY = "openranks.panel.v1";
 
@@ -110,9 +91,6 @@ export default function Page() {
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("TOP 5 MOMENTOS");
-  const [transition, setTransition] = useState<string>("pullin");
-  const [coldOpen, setColdOpen] = useState(false);
-  const [zoom, setZoom] = useState(true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,17 +134,11 @@ export default function Page() {
       if (!raw) return;
       const saved = JSON.parse(raw) as {
         title?: string;
-        transition?: string;
-        coldOpen?: boolean;
-        zoom?: boolean;
         positions?: number;
         labels?: Record<string, string>;
       };
       const count = clampPositions(saved.positions ?? POSITIONS_MIN);
       if (saved.title) setTitle(saved.title);
-      if (saved.transition) setTransition(saved.transition);
-      if (typeof saved.coldOpen === "boolean") setColdOpen(saved.coldOpen);
-      if (typeof saved.zoom === "boolean") setZoom(saved.zoom);
       setPositions(count);
       setSlots(
         positionsFor(count).map((position) => ({ position, file: null, label: saved.labels?.[String(position)] ?? "" })),
@@ -179,14 +151,11 @@ export default function Page() {
   useEffect(() => {
     const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label]));
     try {
-      window.localStorage.setItem(
-        STORE_KEY,
-        JSON.stringify({ title, transition, coldOpen, zoom, positions, labels }),
-      );
+      window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, positions, labels }));
     } catch {
       // Sin espacio o en modo privado: seguir, el estado vive en el servidor igual.
     }
-  }, [slots, title, transition, coldOpen, zoom, positions]);
+  }, [slots, title, positions]);
 
   // El render del motor (FFmpeg) **no es instantáneo**: dibuja el overlay sobre negro
   // pero tarda unos segundos, así que se pide con retardo y nunca en vivo.
@@ -308,18 +277,14 @@ export default function Page() {
 
   // Lo que el motor necesita para arrancar: el mismo cuerpo lo usan «Montar» y
   // «Volver a intentarlo», así que se construye en un solo sitio.
-  const startPayload = useCallback(() => {
-    const chosen = TRANSITIONS.find((option) => option.key === transition) ?? TRANSITIONS[0];
-    return {
+  const startPayload = useCallback(
+    () => ({
       title: title.trim(),
       labels: Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()])),
       positions,
-      transitionSeconds: chosen.seconds,
-      transition: chosen.type,
-      coldOpenSeconds: coldOpen ? 2 : 0,
-      zoom: zoom ? 0.08 : 0,
-    };
-  }, [slots, title, positions, transition, coldOpen, zoom]);
+    }),
+    [slots, title, positions],
+  );
 
   const montar = useCallback(async () => {
     if (problemList(slots, title).length > 0) {
@@ -434,8 +399,7 @@ export default function Page() {
         </div>
       ) : null}
       <p className="hint center">
-        Lo dibuja el motor, así que <strong>los cambios tardan unos segundos</strong> en verse: se pide solo cuando
-        dejas de mover los controles.
+        Los cambios tardan unos segundos en verse
       </p>
       {rendering ? <p className="hint center">Dibujando el overlay…</p> : null}
     </>
@@ -448,13 +412,9 @@ export default function Page() {
           <div>
             <h1>openRanks · montar un TOP {positions}</h1>
             <p>
-              Sube los clips y escribe dos cosas: el título y el nombre de cada puesto. El montaje —orden, unión,
-              transiciones y edición— es automático.
+              Sube los clips, escribe los top y el titulo. El montaje union y edición es automático.
             </p>
           </div>
-          <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
-            Plantilla
-          </button>
         </div>
       </header>
 
@@ -462,32 +422,31 @@ export default function Page() {
         <div>
           <section className="card">
             <h2>
-              <span className="step">1</span>Tus {positions} clips
+              <span className="step">1</span>Tus{" "}
+              <select
+                id="positions"
+                className="title-select"
+                aria-label="Cuántos puestos tiene el ranking"
+                value={positions}
+                disabled={running}
+                onChange={(event) => cambiarPuestos(Number(event.target.value))}
+                style={{
+                  WebkitAppearance: 'none',
+                  outline: 'none',
+                }}
+              >
+                {POSITION_CHOICES.map((count) => (
+                  <option key={count} value={count}>
+                    {count}
+                  </option>
+                ))}
+              </select>{" "}
+              clips
             </h2>
             <p className="hint">
-              El orden es el del vídeo: el <strong>#{positions}</strong> abre y el <strong>#1</strong> cierra, que es el
-              mejor. Los clips se dan por buenos: se encajan a 9:16 y 30 fps (banda central, sin recortar arriba ni
+              Se encajan los clips a 9:16 y 30 fps (banda central, sin recortar arriba ni
               abajo) con el audio normalizado.
             </p>
-            <div className="options">
-              <div>
-                <label className="field" htmlFor="positions">
-                  Cuántos puestos tiene el ranking
-                </label>
-                <select
-                  id="positions"
-                  value={positions}
-                  disabled={running}
-                  onChange={(event) => cambiarPuestos(Number(event.target.value))}
-                >
-                  {POSITION_CHOICES.map((count) => (
-                    <option key={count} value={count}>
-                      {count} puestos (TOP {count})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
             {slots.map((slot) => (
               <div className="slot" key={slot.position}>
                 <div className="rank">
@@ -573,42 +532,11 @@ export default function Page() {
           </section>
 
           <section className="card">
-            <h2>
-              <span className="step">3</span>El montaje
-            </h2>
-            <p className="hint">El estilo está fijado por el preset: solo eliges el tipo de corte y dos extras.</p>
-            <div className="options">
-              <div>
-                <label className="field" htmlFor="transition">
-                  Transición entre clips
-                </label>
-                <select
-                  id="transition"
-                  value={transition}
-                  disabled={running}
-                  onChange={(event) => setTransition(event.target.value)}
-                >
-                  {TRANSITIONS.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <label>
-                <input type="checkbox" checked={zoom} disabled={running} onChange={(e) => setZoom(e.target.checked)} />
-                Zoom de entrada en el primer clip
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={coldOpen}
-                  disabled={running}
-                  onChange={(e) => setColdOpen(e.target.checked)}
-                />
-                Arrancar con 2 s del #1 (gancho)
-              </label>
-            </div>
+            <h2>Montar el ranking</h2>
+            <p className="hint">
+              El montaje es siempre automático y <strong>en corte seco</strong>: los clips se pegan uno tras otro, en
+              orden, sin transiciones. El estilo lo fija la plantilla.
+            </p>
 
             <div className="actions">
               <button className="primary" onClick={montar} disabled={running || problems.length > 0}>
@@ -628,14 +556,10 @@ export default function Page() {
             ) : null}
           </section>
         </div>
-
         <div>
           <section className="card">
-            <h2>Render exacto de la plantilla</h2>
-            <p className="hint">
-              El motor dibuja el texto sobre <strong>fondo negro</strong> antes de montar: es el overlay que llevará el
-              vídeo, con sus tipografías y sus medidas, no una imitación del navegador.
-            </p>
+            <h2>Plantilla de renderizado</h2>
+            <p></p>
             {previewPanel}
             <div className="actions">
               <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
@@ -730,48 +654,6 @@ export default function Page() {
               </>
             ) : (
               <p className="hint">Aún no has montado nada. Cuando lo hagas, el vídeo se verá aquí mismo.</p>
-            )}
-          </section>
-
-          <section className="card">
-            <h2>Plantilla de la edición</h2>
-            <p className="hint">
-              Así está configurado el texto que va sobre el vídeo. Puedes ajustar el tamaño, la posición, la fuente y
-              la cursiva en el menú lateral, con el render exacto sobre negro; se guarda la{" "}
-              <strong>última plantilla</strong>.
-            </p>
-            <div className="actions">
-              <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
-                Ajustar la plantilla
-              </button>
-              {preset?.hasSaved ? <span className="hint">Usando tu plantilla guardada.</span> : null}
-            </div>
-            {presetError ? <div className="alert error">{presetError}</div> : null}
-            {preset ? (
-              <details className="preset" open>
-                <summary>
-                  {preset.preset} · fuente {preset.font}
-                </summary>
-                <p className="hint where">{preset.where}</p>
-                {groupSettings(preset.settings).map(([group, rows]) => (
-                  <div key={group}>
-                    <h3>{group}</h3>
-                    <table className="preset-table">
-                      <tbody>
-                        {rows.map((row) => (
-                          <tr key={row.key}>
-                            <th scope="row">{row.key}</th>
-                            <td className="value">{formatSetting(row.value)}</td>
-                            <td className="what">{row.what}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </details>
-            ) : (
-              !presetError && <p className="hint">Leyendo la plantilla…</p>
             )}
           </section>
         </div>
@@ -898,13 +780,8 @@ export default function Page() {
                   <p className="hint">Leyendo la plantilla…</p>
                 )}
               </div>
-
               <div className="drawer-stage">
                 {previewPanel}
-                <p className="hint center">
-                  La plantilla se dibuja con el motor, así que los cambios tardan unos segundos: se pide solo al
-                  terminar de mover un control.
-                </p>
               </div>
             </div>
           </aside>
@@ -973,23 +850,6 @@ function RangeControl({
       />
     </div>
   );
-}
-
-/** Agrupa los ajustes del preset para pintarlos por secciones. */
-function groupSettings(settings: PresetSetting[]): [string, PresetSetting[]][] {
-  const groups = new Map<string, PresetSetting[]>();
-  for (const setting of settings) {
-    const list = groups.get(setting.group) ?? [];
-    list.push(setting);
-    groups.set(setting.group, list);
-  }
-  return [...groups.entries()];
-}
-
-function formatSetting(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
 }
 
 /** Reúne los problemas del formulario con el mismo límite que valida el motor (§9.5). */

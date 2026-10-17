@@ -1,4 +1,4 @@
-"""Spec de L2 sin FFmpeg: ventanas de tiempo, título en capas y colores (§9.2, §18 B4)."""
+"""Spec de L2 sin FFmpeg: ventanas de tiempo, título en capas y colores (§9.2)."""
 
 from __future__ import annotations
 
@@ -26,8 +26,9 @@ def _segments(duration: float = 7.0, count: int = 5) -> list[dict]:
     ]
 
 
-def test_timeline_without_transition_is_the_running_sum():
-    windows = timeline(_segments(7.0), 0.0)
+def test_timeline_is_the_running_sum_without_overlap():
+    # Corte seco: cada tramo empieza donde acaba el anterior.
+    windows = timeline(_segments(7.0))
     assert [window.position for window in windows] == [5, 4, 3, 2, 1]
     assert [(window.from_s, window.to_s) for window in windows] == [
         (0.0, 7.0),
@@ -36,38 +37,20 @@ def test_timeline_without_transition_is_the_running_sum():
         (21.0, 28.0),
         (28.0, 35.0),
     ]
-    assert total_duration_s(windows, 0.0) == pytest.approx(35.0)
-
-
-def test_timeline_with_transition_overlaps_the_next_window():
-    # §18 B4: la transición consume tiempo, así que el total NO es la suma.
-    windows = timeline(_segments(7.0), 0.35)
-    assert [(window.from_s, window.to_s) for window in windows] == [
-        (0.0, 7.0),
-        (6.65, 13.65),
-        (13.3, 20.3),
-        (19.95, 26.95),
-        (26.6, 33.6),
-    ]
-    assert total_duration_s(windows, 0.35) == pytest.approx(33.6)
+    assert total_duration_s(windows) == pytest.approx(35.0)
 
 
 def test_timeline_keeps_the_cold_open_as_position_zero():
     segments = [{"position": 0, "label": "TEASER", "duration_s": 2.0}, *_segments(7.0)]
-    windows = timeline(segments, 0.0)
+    windows = timeline(segments)
     assert windows[0].is_cold_open and windows[0].position == 0
     assert windows[1].from_s == pytest.approx(2.0)
-    assert total_duration_s(windows, 0.0) == pytest.approx(37.0)
-
-
-def test_negative_transition_is_an_error():
-    with pytest.raises(SpecError, match="negativa"):
-        timeline(_segments(), -0.1)
+    assert total_duration_s(windows) == pytest.approx(37.0)
 
 
 def test_incomplete_segment_is_an_error():
     with pytest.raises(SpecError, match="tramo incompleto"):
-        timeline([{"position": 5}], 0.0)
+        timeline([{"position": 5}])
 
 
 def test_title_layers_give_the_number_its_own_colour():
@@ -133,7 +116,7 @@ def test_badge_ladder_spreads_as_many_positions_as_the_ranking_has():
         assert ys == sorted(ys, reverse=True)
 
 
-def _spec(transition_s: float = 0.0, cold_open: bool = False) -> dict:
+def _spec(cold_open: bool = False) -> dict:
     segments = _segments(7.0)
     if cold_open:
         segments = [{"position": 0, "label": "TEASER", "duration_s": 2.0}, *segments]
@@ -141,8 +124,6 @@ def _spec(transition_s: float = 0.0, cold_open: bool = False) -> dict:
         title="TOP 5 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=segments,
-        transition_s=transition_s,
-        transition="slideup" if transition_s else "cut",
         cold_open_s=2.0 if cold_open else 0.0,
         style=get_style(),
         config=Config(),
@@ -151,7 +132,8 @@ def _spec(transition_s: float = 0.0, cold_open: bool = False) -> dict:
 
 def test_spec_total_matches_the_timeline():
     assert _spec()["total_duration_s"] == pytest.approx(35.0)
-    assert _spec(0.35)["total_duration_s"] == pytest.approx(33.6)
+    # El spec ya no lleva transición: el montaje es de corte seco.
+    assert "transition" not in _spec()
 
 
 def test_the_ladder_is_complete_from_the_first_frame():
@@ -166,7 +148,7 @@ def test_the_ladder_is_complete_from_the_first_frame():
     # Las cinco casillas están puestas desde el fotograma 0 y duran todo el vídeo.
     assert {slot["from_s"] for slot in slots} == {0.0}
     assert {slot["to_s"] for slot in slots} == {35.0}
-    # Lo que llega con cada clip es su **turno** (§20.1).
+    # Lo que llega con cada clip es su **turno** (§9.3).
     assert [slot["active_from_s"] for slot in slots] == [0.0, 7.0, 14.0, 21.0, 28.0]
     assert [slot["active_to_s"] for slot in slots] == [7.0, 14.0, 21.0, 28.0, 35.0]
     assert slots[-1]["color"] == "#D4AF37"
@@ -228,8 +210,6 @@ def test_a_ranking_of_ten_positions_builds_ten_slots():
         title="TOP 10 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 11)},
         segments=_segments(5.0, count=10),
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=get_style(),
         config=Config(items=10),
@@ -254,8 +234,6 @@ def test_the_title_is_fitted_to_the_space_it_has():
         title="TOP 8 MOMENTOS LOCOS DE GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 9)},
         segments=_segments(6.0, count=8),
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=style,
         config=Config(items=8),

@@ -20,8 +20,9 @@ export const JOBS_DIR = process.env.OPENRANKS_JOBS_DIR ?? path.join(process.cwd(
 const MIN_PYTHON: readonly [number, number] = [3, 11];
 
 /**
- * FFmpeg mínimo: el motor encadena con `xfade` (4.3+) y usa las transiciones
- * `slide*` (5.0+), así que un binario anterior no sirve aunque esté en el PATH.
+ * FFmpeg mínimo del motor. El montaje es de corte seco (concat por copia de
+ * streams) y el overlay va con `ass`/`libass`, así que el suelo es conservador: se
+ * pide una versión moderna para no depender de un `ffmpeg` viejo del PATH.
  */
 const MIN_FFMPEG_MAJOR = 5;
 

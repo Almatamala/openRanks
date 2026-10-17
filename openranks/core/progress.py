@@ -19,15 +19,16 @@ from typing import Callable
 # Reparto del trabajo en el montaje completo (L1 + L2).
 #
 # Son una **estimación de partida**, medida sobre el material de prueba: normalizar
-# cinco clips pesa mucho (dos pasadas de `loudnorm` cada uno), pero unir con
-# transición pesa más de lo que parece porque `xfade` **recodifica el vídeo entero**.
-# El porcentaje sigue siendo real (no se inventa el avance); lo único estimado es
-# cuánto del total le toca a cada tramo, y el panel corrige solo cuando se desvía.
+# cinco clips se lleva la mayor parte (dos pasadas de `loudnorm` cada uno); la unión
+# en corte seco es una **copia de streams** (casi instantánea) y la edición (L2)
+# recodifica una sola generación. El porcentaje sigue siendo real (no se inventa el
+# avance); lo único estimado es cuánto del total le toca a cada tramo, y el panel
+# corrige solo cuando se desvía.
 SPAN_FULL: dict[str, tuple[float, float]] = {
     "preparing": (0.0, 5.0),
-    "normalizing": (5.0, 55.0),
-    "joining": (55.0, 80.0),
-    "editing": (80.0, 96.0),
+    "normalizing": (5.0, 70.0),
+    "joining": (70.0, 74.0),
+    "editing": (74.0, 96.0),
     "finishing": (96.0, 100.0),
 }
 

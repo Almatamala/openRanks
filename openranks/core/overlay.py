@@ -1,11 +1,11 @@
-"""Render del overlay de L2 (plan §9.2, §20.1).
+"""Render del overlay de L2 (plan §9.2, §9.3).
 
 Igual que ``core/ffmpeg.py``: este módulo **no ejecuta nada**, devuelve ``argv`` y
 texto para que el núcleo se pueda testear sin FFmpeg.
 
-El camino elegido es el **fallback nativo** que el propio plan documenta (§20.1):
-un script **ASS** dibujado por ``libass`` encima del ``union.mp4`` que ya produjo
-L1. Frente a ``drawtext`` tiene tres ventajas que importan aquí:
+El camino elegido es el renderer que documenta el plan (§9.3): un script **ASS**
+dibujado por ``libass`` encima del ``union.mp4`` que ya produjo L1. Frente a
+``drawtext`` tiene tres ventajas que importan aquí:
 
 * el color del número dentro del título se cambia *inline* (``{\\c&H..&}5``), sin
   tener que medir el ancho del texto para colocar dos ``drawtext``;
@@ -14,8 +14,8 @@ L1. Frente a ``drawtext`` tiene tres ventajas que importan aquí:
 * no hay que escapar la ruta de la fuente en la cadena de filtros (libass resuelve
   la fuente **por nombre**, p. ej. ``Arial``).
 
-Es un modo degradado documentado: la ruta recomendada del plan (Remotion) dibuja lo
-mismo con React; esta versión no necesita Node ni assets para sacar un MP4.
+No necesita Node ni assets: el mismo motor que hace L1 (Python + FFmpeg) dibuja
+también L2, así que el panel no arrastra un segundo runtime ni una segunda imagen.
 """
 
 from __future__ import annotations
@@ -347,7 +347,7 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
 
     La escalera está **completa desde el primer fotograma** (``5`` abajo → ``1`` arriba)
     y lo que llega con cada clip es su turno: el número activo se ve nítido y los demás
-    atenuados. Los rótulos entran con su clip y se acumulan hasta el final (§3, §20.1).
+    atenuados. Los rótulos entran con su clip y se acumulan hasta el final (§3, §9.3).
     """
     font = style["font"]
     italic = bool(style.get("italic", False))
@@ -428,7 +428,7 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     # Escalera de rangos: **todas** las casillas están puestas desde el primer fotograma.
     # La que tiene el turno se ve nítida (con un pulso al activarse) y el resto se atenúa
     # y se difumina: primero las que aún no han llegado y después las que ya pasaron
-    # (§3, §20.1).
+    # (§3, §9.3).
     fade = int(ladder["fade_ms"] / 2)
     dim_alpha = max(0, min(255, int(ladder.get("dim_alpha", 150))))
     dim_blur = float(ladder.get("dim_blur", 0) or 0)
@@ -504,37 +504,9 @@ def escape_filter_path(path: str | Path) -> str:
     return f"'{text}'"
 
 
-def zoom_filter(spec: dict, config: Config) -> str | None:
-    """``zoompan`` que solo actúa en el primer clip del vídeo (§3, §20.1).
-
-    Entra de 1.0 a ``1 + first_clip_zoom`` en ~0,4 s, se mantiene durante el primer
-    tramo y vuelve a 1 justo en la transición (oculto por el solape).
-    """
-    zoom = float(spec.get("first_clip_zoom") or 0.0)
-    if zoom <= 0:
-        return None
-    windows = spec.get("windows") or []
-    if not windows:
-        return None
-    ramp_frames = max(1, round(0.4 * config.fps))
-    hold_frames = max(ramp_frames, round(windows[0]["to_s"] * config.fps))
-    target = 1.0 + zoom
-    return (
-        "zoompan="
-        f"z='if(lte(on\\,{hold_frames})\\,min(1+{zoom:.4f}*on/{ramp_frames}\\,{target:.4f})\\,1)':"
-        f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"s={config.target_width}x{config.target_height}:fps={config.fps}"
-    )
-
-
-def video_chain(spec: dict, ass_file: Path, config: Config) -> str:
-    """Cadena de vídeo: zoom del primer clip (si toca) y luego el overlay ASS."""
-    chain: list[str] = []
-    zoom = zoom_filter(spec, config)
-    if zoom:
-        chain.append(zoom)
-    chain.append(f"ass={escape_filter_path(ass_file)}")
-    return ",".join(chain)
+def video_chain(ass_file: Path) -> str:
+    """Cadena de vídeo del overlay: solo el script ASS sobre la unión."""
+    return f"ass={escape_filter_path(ass_file)}"
 
 
 def overlay_argv(
@@ -543,7 +515,6 @@ def overlay_argv(
     dst: Path,
     *,
     ass_file: Path,
-    spec: dict,
     config: Config,
 ) -> list[str]:
     """Recodifica el vídeo con el overlay encima.
@@ -561,7 +532,7 @@ def overlay_argv(
         "-i",
         str(src),
         "-vf",
-        video_chain(spec, ass_file, config),
+        video_chain(ass_file),
         "-map",
         "0:v:0",
         "-map",

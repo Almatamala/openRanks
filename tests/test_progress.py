@@ -35,11 +35,13 @@ def test_edit_only_bar_is_a_full_bar_of_its_own():
 
 
 def test_normalizing_spreads_the_batch_across_its_span():
+    # Normalizar se lleva la mayor parte de la barra: la unión en corte seco es una copia
+    # de streams y ya no compite por el porcentaje.
     events, track = _collect()
     track.normalizing(0, 5, "clip 1")
     track.normalizing(1, 5, "clip 2")
     track.normalizing(5, 5, "último")
-    assert [event.percent for event in events] == [5.0, 15.0, 55.0]
+    assert [event.percent for event in events] == [5.0, 18.0, 70.0]
     assert events[1].step == 1 and events[1].total == 5
 
 
@@ -79,7 +81,7 @@ def test_a_phase_outside_the_bar_is_an_error():
 def test_to_json_only_carries_what_the_panel_needs():
     event = Progress().normalizing(2, 5, "clip 3")
     payload = event.to_json()
-    assert payload == {"percent": 25.0, "phase": "normalizing", "label": "clip 3", "step": 2, "total": 5}
+    assert payload == {"percent": 31.0, "phase": "normalizing", "label": "clip 3", "step": 2, "total": 5}
 
 
 def test_parse_event_reads_a_prefixed_line():

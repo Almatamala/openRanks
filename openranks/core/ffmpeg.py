@@ -19,27 +19,8 @@ from .config import Config
 # (agrandar y recortar laterales, nunca arriba/abajo).
 BAND_HEIGHT = 1184
 
-# Transiciones aceptadas (nombres de ``xfade``). ``slideup`` es el equivalentes
-# más cercano al "pull in" de CapCut del formato de referencia (§3 del plan).
-TRANSITIONS = (
-    "slideup",
-    "slidedown",
-    "slideleft",
-    "slideright",
-    "fade",
-    "squeezev",
-    "squeezeh",
-    "smoothup",
-    "circleopen",
-)
-
-
 class ToolNotFound(RuntimeError):
     """No se pudo localizar ffmpeg/ffprobe."""
-
-
-class TransitionError(ValueError):
-    """Se pidió una transición no soportada."""
 
 
 def resolve_binary(explicit: str | None, env_var: str, name: str) -> str:
@@ -257,77 +238,3 @@ def concat_copy_argv(ffmpeg: str, list_file: Path, dst: Path) -> list[str]:
         "-y",
         str(dst),
     ]
-
-
-def transition_offsets(durations: list[float], transition_s: float) -> list[float]:
-    """Offsets de ``xfade`` para encadenar N clips con solape.
-
-    El solape **acorta** el vídeo: cada transición consume ``transition_s`` de la
-    unión, así que la duración total es ``sum(durations) - (n-1) * transition_s``.
-    """
-    if transition_s < 0:
-        raise TransitionError("la duración de transición no puede ser negativa")
-    return [sum(durations[:index]) - index * transition_s for index in range(1, len(durations))]
-
-
-def transition_argv(
-    ffmpeg: str,
-    srcs: list[Path],
-    dst: Path,
-    *,
-    config: Config,
-    durations: list[float],
-    transition: str = "slideup",
-    transition_s: float = 0.35,
-) -> list[str]:
-    """Unión con transiciones animadas (recodifica una generación)."""
-    if transition not in TRANSITIONS:
-        raise TransitionError(f"transición no soportada: {transition!r}. Disponibles: {', '.join(TRANSITIONS)}")
-    if len(srcs) != len(durations):
-        raise TransitionError("cada fuente necesita su duración")
-    if len(srcs) < 2:
-        raise TransitionError("una transición necesita al menos dos clips")
-
-    argv = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "warning"]
-    for src in srcs:
-        argv += ["-i", str(src)]
-
-    offsets = transition_offsets(durations, transition_s)
-    video_parts: list[str] = []
-    audio_parts: list[str] = []
-    video_prev, audio_prev = "[0:v]", "[0:a]"
-    for index, offset in enumerate(offsets, start=1):
-        video_out = f"[vx{index}]"
-        audio_out = f"[ax{index}]"
-        video_parts.append(
-            f"{video_prev}[{index}:v]xfade=transition={transition}:duration={transition_s:.3f}:offset={offset:.3f}{video_out}"
-        )
-        audio_parts.append(f"{audio_prev}[{index}:a]acrossfade=d={transition_s:.3f}:c1=tri:c2=tri{audio_out}")
-        video_prev, audio_prev = video_out, audio_out
-
-    argv += ["-filter_complex", ";".join(video_parts + audio_parts), "-map", video_prev, "-map", audio_prev]
-    argv += [
-        "-c:v",
-        config.video_codec,
-        "-preset",
-        config.preset,
-        "-crf",
-        str(config.crf),
-        "-pix_fmt",
-        config.pix_fmt,
-        "-c:a",
-        config.audio_codec,
-        "-b:a",
-        config.audio_bitrate,
-        "-ar",
-        str(config.sample_rate),
-        "-ac",
-        str(config.channels),
-        "-map_metadata",
-        "-1",
-        "-movflags",
-        "+faststart",
-        "-y",
-        str(dst),
-    ]
-    return argv

@@ -50,7 +50,7 @@ export function isRunning(id: string): boolean {
 /**
  * Escribe el binding, arranca `openranks assemble --edit` y devuelve el trabajo
  * ya en marcha. El motor hace **L1 y L2** en una sola pasada: normaliza los clips,
- * los une y compone la edición.
+ * los une **en corte seco** y compone la edición.
  */
 export async function startJob(id: string, request: JobRequest): Promise<JobStatus> {
   if (running.has(id)) throw new JobError("Ese montaje ya está en marcha.");
@@ -86,14 +86,6 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
     "--edit",
     "--items",
     String(expected),
-    "--transition-seconds",
-    String(request.transitionSeconds ?? 0),
-    "--transition",
-    request.transition || "slideup",
-    "--cold-open-seconds",
-    String(request.coldOpenSeconds ?? 0),
-    "--zoom",
-    String(request.zoom ?? 0),
     // El avance medido va por stderr: el panel lo convierte en barra y tiempo restante.
     "--progress",
     "--json",

@@ -1,10 +1,9 @@
 """Especificación del overlay de L2 (plan §9.2–9.4).
 
-Función pura y testeable sin FFmpeg (§7.6). Aquí vive la aritmética que en el
-formato de referencia se rompe con facilidad: **las transiciones solapan clips**
-(§18 B4), así que la ventana temporal de cada badge y de cada rótulo no es la suma
-de los anteriores. Si el total se calcula mal, el último badge y el CTA se
-desincronizan del vídeo.
+Función pura y testeable sin FFmpeg (§7.6). El montaje es **siempre de corte seco**,
+así que la ventana temporal de cada badge y de cada rótulo es la suma acumulada de
+los tramos anteriores: el reparto del tiempo tiene que cuadrar con la unión o el
+último badge y el CTA se desincronizan del vídeo.
 
 El estilo es **bloqueado** (ADR-8): lo único que cambia entre rankings es el texto
 (título y nombres de los puestos). Todo lo demás vive en el preset.
@@ -52,7 +51,7 @@ class SpecError(ValueError):
 class ClipWindow:
     """Ventana temporal de un tramo dentro del vídeo ya unido.
 
-    ``position == 0`` es el cold open (B1): se ve pero no lleva badge de posición.
+    ``position == 0`` es el cold open: se ve pero no lleva badge de posición.
     """
 
     position: int
@@ -69,14 +68,11 @@ class ClipWindow:
         return self.position == 0
 
 
-def timeline(segments: Sequence[dict], transition_s: float) -> tuple[ClipWindow, ...]:
+def timeline(segments: Sequence[dict]) -> tuple[ClipWindow, ...]:
     """Ventanas de reproducción a partir de los tramos del plan.
 
-    Cada transición **consume** ``transition_s`` de la unión, así que el tramo
-    siguiente empieza antes de que acabe el anterior (solape de ``xfade``).
+    Corte seco: cada tramo empieza donde acaba el anterior, sin solape.
     """
-    if transition_s < 0:
-        raise SpecError("la transición no puede ser negativa")
     windows: list[ClipWindow] = []
     cursor = 0.0
     for segment in segments:
@@ -94,15 +90,14 @@ def timeline(segments: Sequence[dict], transition_s: float) -> tuple[ClipWindow,
                 to_s=round(end, 3),
             )
         )
-        cursor = end - transition_s
+        cursor = end
     return tuple(windows)
 
 
-def total_duration_s(windows: Sequence[ClipWindow], transition_s: float) -> float:
+def total_duration_s(windows: Sequence[ClipWindow]) -> float:
     """Duración real de la unión: la del último tramo, no la suma."""
     if not windows:
         return 0.0
-    _ = transition_s  # documenta que el solape ya está incluido en las ventanas
     return windows[-1].to_s
 
 
@@ -312,20 +307,17 @@ def build_spec(
     title: str,
     labels: dict[int, str],
     segments: Sequence[dict],
-    transition_s: float,
-    transition: str,
     cold_open_s: float,
     style: dict,
     config: Config,
-    zoom: float = 0.0,
 ) -> dict:
     """Construye el ``spec.json`` que describe el overlay por completo.
 
     Reproducible: el mismo texto + el mismo preset producen el mismo spec y, por
     tanto, el mismo MP4 (§9.3).
     """
-    windows = timeline(segments, transition_s)
-    total = total_duration_s(windows, transition_s)
+    windows = timeline(segments)
+    total = total_duration_s(windows)
     if total <= 0:
         raise SpecError("el plan no tiene tramos: no hay nada que renderizar")
 
@@ -408,9 +400,7 @@ def build_spec(
         "preset": style.get("theme", "top5-default"),
         "canvas": {"width": config.target_width, "height": config.target_height, "fps": config.fps},
         "total_duration_s": round(total, 3),
-        "transition": {"type": transition, "duration_s": round(transition_s, 3)},
         "cold_open_s": round(cold_open_s, 3),
-        "first_clip_zoom": round(zoom, 3),
         "title": {
             "text": title,
             "y": title_style["y"],

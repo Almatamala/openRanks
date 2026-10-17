@@ -45,11 +45,9 @@ está **nítida** y el resto **atenuadas y difuminadas**, tanto las que aún no 
 como las que ya pasaron. El **rótulo de cada puesto** va **al lado de su propia
 casilla**, **entra con su clip y se queda hasta el final** —los textos se acumulan, no
 se sustituyen—, y **en cuanto su puesto cede el turno se atenúa y se difumina igual que
-su casilla**: solo el del puesto actual queda nítido. Cierra el
-**CTA** y, opcionalmente, el **zoom de entrada del primer clip**. Las
-transiciones las pone L1 (corte seco,
-*pull-in* ≈ `xfade slideup`, fundido…), y su solape **se descuenta** de la duración
-total (§18 B4).
+su casilla**: solo el del puesto actual queda nítido. Cierra el **CTA**. El montaje es
+**siempre de corte seco**: los clips se pegan uno tras otro, en orden, sin transiciones
+ni solapes, así que el ranking dura exactamente la suma de sus tramos.
 
 ## Regla dura del producto (ADR-8)
 
@@ -63,9 +61,8 @@ overlay** —`openranks render`— sin volver a montar el vídeo.
 
 `web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los clips
 (de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título y los nombres
-de los puestos, elegir el tipo de corte,
-lanzar el montaje y **ver el resultado en el panel** (9:16 *inline*, portada y
-descargas). Muestra la fase en lenguaje humano («Preparando el clip #4 (2 de 5)»,
+de los puestos, lanzar el montaje en corte seco y **ver el resultado en el panel**
+(9:16 *inline*, portada y descargas). Muestra la fase en lenguaje humano («Preparando el clip #4 (2 de 5)»,
 «Uniendo los cinco clips en vertical»), valida el texto antes de gastar un montaje y
 no enseña rutas, ids internos ni JSON (§RF-9).
 
@@ -88,7 +85,9 @@ tu script ASS— así que **no puede mentir**; a cambio, **los cambios tardan un
 en verse**: el panel vuelve a pedirlo solo cuando dejas de mover los controles. No hay
 vista «en vivo» del navegador: la imitación no cuadraba con el render (fuentes, trazos,
 medallas) y engañaba más que ayudaba. **Guardar plantilla** fija la última (el montaje
-pasa a usarla).
+pasa a usarla) y **sobrevive a reinicios**: vive junto a los trabajos
+(`web/.jobs/preset.json` en local, `/data/jobs/preset.json` en Docker) y el motor la lee
+por `OPENRANKS_PRESET_FILE` en cada montaje.
 
 ```bash
 npm run dev            # desde la raíz del repo; también vale `cd web && npm run dev`
@@ -122,6 +121,7 @@ El resto se configura por entorno:
 | `OPENRANKS_JOBS_DIR` | Dónde viven los trabajos | `web/.jobs/` |
 | `OPENRANKS_FONT` | Familia tipográfica del overlay | `Arial` (en Linux: `DejaVu Sans`) |
 | `OPENRANKS_FIT` | Cómo encaja cada clip en el marco | `band` (banda central del 62 %) |
+| `OPENRANKS_PRESET_FILE` | Plantilla guardada por el panel, que se aplica sobre la de fábrica | la fija el panel en el directorio de trabajos |
 
 ## Correr en Docker
 
@@ -150,7 +150,7 @@ no crece ~110 MB. Variables que usa dentro del contenedor:
 | `OPENRANKS_JOBS_DIR` | `/data/jobs` | El volumen, fuera de la imagen |
 | `OPENRANKS_FONT` | `DejaVu Sans` | `Arial` no existe en Linux |
 | `OPENRANKS_FIT` | `band` | El encaje por defecto, el mismo que en local |
-| `OPENRANKS_PRESET_FILE` | (ninguno) | Preset guardado que se aplica sobre los de fábrica |
+| `OPENRANKS_PRESET_FILE` | lo fija el panel en `/data/jobs/preset.json` | La **última plantilla guardada**; al vivir en el volumen, sobrevive a un reinicio |
 
 > Los servicios `postgres`, `minio`, `worker` y `renderer` que dibuja el plan (§7.7)
 > son de **L4** y todavía no existen en el código; el compose levanta lo que hoy hay.
@@ -263,8 +263,8 @@ El código resuelve los binarios en este orden: argumento explícito (`--ffmpeg`
 python scripts/make_test_clips.py --out demo
 python scripts/make_test_clips.py --out demo10 --positions 10 --seconds 5
 
-# 2) Ensamblado (L1) y, con --edit, la edición (L2) en la misma pasada
-python -m openranks assemble --input demo/binding.json --out demo/render --edit --transition-seconds 0.35
+# 2) Ensamblado (L1) en corte seco y, con --edit, la edición (L2) en la misma pasada
+python -m openranks assemble --input demo/binding.json --out demo/render --edit
 
 # 2b) Rehacer solo la edición (L2) cambiando textos: segundos, no minutos
 python -m openranks render --dir demo/render --title "TOP 5 GATOS" --label 1=CIERRE
@@ -303,11 +303,8 @@ texto no cabe, falla el *input*, nunca el render.
 | `--edit` | Encadena L2: añade `ranking.mp4` + `cover.jpg` + `spec.json` |
 | `--items 7` | Puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo) |
 | `--italic` / `--no-italic` | Letras cursivas en el overlay (`openranks render` y `openranks preview`) |
-| `--zoom 0.08` | Zoom de entrada del primer clip (8 %) |
 | `--fit band\|contain\|cover` | `band` (defecto) **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**: un clip apaisado se ve grande y centrado, con negro arriba y abajo. `contain` lo encaja entero sin recortar (y se ve pequeño si es panorámico); `cover` recorta para llenar los 1080x1920 |
-| `--transition-seconds 0.35` | Solape con transición animada (recodifica). `0` = corte seco, unión **por copia de streams** |
-| `--transition slideup` | Tipo de transición (`fade`, `slideleft`, …). Ver `--help` |
-| `--cold-open-seconds 2` | Adelanto del `#1` al principio (B1 del plan) |
+| `--cold-open-seconds 2` | Adelanto del `#1` al principio (gancho). Solo por CLI: el panel monta sin él |
 | `--progress` | Emite el avance en porcentaje real por `stderr` (lo consume el panel) |
 | `--json` | Salida legible por máquina |
 
@@ -322,8 +319,8 @@ python -m pytest -q
 - **Núcleo puro** (`test_binding.py`, `test_plan.py`, `test_ffmpeg_args.py`,
   `test_media.py`, `test_manifest.py`, `test_config.py`, `test_specs.py`,
   `test_overlay_args.py`, `test_progress.py`, `test_preset.py`): sin FFmpeg, sin red.
-  Cubre el orden `#5 → #1`, la duración real **descontando el solape** (§18 B4), el
-  cold open, los límites de texto, los rankings de 5 a 10 puestos, el encaje del título
+  Cubre el orden `#5 → #1`, la duración real del **corte seco** (la suma exacta de los
+  tramos), el cold open, los límites de texto, los rankings de 5 a 10 puestos, el encaje del título
   (renglones y tamaño), las ventanas de cada badge/rótulo (nítido y atenuado), el color
   de cada puesto, la cursiva, el script ASS, los `argv` de FFmpeg, la monotonía del
   porcentaje y el listado del preset.
@@ -344,14 +341,12 @@ CI (`.github/workflows/ci.yml`) instala FFmpeg y las fuentes del overlay
 | Salida | Fotogramas | Duración medida | Plan |
 | --- | --- | --- | --- |
 | `union.mp4`, corte seco (copia de streams) | 1050 | 35.021 s | 35.000 s |
-| `union.mp4`, transición 0.4 s (xfade) | 1002 | 33.400 s | 33.400 s |
-| `union.mp4`, 5×7 s con pull-in 0.35 s | — | 33.600 s | 35 − 4×0.35 = 33.600 s |
-| `ranking.mp4` con zoom 8 % (L2) | igual que la unión | igual que la unión | — |
-| Avance L1+L2 (5×7 s, con transición) | — | 8 fases, 5 % → 100 % monotóno | ETA visible desde el 5 % |
+| `ranking.mp4` (L2) | igual que la unión | igual que la unión | — |
+| Avance L1+L2 (5×7 s, corte seco) | — | fases de 5 % → 100 %, monotóno | ETA visible desde el 5 % |
 
-Loudness de la unión medida en **−14.08 LUFS** (objetivo −14, pico −1 dBTP): el solape
-de las transiciones se descuenta al fotograma, y el overlay **no** recodifica el audio
-(se copia), así que la medición se mantiene.
+Loudness de la unión medida en **−14.08 LUFS** (objetivo −14, pico −1 dBTP): sin solapes
+que descontar, cada fotograma del plan llega a la unión, y el overlay **no** recodifica
+el audio (se copia), así que la medición se mantiene.
 
 ## Estructura
 
@@ -376,13 +371,13 @@ tests/           # núcleo puro + integración real
   lineal con los valores medidos. Así la unión cae en −14 LUFS sin bombeo.
 - **El overlay es ASS, no `drawtext`**: libass resuelve la fuente por nombre (sin
   escapar rutas en la cadena de filtros) y permite cambiar el color del número dentro
-  de una misma línea (`{\c&H..&}5`). Es el **fallback nativo** que documenta el plan
-  (§20.1); la ruta recomendada (Remotion) dibujaría lo mismo con React.
+  de una misma línea (`{\c&H..&}5`). Es el renderer del plan (§9), sin dependencias de
+  Node ni assets: el motor que ya hace L1 dibuja también L2.
 - **El audio de L2 se copia** (`-c:a copy`): L1 ya lo normalizó y no queremos perder
   esa medición ni gastar una generación de AAC.
-- **Unión por copia de streams** cuando no hay transición: los segmentos se codifican
-  con parámetros idénticos (`-video_track_timescale 30000`, `setsar=1`) y el `concat`
-  demuxer los pega sin recodificar.
+- **Unión por copia de streams**: el montaje es de corte seco y los segmentos se
+  codifican con parámetros idénticos (`-video_track_timescale 30000`, `setsar=1`), así
+  que el `concat` demuxer los pega sin recodificar una sola generación.
 - **Silencio inyectado**: un clip sin audio no se rechaza, se le añade una pista de
   silencio del largo del vídeo, o la unión fallaría.
 - **Metadatos limpios**: `-map_metadata -1` en todo lo que se escribe (equivalente a

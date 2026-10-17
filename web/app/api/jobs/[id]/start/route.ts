@@ -11,15 +11,6 @@ interface StartBody {
   title?: unknown;
   labels?: unknown;
   positions?: unknown;
-  transitionSeconds?: unknown;
-  transition?: unknown;
-  coldOpenSeconds?: unknown;
-  zoom?: unknown;
-}
-
-function toNumber(value: unknown, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 /**
@@ -55,15 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const started = await startJob(id, {
-      title,
-      labels,
-      positions,
-      transitionSeconds: Math.max(0, Math.min(1.5, toNumber(body.transitionSeconds, 0))),
-      transition: typeof body.transition === "string" ? body.transition : "slideup",
-      coldOpenSeconds: Math.max(0, Math.min(5, toNumber(body.coldOpenSeconds, 0))),
-      zoom: Math.max(0, Math.min(0.3, toNumber(body.zoom, 0))),
-    });
+    const started = await startJob(id, { title, labels, positions });
     return NextResponse.json(started, { status: 202 });
   } catch (error) {
     if (error instanceof JobError) {

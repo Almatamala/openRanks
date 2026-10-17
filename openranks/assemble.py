@@ -1,7 +1,8 @@
 """Ensamblador L1: los clips listos y su unión en un solo vídeo vertical (§12).
 
 Secuencia: medir → validar → normalizar cada clip (dos pasadas de ``loudnorm``) →
-unir → verificar → manifiesto. Todo automático: no hay pasos manuales (ADR-8).
+unir en corte seco → verificar → manifiesto. Todo automático: no hay pasos manuales
+(ADR-8).
 
 Con ``edit=True`` encadena además **L2** (la edición del estándar) sobre el
 ``union.mp4``: es la conveniencia del panel, pero L2 vive en su propio módulo y
@@ -91,11 +92,8 @@ def assemble(
     ffmpeg: str | None = None,
     ffprobe: str | None = None,
     fit: str | None = None,
-    transition_s: float = 0.0,
-    transition: str = "slideup",
     cold_open_s: float = 0.0,
     edit: bool = False,
-    zoom: float = 0.0,
     style_overrides: dict | None = None,
     log: Logger | None = None,
     progress: ProgressCallback | None = None,
@@ -141,15 +139,8 @@ def assemble(
     if source_errors:
         raise AssemblyError("hay clips de entrada que no cumplen el contrato de L1", tuple(source_errors))
 
-    # 2) Plan: orden #5 → #1, cold open opcional y duración real con solapes.
-    plan = build_plan(
-        binding,
-        infos,
-        config=cfg,
-        transition_s=transition_s,
-        transition=transition,
-        cold_open_s=cold_open_s,
-    )
+    # 2) Plan: orden #5 → #1, cold open opcional y duración real (corte seco).
+    plan = build_plan(binding, infos, config=cfg, cold_open_s=cold_open_s)
     for warning in plan.warnings:
         say(f"  aviso: {warning}")
 
@@ -190,27 +181,14 @@ def assemble(
         if not segment.is_cold_open:
             outputs.append(_output_entry(ffprobe_bin, destination, kind="clip"))
 
-    # 4) Unión: copia de streams si no hay transición; si la hay, recodifica.
+    # 4) Unión de corte seco: los tramos ya comparten formato exacto, así que se pegan
+    # por copia de streams, sin recodificar.
     union = out_dir / "union.mp4"
     track.joining(f"Uniendo los {len(normalized)} clips en vertical")
-    if transition_s > 0:
-        say(f"uniendo {len(normalized)} tramos con transición {transition} ({transition_s}s)")
-        completed = run(
-            ff.transition_argv(
-                ffmpeg_bin,
-                normalized,
-                union,
-                config=cfg,
-                durations=[segment.duration_s for segment in plan.segments],
-                transition=transition,
-                transition_s=transition_s,
-            )
-        )
-    else:
-        say(f"uniendo {len(normalized)} tramos por copia de streams")
-        list_file = work_dir / "concat.txt"
-        list_file.write_text(ff.concat_list_text(normalized), encoding="utf-8")
-        completed = run(ff.concat_copy_argv(ffmpeg_bin, list_file, union))
+    say(f"uniendo {len(normalized)} tramos por copia de streams")
+    list_file = work_dir / "concat.txt"
+    list_file.write_text(ff.concat_list_text(normalized), encoding="utf-8")
+    completed = run(ff.concat_copy_argv(ffmpeg_bin, list_file, union))
     collected.extend(_tool_warnings(completed.stderr, where="unión"))
 
     # 5) Verificar la unión contra el criterio de salida.
@@ -249,7 +227,6 @@ def assemble(
         overlay_result = render_overlay(
             out_dir,
             style_overrides=style_overrides,
-            zoom=zoom,
             config=cfg,
             ffmpeg=ffmpeg_bin,
             ffprobe=ffprobe_bin,
@@ -331,8 +308,8 @@ def _output_warnings(*, info: MediaInfo, plan: AssemblyPlan, config: Config) -> 
     """
     warnings: list[str] = []
 
-    # Con transiciones el vídeo **pierde** fotogramas (el solape los consume), así que la
-    # expectativa sale de la duración real del plan, no de la suma de los tramos.
+    # El montaje es de corte seco, así que no se pierde ningún fotograma: la expectativa
+    # es la duración del plan (la suma de los tramos) por los fps.
     expected_frames = round(plan.total_duration_s * config.fps)
     if info.nb_frames is not None and info.nb_frames != expected_frames:
         warnings.append(f"la unión tiene {info.nb_frames} fotogramas y el plan esperaba {expected_frames}")

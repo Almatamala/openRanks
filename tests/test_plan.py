@@ -1,4 +1,4 @@
-"""El plan de ensamblado: orden #5→#1, duración real con solapes y cold open (§18 B1/B4)."""
+"""El plan de ensamblado: orden #5→#1, duración real de corte seco y cold open."""
 
 from __future__ import annotations
 
@@ -44,16 +44,10 @@ def test_segments_are_ordered_from_position_five_to_one():
     assert [segment.position for segment in plan.segments] == [5, 4, 3, 2, 1]
 
 
-def test_total_is_the_sum_when_there_is_no_transition():
+def test_total_is_the_sum_of_the_segments():
+    # Corte seco: los tramos no se solapan, así que el total es la suma exacta.
     plan = build_plan(_binding(), _infos(6.0), config=Config())
-    assert plan.overlaps_s == 0
     assert plan.total_duration_s == pytest.approx(30.0)
-
-
-def test_transitions_shorten_the_total_by_the_overlap():
-    plan = build_plan(_binding(), _infos(6.0), config=Config(), transition_s=0.35)
-    assert plan.overlaps_s == pytest.approx(1.4)
-    assert plan.total_duration_s == pytest.approx(30.0 - 1.4)
 
 
 def test_short_total_only_warns():
@@ -69,13 +63,6 @@ def test_long_total_only_warns_up_to_the_hard_ceiling():
 def test_total_over_the_hard_ceiling_is_an_error():
     with pytest.raises(PlanError, match="techo duro"):
         build_plan(_binding(), _infos(13.0), config=Config())
-
-
-def test_clip_shorter_than_the_transition_is_an_error():
-    infos = _infos(6.0)
-    infos[3] = _info(0.2)
-    with pytest.raises(PlanError, match="no se puede solapar"):
-        build_plan(_binding(), infos, config=Config(), transition_s=0.35)
 
 
 def test_cold_open_prepends_a_teaser_of_the_best_clip():
@@ -115,8 +102,10 @@ def test_output_names(position, label, expected):
 
 
 def test_manifest_payload_lists_the_segments_in_playback_order():
-    plan = build_plan(_binding(), _infos(6.0), config=Config(), transition_s=0.35)
+    plan = build_plan(_binding(), _infos(6.0), config=Config())
     payload = plan.to_manifest()
     assert [segment["position"] for segment in payload["segments"]] == [5, 4, 3, 2, 1]
-    assert payload["total_duration_s"] == pytest.approx(28.6)
+    assert payload["total_duration_s"] == pytest.approx(30.0)
     assert payload["clip_count"] == 5
+    # El manifiesto ya no habla de transiciones: el montaje es de corte seco.
+    assert "transition" not in payload and "overlaps_s" not in payload

@@ -1,7 +1,8 @@
 """Integración real: FFmpeg de verdad sobre clips sintéticos.
 
 Aquí se comprueba el criterio de salida de L1 (§12): 1080x1920, 30 fps, yuv420p,
-audio presente, un solo ``union.mp4`` y los 5 clips listos.
+audio presente, un solo ``union.mp4`` y los 5 clips listos, con el montaje en corte
+seco (unión por copia de streams, sin recodificar).
 """
 
 from __future__ import annotations
@@ -78,25 +79,6 @@ def test_silence_is_injected_for_a_clip_without_audio(ffmpeg_bin, ffprobe_bin, s
     binding = load_binding(write_binding(synthetic_clips), _small())
     result = assemble(binding, tmp_path / "out", config=_small(), ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin)
     assert probe(ffprobe_bin, result.union).has_audio
-
-
-def test_transitions_shorten_the_union(ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path):
-    binding = load_binding(write_binding(synthetic_clips), _small())
-    result = assemble(
-        binding,
-        tmp_path / "out",
-        config=_small(),
-        ffmpeg=ffmpeg_bin,
-        ffprobe=ffprobe_bin,
-        transition_s=0.5,
-        transition="slideup",
-    )
-    total = sum(probe(ffprobe_bin, clip).duration_s for clip in synthetic_clips)
-    assert result.plan.overlaps_s == pytest.approx(2.0)
-    assert result.total_measured_s == pytest.approx(total - 2.0, abs=0.5)
-    # El solape consume fotogramas: la expectativa sale del plan, no de la suma de tramos.
-    assert probe(ffprobe_bin, result.union).nb_frames == round(result.plan.total_duration_s * 30)
-    assert not any("fotogramas" in warning for warning in result.warnings)
 
 
 def test_cold_open_prepends_the_best_clip(ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path):

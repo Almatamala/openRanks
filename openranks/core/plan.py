@@ -1,8 +1,8 @@
-"""Plan de ensamblado: qué clip va dónde y cuánto dura la unión de verdad.
+"""Plan de ensamblado: qué clip va dónde y cuánto dura la unión.
 
-Función pura y testeable sin FFmpeg (§7.6). Aquí vive la aritmética que en el
-formato de referencia se rompe con facilidad: las transiciones **solapan** clips,
-así que la duración total no es la suma (§18 B4).
+Función pura y testeable sin FFmpeg (§7.6). El montaje es **siempre de corte seco**:
+los tramos se pegan uno tras otro sin solape, así que la duración total es la suma
+exacta de los tramos y la unión se hace por copia de streams (sin recodificar).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ class PlanError(ValueError):
 
 @dataclass(frozen=True)
 class SegmentPlan:
-    """Un tramo del vídeo final. ``position == 0`` es el cold open (B1)."""
+    """Un tramo del vídeo final. ``position == 0`` es el cold open."""
 
     position: int
     source: Path
@@ -38,8 +38,6 @@ class SegmentPlan:
 class AssemblyPlan:
     title: str
     segments: tuple[SegmentPlan, ...]
-    transition: str
-    transition_s: float
     cold_open_s: float
     warnings: tuple[str, ...] = ()
 
@@ -49,13 +47,9 @@ class AssemblyPlan:
         return sum(1 for segment in self.segments if not segment.is_cold_open)
 
     @property
-    def overlaps_s(self) -> float:
-        return self.transition_s * max(0, len(self.segments) - 1)
-
-    @property
     def total_duration_s(self) -> float:
-        """Duración real: suma de tramos menos el solape de las transiciones."""
-        return sum(segment.duration_s for segment in self.segments) - self.overlaps_s
+        """Duración real: la suma de los tramos (el montaje es de corte seco)."""
+        return sum(segment.duration_s for segment in self.segments)
 
     @property
     def outputs(self) -> tuple[Path, ...]:
@@ -65,10 +59,7 @@ class AssemblyPlan:
         return {
             "title": self.title,
             "clip_count": self.clip_count,
-            "transition": self.transition,
-            "transition_s": self.transition_s,
             "cold_open_s": self.cold_open_s,
-            "overlaps_s": round(self.overlaps_s, 3),
             "total_duration_s": round(self.total_duration_s, 3),
             "warnings": list(self.warnings),
             "segments": [
@@ -96,15 +87,12 @@ def build_plan(
     infos: dict[int, MediaInfo],
     *,
     config: Config | None = None,
-    transition_s: float = 0.0,
-    transition: str = "slideup",
     cold_open_s: float = 0.0,
 ) -> AssemblyPlan:
     """Construye el plan de ensamblado a partir del binding y los medios medidos.
 
-    L1 une con corte seco por defecto (``transition_s=0``), que permite unir por
-    copia de streams. Con transición > 0 la unión recodifica y la duración total
-    baja por el solape.
+    L1 une **siempre** con corte seco (sin solape), lo que permite pegar los tramos
+    por copia de streams sin recodificar el vídeo.
     """
     cfg = config or Config()
     errors: list[str] = []
@@ -116,7 +104,7 @@ def build_plan(
 
     segments: list[SegmentPlan] = []
 
-    # Cold open (B1): un adelanto del #1 al principio, sin rótulo de posición.
+    # Cold open: un adelanto del #1 al principio, sin rótulo de posición.
     if cold_open_s > 0:
         best = binding.best
         best_info = infos[best.position]
@@ -150,18 +138,9 @@ def build_plan(
             )
         )
 
-    if transition_s > 0:
-        short = [s.position for s in segments if s.duration_s <= transition_s]
-        if short:
-            errors.append(
-                f"los tramos {short} duran menos o igual que la transición ({transition_s}s): no se puede solapar"
-            )
-
     plan = AssemblyPlan(
         title=binding.title,
         segments=tuple(segments),
-        transition=transition,
-        transition_s=transition_s,
         cold_open_s=cold_open_s,
         warnings=(),  # se rellena abajo con los avisos de duración
     )
@@ -186,8 +165,6 @@ def build_plan(
     return AssemblyPlan(
         title=plan.title,
         segments=plan.segments,
-        transition=plan.transition,
-        transition_s=plan.transition_s,
         cold_open_s=plan.cold_open_s,
         warnings=tuple(warnings),
     )

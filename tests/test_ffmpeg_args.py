@@ -147,54 +147,13 @@ def test_concat_list_escapes_quotes():
     assert "'\\''" in lines[1]
 
 
-def test_concat_copy_does_not_reencode():
+def test_concat_copy_is_the_only_union_and_does_not_reencode():
+    """El montaje es siempre de corte seco: la unión es una copia de streams, sin
+    transiciones ni recodificación."""
     argv = ff.concat_copy_argv("ffmpeg", Path("lista.txt"), Path("union.mp4"))
     assert argv[argv.index("-c") + 1] == "copy"
     assert "-f" in argv and argv[argv.index("-f") + 1] == "concat"
-
-
-def test_transition_offsets_account_for_the_overlap():
-    # 3 clips de 10 s con 1 s de solape: 10 - 1 = 9, y (10 + 10 - 1) - 1 = 18.
-    assert ff.transition_offsets([10.0, 10.0, 10.0], 1.0) == [9.0, 18.0]
-    # 5 clips de 6 s con 0.35 s de solape: cada offset es la longitud acumulada menos el solape.
-    assert ff.transition_offsets([6.0, 6.0, 6.0, 6.0, 6.0], 0.35) == pytest.approx([5.65, 11.3, 16.95, 22.6])
-
-
-def test_transition_offsets_reject_negative_duration():
-    with pytest.raises(ff.TransitionError):
-        ff.transition_offsets([10.0, 10.0], -0.35)
-
-
-def test_transition_argv_chains_xfade_and_acrossfade():
-    argv = ff.transition_argv(
-        "ffmpeg",
-        [Path("a.mp4"), Path("b.mp4"), Path("c.mp4")],
-        Path("out.mp4"),
-        config=CONFIG,
-        durations=[10.0, 10.0, 10.0],
-        transition="slideup",
-        transition_s=1.0,
-    )
-    graph = argv[argv.index("-filter_complex") + 1]
-    assert graph.count("xfade=transition=slideup") == 2
-    assert graph.count("acrossfade") == 2
-    assert "offset=9.000" in graph and "offset=18.000" in graph
-    assert argv[argv.index("-map") + 1] == "[vx2]"
-
-
-def test_transition_argv_validates_its_input():
-    with pytest.raises(ff.TransitionError):
-        ff.transition_argv("ffmpeg", [Path("a.mp4")], Path("o.mp4"), config=CONFIG, durations=[1.0])
-    with pytest.raises(ff.TransitionError, match="no soportada"):
-        ff.transition_argv(
-            "ffmpeg",
-            [Path("a.mp4"), Path("b.mp4")],
-            Path("o.mp4"),
-            config=CONFIG,
-            durations=[5.0, 5.0],
-            transition="magic",
-        )
-
-
-def test_slideup_is_offered_as_the_pull_in_equivalent():
-    assert "slideup" in ff.TRANSITIONS
+    assert "-filter_complex" not in argv
+    # El motor ya no ofrece transiciones: ni la tabla ni el constructor de xfade existen.
+    assert not hasattr(ff, "TRANSITIONS")
+    assert not hasattr(ff, "transition_argv")

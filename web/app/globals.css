@@ -67,11 +67,6 @@ header.top p {
   min-width: 0;
 }
 
-.top-row button {
-  flex: none;
-  margin-top: 4px;
-}
-
 @media (max-width: 620px) {
   .top-row {
     flex-direction: column;
@@ -320,56 +315,6 @@ button:disabled {
 .hint.eta {
   margin: 6px 0 0;
   font-size: 13px;
-}
-
-.preset summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.preset h3 {
-  margin: 18px 0 6px;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent);
-}
-
-.preset-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.preset-table th,
-.preset-table td {
-  text-align: left;
-  vertical-align: top;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.preset-table th {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--text);
-}
-
-.preset-table td.value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--accent);
-  white-space: nowrap;
-}
-
-.preset-table td.what {
-  color: var(--muted);
-}
-
-.hint.where {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  margin: 8px 0 0;
 }
 
 video {

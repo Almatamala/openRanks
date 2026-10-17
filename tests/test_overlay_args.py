@@ -1,4 +1,4 @@
-"""Overlay de L2 sin FFmpeg: script ASS, colores, rutas y argv (§9.2, §20.1)."""
+"""Overlay de L2 sin FFmpeg: script ASS, colores, rutas y argv (§9.2)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from openranks.core.overlay import (
     overlay_argv,
     preview_argv,
     video_chain,
-    zoom_filter,
 )
 from openranks.core.specs import TITLE_SIDE_MARGIN, build_spec, title_line_width
 
@@ -35,7 +34,7 @@ def _style() -> dict:
     return style
 
 
-def _spec(*, zoom: float = 0.0) -> dict:
+def _spec() -> dict:
     segments = [
         {"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(5, 0, -1)
     ]
@@ -43,12 +42,9 @@ def _spec(*, zoom: float = 0.0) -> dict:
         title="TOP 5 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=segments,
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=_style(),
         config=Config(),
-        zoom=zoom,
     )
 
 
@@ -153,8 +149,6 @@ def test_ass_title_paints_marked_words_in_the_two_accents():
         title="TOP *5* _GATOS_",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=segments,
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=_style(),
         config=Config(),
@@ -171,8 +165,6 @@ def test_ass_escapes_user_text_so_braces_do_not_break_the_overlay():
         title="TOP 5 {GATOS}",
         labels={5: r"CAOS \ TOTAL", 4: "B", 3: "C", 2: "D", 1: "E"},
         segments=segments,
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=_style(),
         config=Config(),
@@ -209,8 +201,7 @@ def test_escape_filter_path_escapes_the_windows_drive_colon():
 
 
 def test_overlay_argv_copies_the_audio_and_cleans_metadata():
-    spec = _spec()
-    argv = overlay_argv("ffmpeg", Path("union.mp4"), Path("ranking.mp4"), ass_file=Path("work/overlay.ass"), spec=spec, config=Config())
+    argv = overlay_argv("ffmpeg", Path("union.mp4"), Path("ranking.mp4"), ass_file=Path("work/overlay.ass"), config=Config())
     assert argv[0] == "ffmpeg"
     assert "ass=" in argv[argv.index("-vf") + 1]
     # El audio no se recodifica: L1 ya lo dejó a −14 LUFS.
@@ -219,16 +210,11 @@ def test_overlay_argv_copies_the_audio_and_cleans_metadata():
     assert argv[-1] == "ranking.mp4"
 
 
-def test_no_zoom_means_no_zoompan_filter():
-    assert zoom_filter(_spec(), Config()) is None
-    assert "zoompan" not in video_chain(_spec(), Path("o.ass"), Config())
-
-
-def test_zoom_filter_ramps_in_and_returns_after_the_first_clip():
-    filt = zoom_filter(_spec(zoom=0.08), Config())
-    assert filt is not None and filt.startswith("zoompan=")
-    assert "min(1+0.0800*on/12" in filt
-    assert "s=1080x1920:fps=30" in filt
+def test_the_video_chain_is_only_the_ass_overlay():
+    chain = video_chain(Path("o.ass"))
+    assert chain.startswith("ass='")
+    # Ya no hay zoom de entrada: el montaje es corte seco y la cadena no toca el zoom.
+    assert "zoompan" not in chain and "," not in chain
 
 
 def test_the_env_font_overrides_the_factory_default(monkeypatch):
@@ -263,8 +249,6 @@ def _spec_of(count: int, title: str = "TOP 5 GATOS", *, segment_s: float = 7.0) 
         title=title,
         labels={position: f"RÓTULO {position}" for position in range(1, count + 1)},
         segments=segments,
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=_style(),
         config=Config(items=count),
@@ -281,8 +265,6 @@ def test_ass_title_wraps_into_lines_and_shrinks_until_it_fits():
         segments=[
             {"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(8, 0, -1)
         ],
-        transition_s=0.0,
-        transition="cut",
         cold_open_s=0.0,
         style=style,
         config=Config(items=8),
