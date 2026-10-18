@@ -71,6 +71,54 @@ def test_parse_probe_missing_duration_is_zero():
     assert info.duration_s == 0.0
 
 
+def test_parse_probe_applies_the_rotation_to_the_visible_size():
+    rotated = {
+        "format": {"duration": "7.0"},
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "pix_fmt": "yuv420p",
+                "r_frame_rate": "30/1",
+                "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}],
+            }
+        ],
+    }
+    info = parse_probe(Path("rotado.mp4"), rotated)
+    assert info.rotation == 270
+    assert (info.width, info.height) == (1920, 1080)
+    assert (info.display_width, info.display_height) == (1080, 1920)
+    assert info.visible_size == (1080, 1920)
+
+
+def test_parse_probe_reads_the_legacy_rotate_tag():
+    tagged = {
+        "format": {"duration": "7.0"},
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "pix_fmt": "yuv420p",
+                "r_frame_rate": "30/1",
+                "tags": {"rotate": "90"},
+            }
+        ],
+    }
+    info = parse_probe(Path("tag.mp4"), tagged)
+    assert info.rotation == 90
+    assert info.visible_size == (1080, 1920)
+
+
+def test_source_entry_declares_rotation_and_visible_size():
+    entry = _info(rotation=90, display_width=1080, display_height=1920).to_source_entry(position=1, sha256="a")
+    assert entry["rotation"] == 90
+    assert (entry["display_width"], entry["display_height"]) == (1080, 1920)
+
+
 def _info(**overrides) -> MediaInfo:
     base = dict(
         path=Path("clip.mp4"),

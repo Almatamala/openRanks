@@ -19,8 +19,10 @@ from . import TOOL_VERSION
 from .core import ffmpeg as ff
 from .core.binding import Binding
 from .core.config import Config
+from .core.framing import FramingDecision, FramingError, fallback_decision
 from .core.manifest import build_manifest, sha256_file, utc_now, write_manifest
 from .core.media import MediaInfo, probe, validate_normalized, validate_ready_clip
+from .framing import analyze
 from .core.plan import AssemblyPlan, build_plan
 from .core.progress import SPAN_FULL, Progress, ProgressCallback
 from .core.runner import run, tail_lines, version_of
@@ -107,8 +109,8 @@ def assemble(
     say = log or _noop
     track = Progress(progress, span=SPAN_FULL)
     cfg = config or Config.from_env()
-    # Sin elección explícita manda la configuración (`contain` por defecto: no
-    # recorta los clips, el operador asume que ya vienen bien).
+    # Sin elección explícita manda la configuración (`auto` por defecto: detecta el
+    # área útil y, si no hay confianza, rellena con negro sin recortar).
     fit = fit or cfg.fit
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")
     ffprobe_bin = ff.resolve_binary(ffprobe, "OPENRANKS_FFPROBE", "ffprobe")
@@ -127,6 +129,8 @@ def assemble(
     infos: dict[int, MediaInfo] = {}
     source_entries: list[dict] = []
     source_errors: list[str] = []
+    collected: list[str] = []
+    decisions: dict[Path, FramingDecision] = {}
     for item in sorted(binding.items, key=lambda entry: entry.position, reverse=True):
         info = probe(ffprobe_bin, item.path)
         infos[item.position] = info
@@ -135,7 +139,29 @@ def assemble(
             say(f"  aviso #{item.position}: {warning}")
         for error in check.errors:
             source_errors.append(f"#{item.position}: {error}")
-        source_entries.append(info.to_source_entry(position=item.position, sha256=sha256_file(item.path)))
+
+        entry = info.to_source_entry(position=item.position, sha256=sha256_file(item.path))
+        if fit == "auto" and check.ok:
+            decision = decisions.get(item.path)
+            if decision is None:
+                try:
+                    decision = analyze(ffmpeg_bin, item.path, info, config=cfg)
+                except (FramingError, OSError) as exc:
+                    visible = (info.display_width or info.width or 0, info.display_height or info.height or 0)
+                    decision = fallback_decision(
+                        input_size=(info.width or 0, info.height or 0),
+                        visible_size=visible,
+                        rotation=info.rotation,
+                        reason="no se pudo analizar el encuadre",
+                        warning=f"no se pudo analizar el encuadre ({exc}); se rellena con negro sin recortar",
+                    )
+                decisions[item.path] = decision
+                say(f"  #{item.position}: {decision.reason} (confianza {decision.confidence:.2f})")
+                for warning in decision.warnings:
+                    collected.append(f"#{item.position}: {warning}")
+                    say(f"  aviso #{item.position}: {warning}")
+            entry["framing"] = decision.to_manifest()
+        source_entries.append(entry)
     if source_errors:
         raise AssemblyError("hay clips de entrada que no cumplen el contrato de L1", tuple(source_errors))
 
@@ -147,7 +173,6 @@ def assemble(
     # 3) Normalizar cada tramo a 1080x1920 / 30 fps / yuv420p, audio a −14 LUFS.
     normalized: list[Path] = []
     outputs: list[dict] = []
-    collected: list[str] = []
     for index, segment in enumerate(plan.segments):
         where = "el adelanto del #1" if segment.is_cold_open else f"el clip #{segment.position}"
         track.normalizing(index, len(plan.segments), f"Preparando {where} ({index + 1} de {len(plan.segments)})")
@@ -159,6 +184,19 @@ def assemble(
             measured = _measure_loudness(ffmpeg_bin, segment.source, cfg)
         say(f"  #{segment.position}: normalizando -> {destination.relative_to(out_dir).as_posix()}")
         limit = segment.duration_s if segment.is_cold_open else None
+        decision = decisions.get(segment.source)
+        if fit == "auto" and decision is not None:
+            # `sin_cambios` solo significa que no hay crop; el clip igual se
+            # re-encodea a 30 fps/yuv420p para que la unión por copia funcione.
+            segment_fit = "contain" if decision.fit == "sin_cambios" else decision.fit
+            segment_crop = decision.crop
+        elif fit == "auto":
+            segment_fit = "contain"
+            segment_crop = None
+            collected.append(f"#{segment.position}: no había decisión de encuadre; se rellena con negro")
+        else:
+            segment_fit = fit
+            segment_crop = None
         completed = run(
             ff.normalize_argv(
                 ffmpeg_bin,
@@ -166,7 +204,8 @@ def assemble(
                 destination,
                 config=cfg,
                 has_audio=info.has_audio,
-                fit=fit,
+                fit=segment_fit,
+                crop=segment_crop,
                 measured=measured,
                 limit_s=limit,
                 duration_s=segment.duration_s,

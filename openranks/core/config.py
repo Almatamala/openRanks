@@ -39,11 +39,12 @@ class Config:
     target_width: int = 1080
     target_height: int = 1920
     fps: int = 30
-    # Cómo encaja un clip en el marco vertical. `band` (por defecto) lo agranda hasta
-    # llenar una banda central de 1080x1184 (~62 % del alto) recortando **laterales** y
-    # nunca arriba/abajo; `contain` no recorta nada (el clip apaisado se ve pequeño) y
-    # `cover` recorta para llenar los 1080x1920 enteros.
-    fit: str = "band"
+    # Cómo encaja un clip en el marco vertical. `auto` (por defecto) detecta el área
+    # útil de un clip horizontal con fondo borroso y la recorta; si no hay evidencia,
+    # rellena con negro. `band` agranda hasta llenar una banda central de 1080x1184
+    # (~62 % del alto) recortando **laterales** y nunca arriba/abajo; `contain` no
+    # recorta nada y `cover` recorta para llenar los 1080x1920 enteros.
+    fit: str = "auto"
     video_codec: str = "libx264"
     crf: int = 19
     preset: str = "medium"

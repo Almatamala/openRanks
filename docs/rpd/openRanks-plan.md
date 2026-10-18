@@ -6,7 +6,7 @@
 | **Estado** | **L1, L2 y el panel están construidos y verificados**; L3 (extractora) y L4 (integración y publicación) son lo pendiente |
 | **Fecha** | 16-oct-2026 (documento vigente, reescrito en presente) |
 | **Alcance** | RPD (qué y por qué) + plan de ejecución (cómo, en qué orden, con qué criterios de salida) |
-| **Decisiones vigentes** | (1) **servicio nuevo**, con código de OpenShorts como referencia; (2) **interfaz única y cómoda** (ADR-9); (3) **estilo bloqueado y render automático** (ADR-8); (4) **montaje siempre de corte seco** (ADR-10) |
+| **Decisiones vigentes** | (1) **servicio nuevo**, con código de OpenShorts como referencia; (2) **interfaz única y cómoda** (ADR-9); (3) **estilo bloqueado y render automático** (ADR-8); (4) **montaje siempre de corte seco** (ADR-10); (5) **encuadre automático** por detección del área útil (ADR-11) |
 | **Repo de referencia** | **OpenShorts** (repositorio vecino, no este): de él se copia/adapta código con licencia **MIT**, con cabecera de origen y NOTICE. Su directorio `cloud/` es licencia comercial y **no se copia** nunca |
 | **Archivo único** | Este documento vive junto al código que describe, y sustituye a los borradores anteriores |
 
@@ -47,12 +47,13 @@ Lo que está construido y verificado, con la pieza donde vive:
 | --- | --- | --- |
 | Configuración y contrato de entrada | `openranks/core/config.py`, `core/binding.py` | Formato de salida, bandas de duración, límites del texto, ranking de 5 a 10 puestos |
 | Medición del material | `openranks/core/media.py` | `ffprobe`, contrato del clip de entrada y del archivo normalizado |
-| Comandos de FFmpeg | `openranks/core/ffmpeg.py` | Normalización a la banda central, `loudnorm` en dos pasadas, unión por copia de streams |
+| Comandos de FFmpeg | `openranks/core/ffmpeg.py` | Normalización al marco vertical con recorte opcional, `loudnorm` en dos pasadas, unión por copia de streams |
+| Encuadre del clip | `openranks/core/framing.py`, `openranks/framing.py` | Clasificación vertical/horizontal, detección del área nítida, refino a resolución completa, confianza y fallback sin recorte |
 | Plan del montaje | `openranks/core/plan.py` | Orden `#5 → #1`, cold open opcional, duración real (suma exacta) |
 | Overlay (spec y ASS) | `openranks/core/specs.py`, `core/overlay.py` | Ventanas de tiempo, encaje del título, escalera, rótulos y el script ASS |
 | Progreso | `openranks/core/progress.py` | Porcentaje medido, fase con nombre humano y ETA honesto en el panel |
 | Orquestación L1 / L2 | `openranks/assemble.py`, `openranks/overlay.py` | Montar, verificar y editar, con manifiesto en cada paso |
-| CLI | `openranks/cli.py` | `assemble`, `render`, `preview`, `preset`, `probe` |
+| CLI | `openranks/cli.py` | `assemble`, `render`, `preview`, `preset`, `probe`, `fit` |
 | Panel | `web/` (Next.js) | Flujo completo sin terminal: subir, escribir, montar, ver, descargar |
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
 | Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
@@ -238,6 +239,9 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
   atenúa y difumina cuando su puesto cede el turno**, igual que su casilla.
 - **Título global**: arriba, con el número destacado (dos capas: texto + número de otro color).
 - **Legibilidad**: texto blanco con **stroke negro**, contorno grueso.
+- **Encuadre**: un clip horizontal con un clip vertical centrado se recorta al **área nítida**
+  y se rellena con negro; uno que ya es vertical no se recorta. La detección es automática y,
+  si la confianza es baja, se prefiere **no recortar** (ADR-11).
 - **Montaje**: **siempre corte seco** (ADR-10). El formato de referencia usa transiciones
   animadas con *swoosh* y *zoom-in* en el primero; el operador ha decidido no usarlas: el
   montaje va a cortes limpios y la capa transformativa se concentra en la edición del overlay.
@@ -254,7 +258,7 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
 | # | Capacidad | Estado |
 | --- | --- | --- |
 | 1 | Ingesta de **archivo subido** (los clips que aporta el operador) | **Hecho** |
-| 2 | Normalización: `ffprobe`, encuadre vertical, 30 fps, audio a −14 LUFS | **Hecho** |
+| 2 | Normalización: `ffprobe`, encuadre automático (recorte del área útil o relleno), 30 fps, audio a −14 LUFS | **Hecho** |
 | 3 | **Unión en corte seco** en un solo vídeo vertical | **Hecho** |
 | 4 | Edición del estándar sobre la unión (título, escalera, rótulos) | **Hecho** |
 | 5 | **Plantilla editable y persistente** (fuente, cursiva, tamaño y posición) | **Hecho** |
@@ -334,9 +338,11 @@ Historias de usuario (con criterio de aceptación resumido):
    **5 a 10**.
 2. Cada clip se mide con `ffprobe` y se valida contra el contrato de entrada: duración dentro
    de la banda, lado corto mínimo, audio opcional (si falta, se **inyecta silencio**).
-3. Cada clip se normaliza a **1080x1920 / 30 fps / yuv420p**, con encuadre configurable
-   (`band` por defecto: agranda el clip hasta llenar una banda central de 1184 px recortando
-   **solo los laterales**; `contain` no recorta; `cover` llena el marco) y audio a **−14 LUFS**
+3. Cada clip se normaliza a **1080x1920 / 30 fps / yuv420p**, con **encuadre automático**
+   (`fit=auto`): un clip vertical se escala sin recortar; uno horizontal se muestrea (12
+   fotogramas a 192 px), se mide la nitidez por columnas y filas, se recorta el área útil y se
+   afina el borde a resolución completa. Si la confianza es baja, **no se recorta** y se rellena
+   con negro. `band`, `contain` y `cover` quedan como elección explícita. Audio a **−14 LUFS**
    con dos pasadas de `loudnorm`.
 4. Los tramos se unen **en corte seco** (`#5 → #1`, con cold open opcional) por **copia de
    streams**, sin recodificar.
@@ -346,6 +352,9 @@ Historias de usuario (con criterio de aceptación resumido):
 **Criterio de aceptación** (verificado en `tests/test_assemble_e2e.py`): los seis archivos
 validan con `ffprobe` (1080x1920, 30 fps, yuv420p, audio presente) y el unido cae en la banda
 de 30–58 s; con 5 clips de 2 s, la unión da **300 fotogramas y 10,0 s exactos**.
+El encuadre tiene su propia suite (`tests/test_framing.py`, `test_framing_args.py` y
+`test_framing_e2e.py`): clasificación sin análisis, recorte de un clip sobre fondo borroso,
+agua ajena ignorada, rotación y salida normalizada.
 
 ### RF-1 — Ingesta y detección de «ya está cortado» (L3) · *pendiente*
 
@@ -611,18 +620,20 @@ el estado, MinIO para el almacenamiento objeto, worker de análisis y publicaci�
 
 ```
 openranks/
-  core/           config, binding, media, ffmpeg, plan, runner, manifest, specs, overlay, progress
-  assemble.py     orquestación de L1: medir → validar → normalizar → unir → verificar → manifiesto
+  core/           config, binding, media, ffmpeg, framing, plan, runner, manifest, specs, overlay, progress
+  assemble.py     orquestación de L1: medir → encuadrar → normalizar → unir → verificar → manifiesto
+  framing.py      análisis de encuadre con FFmpeg (muestreo, refino, JSON)
   overlay.py      orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + cover + spec
-  cli.py          openranks assemble | render | preview | preset | probe
+  cli.py          openranks assemble | render | preview | preset | probe | fit
 web/              panel Next.js (App Router): API de trabajos, preset, vista previa y la UI
 scripts/          clips sintéticos para probar a mano
 tests/            núcleo puro (sin FFmpeg) + integración real
 docs/rpd/         este documento
 ```
 
-`core/` es **stdlib puro**: toda la lógica de decisión (plan, specs, encaje del título, preset)
-se testea en CI sin FFmpeg y sin red. Los comandos de FFmpeg se **construyen** en
+`core/` es **stdlib puro**: toda la lógica de decisión (plan, specs, encaje del título, preset y
+geometría del encuadre) se testea en CI sin FFmpeg y sin red. El análisis de píxeles vive en
+`framing.py` y se ejecuta en el ensamblador. Los comandos de FFmpeg se **construyen** en
 `core/ffmpeg.py` y `core/overlay.py`, y se **ejecutan** en `assemble.py` / `overlay.py`.
 
 ### 7.7 Despliegue mínimo (el que existe)
@@ -733,7 +744,7 @@ puesto en `openranks/core/specs.py` (`RANK_COLORS`). Lo que hay hoy:
 | Escalera | Cinco casillas fijas (o tantas como puestos); **🥇🥈🥉** en el podio (fuente monocroma `medal_font`) y el número en el resto; color por puesto (`RANK_COLORS`) |
 | Turno | La casilla **activa** se ve nítida durante su clip; las demás **se atenúan y difuminan** (`dim_alpha`, `dim_blur`) |
 | Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx`); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
-| Encaje del clip | `band` por defecto (`OPENRANKS_FIT`); `contain` no recorta y `cover` llena el marco |
+| Encaje del clip | `auto` por defecto (`OPENRANKS_FIT`): detecta el área útil y rellena con negro; `band`, `contain` y `cover` son elecciones explícitas |
 | Preset editable | Una **parte** se ajusta y guarda desde el panel: `font`, `italic`, `title.size`, `title.background`, `rank_ladder.{size,x,y_top,y_bottom}` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
 
 **Sin CTA de cierre.** El estándar no dibuja ningún texto de «sígueme» al final: el vídeo
@@ -939,7 +950,7 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 
 | Entregable | Detalle |
 | --- | --- |
-| Normalización por clip | 1080x1920 / 30 fps / yuv420p; encuadre `band`/`contain`/`cover`; TRACK como modo por defecto |
+| Normalización por clip | 1080x1920 / 30 fps / yuv420p; **encuadre automático** con detección del área útil y fallback sin recorte; `band`/`contain`/`cover` siguen disponibles |
 | «Sin recortes pendientes» | el clip final se publica tal cual: bordes limpios, sin barras negras, sin recodificar después |
 | Unión vertical | `core/plan.py`: orden `#5 → #1`, cold open opcional y duración real (suma exacta), **corte seco por copia de streams** |
 | Salida doble | **un archivo descargable por puesto** + **un solo `union.mp4`** con audio a −14 LUFS |
@@ -1068,6 +1079,7 @@ plano se mide contra la definición equivocada).
 | ADR-8 | **Render 100 % automático y superficie editable = solo texto**: título del vídeo + nombre de cada puesto | Decisión del operador. El estándar visual lo fija el preset y no el operador por vídeo, así que el resultado es reproducible y comparable entre rankings, el trabajo humano se reduce a elegir y revisar, y el render nunca espera a nadie. Obliga a reglas de encaje automático del texto (§9.5) |
 | ADR-9 | **La interfaz es un requisito de producto, no un extra**: un **panel único** cubre el flujo de punta a punta, con progreso por fase, errores accionables, plantilla y textos en el mismo sitio | Decisión del operador: el producto debe ser cómodo y fácil de usar. El valor del servicio es ahorrar trabajo humano, y eso se pierde si el operador necesita terminal, `curl` o un editor. Convierte la usabilidad en criterio de aceptación medible (RF-9, §10.6) |
 | ADR-10 | **El montaje es siempre de corte seco**: sin transiciones, sin *swoosh* y sin zoom de entrada. La unión se hace por **copia de streams** | Decisión del operador (16-oct-2026). El formato de referencia usa transiciones animadas, pero el corte limpio se ve igual de bien en este nicho, elimina una generación de recodificación en la unión, quita dos decisiones por vídeo del panel y deja la capa transformativa donde de verdad se ve: el overlay. Consecuencia en el código: fuera `xfade` y fuera el `zoompan` del primer clip |
+| ADR-11 | **Encuadre automático**: el clip horizontal con un clip vertical centrado se recorta al **área nítida**; el vertical no se recorta. Si la confianza es baja, se rellena con negro sin recortar | Decisión del operador (18-oct-2026). Los clips de entrada llegan en los dos formatos y el operador no debe recortar a mano ni decidir por vídeo; el render sigue siendo automático (ADR-8). La detección usa 12 fotogramas a 192 px y un refino a resolución completa, así que no compite con la codificación. El caso de fallo (marca de agua en la zona borrosa) se resuelve ignorando islas nítidas aisladas y, si no hay confianza, no se recorta |
 
 ---
 
@@ -1108,7 +1120,7 @@ plano se mide contra la definición equivocada).
 | `OPENRANKS_ITEMS` | `5` | Puestos del ranking (de 5 a 10); el panel lo fija por trabajo |
 | `OPENRANKS_WIDTH` / `OPENRANKS_HEIGHT` | `1080` / `1920` | Lienzo de salida |
 | `OPENRANKS_FPS` | `30` | Fotogramas por segundo |
-| `OPENRANKS_FIT` | `band` | Encaje del clip (`band` \| `contain` \| `cover`) |
+| `OPENRANKS_FIT` | `auto` | Encuadre del clip (`auto` \| `band` \| `contain` \| `cover`) |
 | `OPENRANKS_CRF` / `OPENRANKS_PRESET` | `19` / `medium` | Calidad y preset de x264 |
 | `OPENRANKS_LOUDNESS_LUFS` | `-14.0` | Objetivo de loudness |
 | `OPENRANKS_MIN_CLIP_SECONDS` / `MAX_CLIP_SECONDS` | `1.0` / `30.0` | Banda por clip |

@@ -13,6 +13,7 @@ import shutil
 from pathlib import Path
 
 from .config import Config
+from .framing import Crop
 
 # Alto de la **banda** del encuadre por defecto: cuántos píxeles del marco vertical
 # puede ocupar el clip. 1184/1920 = 61,7 %, el encuadre de referencia del operador
@@ -44,18 +45,23 @@ def resolve_binary(explicit: str | None, env_var: str, name: str) -> str:
     )
 
 
-def video_filter(config: Config, fit: str = "band") -> str:
+def video_filter(config: Config, fit: str = "band", crop: Crop | None = None) -> str:
     """Cadena de vídeo para llevar cualquier fuente al marco vertical.
 
-    ``band`` (por defecto) agranda el clip hasta llenar una **banda central** de
-    ``width`` x ``BAND_HEIGHT`` (el ~62 % del alto): recorta **los laterales** si hace
-    falta y **nunca** arriba o abajo, así que un clip apaisado se ve grande y centrado
-    en vez de pequeño. El resto del marco va en negro.
+    ``band`` agranda el clip hasta llenar una **banda central** de ``width`` x
+    ``BAND_HEIGHT`` (el ~62 % del alto): recorta **los laterales** si hace falta y
+    **nunca** arriba o abajo, así que un clip apaisado se ve grande y centrado en vez
+    de pequeño. El resto del marco va en negro. ``auto`` no llega aquí: el ensamblador
+    lo resuelve con ``openranks.framing.analyze`` y pasa el ``crop`` ya calculado.
 
     ``contain`` encaja el clip entero sin recortar nada (un clip apaisado queda con
     barras negras y se ve pequeño) y ``cover`` recorta para llenar los 1080x1920
     enteros (se pierde buena parte del encuadre original).
     """
+    if fit == "auto":
+        raise ValueError("fit='auto' se resuelve con openranks.framing.analyze antes de construir el filtro")
+    if crop is not None and any(value % 2 for value in (crop.w, crop.h, crop.x, crop.y)):
+        raise ValueError("el recorte debe tener ancho, alto y origen pares")
     width, height = config.total
     band = max(2, min(height, int(BAND_HEIGHT)))
     if fit == "cover":
@@ -78,8 +84,11 @@ def video_filter(config: Config, fit: str = "band") -> str:
         )
     else:
         raise ValueError(f"fit desconocido: {fit!r} (usa 'band', 'contain' o 'cover')")
+    prefix = ""
+    if crop is not None:
+        prefix = f"crop={crop.w}:{crop.h}:{crop.x}:{crop.y},"
     # setsar=1 es obligatorio para que la unión por copia de streams no falle.
-    return f"{base},setsar=1,fps={config.fps},format={config.pix_fmt}"
+    return f"{prefix}{base},setsar=1,fps={config.fps},format={config.pix_fmt}"
 
 
 def loudnorm_filter(config: Config, measured: dict | None = None) -> str:
@@ -145,6 +154,7 @@ def normalize_argv(
     config: Config,
     has_audio: bool,
     fit: str = "band",
+    crop: Crop | None = None,
     measured: dict | None = None,
     limit_s: float | None = None,
     duration_s: float | None = None,
@@ -165,7 +175,7 @@ def normalize_argv(
         argv += ["-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate={config.sample_rate}"]
 
     argv += ["-map", "0:v:0", "-map", "1:a:0" if not has_audio else "0:a:0"]
-    argv += ["-vf", video_filter(config, fit)]
+    argv += ["-vf", video_filter(config, fit, crop)]
     if has_audio:
         argv += ["-af", loudnorm_filter(config, measured)]
     argv += [
@@ -193,6 +203,9 @@ def normalize_argv(
         # Equivalente a METADATA_SCRUB: ni rutas ni metadatos de origen a la salida.
         "-map_metadata",
         "-1",
+        # La rotación ya se aplicó al decodificar; el archivo normalizado no la repite.
+        "-metadata:s:v:0",
+        "rotate=0",
         "-movflags",
         "+faststart",
     ]

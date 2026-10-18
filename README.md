@@ -20,11 +20,13 @@ puestos.
 Formato de salida: **1080x1920, 30 fps, yuv420p, audio a −14 LUFS (pico −1 dBTP)**,
 y el unido dentro de la banda objetivo (30–58 s).
 
-Encuadre por defecto: cada clip se **agranda** hasta llenar una **banda central de 1184
-px (el 62 % del alto)** recortando **solo los laterales** —nunca arriba o abajo— y el
-resto va en negro. Así un clip apaisado se ve grande y centrado en vez de pequeño. Un
-clip vertical (más estrecho que la banda) llena el ancho y sube por encima de la banda,
-hasta los 1080x1920 completos si es 9:16.
+**Encuadre automático.** Cada clip se clasifica con `ffprobe` (aplica la rotación): si ya
+es vertical, se escala sin recortar; si es horizontal, se muestrean **12 fotogramas**, se
+mide la nitidez por columnas y filas y se recorta el **área nítida** (el clip vertical
+centrado sobre el fondo borroso), con un **refino del borde a resolución completa**. Lo que
+quede fuera se rellena con negro cuando hace falta. Si la confianza es baja, **no se
+recorta**. `band`, `contain` y `cover` siguen disponibles como elección explícita
+(`OPENRANKS_FIT`).
 
 **L2 — la edición.** Sobre el `union.mp4` añade **todo el estándar del formato**:
 
@@ -120,7 +122,7 @@ El resto se configura por entorno:
 | `OPENRANKS_FFMPEG` / `OPENRANKS_FFPROBE` | Binarios de FFmpeg | se resuelven solos (PATH o el de npm) |
 | `OPENRANKS_JOBS_DIR` | Dónde viven los trabajos | `web/.jobs/` |
 | `OPENRANKS_FONT` | Familia tipográfica del overlay | `Arial` (en Linux: `DejaVu Sans`) |
-| `OPENRANKS_FIT` | Cómo encaja cada clip en el marco | `band` (banda central del 62 %) |
+| `OPENRANKS_FIT` | Cómo encaja cada clip en el marco | `auto` (detecta el área útil) |
 | `OPENRANKS_PRESET_FILE` | Plantilla guardada por el panel, que se aplica sobre la de fábrica | la fija el panel en el directorio de trabajos |
 
 ## Correr en Docker
@@ -149,7 +151,7 @@ no crece ~110 MB. Variables que usa dentro del contenedor:
 | `OPENRANKS_PYTHON` | `python3` | El intérprete del sistema de la imagen |
 | `OPENRANKS_JOBS_DIR` | `/data/jobs` | El volumen, fuera de la imagen |
 | `OPENRANKS_FONT` | `DejaVu Sans` | `Arial` no existe en Linux |
-| `OPENRANKS_FIT` | `band` | El encaje por defecto, el mismo que en local |
+| `OPENRANKS_FIT` | `auto` | El encaje por defecto, el mismo que en local |
 | `OPENRANKS_PRESET_FILE` | lo fija el panel en `/data/jobs/preset.json` | La **última plantilla guardada**; al vivir en el volumen, sobrevive a un reinicio |
 
 > Los servicios `postgres`, `minio`, `worker` y `renderer` que dibuja el plan (§7.7)
@@ -302,12 +304,25 @@ texto no cabe, falla el *input*, nunca el render.
 | `--edit` | Encadena L2: añade `ranking.mp4` + `cover.jpg` + `spec.json` |
 | `--items 7` | Puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo) |
 | `--italic` / `--no-italic` | Letras cursivas en el overlay (`openranks render` y `openranks preview`) |
-| `--fit band\|contain\|cover` | `band` (defecto) **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**: un clip apaisado se ve grande y centrado, con negro arriba y abajo. `contain` lo encaja entero sin recortar (y se ve pequeño si es panorámico); `cover` recorta para llenar los 1080x1920 |
+| `--fit auto\|band\|contain\|cover` | `auto` (defecto) detecta el área útil y recorta el fondo borroso; `band` **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**; `contain` lo encaja entero sin recortar; `cover` recorta para llenar los 1080x1920 |
 | `--cold-open-seconds 2` | Adelanto del `#1` al principio (gancho). Solo por CLI: el panel monta sin él |
 | `--progress` | Emite el avance en porcentaje real por `stderr` (lo consume el panel) |
 | `--json` | Salida legible por máquina |
 
 Códigos de salida: `0` ok · `1` fallo de ensamblado/render · `2` entrada inválida.
+
+### Ver el encuadre detectado
+
+```bash
+python -m openranks fit clip.mp4
+```
+
+Imprime **solo JSON** con `clasificacion` (`A`/`B`), `motivo`, `resolucion_entrada`,
+`resolucion_visible`, `rotacion`, `crop`, `encaje`, `confianza`, `senales`,
+`comando_ffmpeg` y `advertencias`. Es el mismo análisis que usa el montaje, así que sirve
+para responder «¿por qué recortó ahí?» sin abrir el código. El comando es el `normalize_argv`
+real de L1 (incluye `crop`, 30 fps, `yuv420p`, AAC y `rotate=0`), no el ejemplo simplificado
+con `-c:a copy`, que rompería la unión por copia de streams.
 
 ## Cómo se verifica
 
@@ -317,19 +332,20 @@ python -m pytest -q
 
 - **Núcleo puro** (`test_binding.py`, `test_plan.py`, `test_ffmpeg_args.py`,
   `test_media.py`, `test_manifest.py`, `test_config.py`, `test_specs.py`,
-  `test_overlay_args.py`, `test_progress.py`, `test_preset.py`): sin FFmpeg, sin red.
-  Cubre el orden `#5 → #1`, la duración real del **corte seco** (la suma exacta de los
-  tramos), el cold open, los límites de texto, los rankings de 5 a 10 puestos, el encaje del título
-  (renglones y tamaño), las ventanas de cada badge/rótulo (nítido y atenuado), el color
-  de cada puesto, la cursiva, el script ASS, los `argv` de FFmpeg, la monotonía del
-  porcentaje y el listado del preset.
-- **Integración** (`test_assemble_e2e.py`, `test_overlay_e2e.py`, marcados
-  `integration`): FFmpeg de verdad sobre clips sintéticos. Comprueba el criterio de
-  salida de L1 y, en L2, que `ranking.mp4` es 1080x1920/30 fps/yuv420p con audio, que
-  la portada y el spec se escriben **y que el overlay dibuja de verdad** (comparación
-  de píxeles contra la unión). Se **saltan** si no hay FFmpeg. La suite está
-  comprobada con los **dos** FFmpeg que puede usar el panel: el 8.0.1 del venv y el
-  6.1.1 que trae npm (20/20 en ambos).
+  `test_overlay_args.py`, `test_progress.py`, `test_preset.py`, `test_framing.py`,
+  `test_framing_args.py`): sin FFmpeg, sin red. Cubre el orden `#5 → #1`, la duración real
+  del **corte seco** (la suma exacta de los tramos), el cold open, los límites de texto,
+  los rankings de 5 a 10 puestos, el encaje del título (renglones y tamaño), las ventanas
+  de cada badge/rótulo (nítido y atenuado), el color de cada puesto, la cursiva, el script
+  ASS, los `argv` de FFmpeg, el encuadre (clasificación, área útil, confianza y recorte par),
+  la monotonía del porcentaje y el listado del preset.
+- **Integración** (`test_assemble_e2e.py`, `test_overlay_e2e.py`, `test_framing_e2e.py`,
+  marcados `integration`): FFmpeg de verdad sobre clips sintéticos. Comprueba el criterio de
+  salida de L1, el encuadre de un clip sobre fondo borroso (y su normalización con el crop),
+  la rotación, y en L2 que `ranking.mp4` es 1080x1920/30 fps/yuv420p con audio, que la
+  portada y el spec se escriben **y que el overlay dibuja de verdad** (comparación de píxeles
+  contra la unión). Se **saltan** si no hay FFmpeg. La suite está comprobada con los **dos**
+  FFmpeg que puede usar el panel: el 8.0.1 del venv y el 6.1.1 que trae npm.
 
 CI (`.github/workflows/ci.yml`) instala FFmpeg y las fuentes del overlay
 (`fonts-dejavu-core`, `fonts-urw-base35`), corre la suite completa y compila el panel
@@ -351,10 +367,11 @@ el audio (se copia), así que la medición se mantiene.
 
 ```
 openranks/
-  core/          # stdlib puro: config, binding, media, ffmpeg, plan, runner, manifest, specs, overlay, progress
-  assemble.py    # orquestación de L1: medir → validar → normalizar → unir → verificar → manifiesto
+  core/          # stdlib puro: config, binding, media, ffmpeg, framing, plan, runner, manifest, specs, overlay, progress
+  assemble.py    # orquestación de L1: medir → encuadrar → normalizar → unir → verificar → manifiesto
+  framing.py     # análisis de encuadre con FFmpeg: muestreo, refino, JSON
   overlay.py     # orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + cover + spec
-  cli.py         # openranks assemble | render | preview | preset | probe
+  cli.py         # openranks assemble | render | preview | preset | probe | fit
 web/             # panel Next.js (App Router): subir, montar, ver y descargar
 scripts/         # clips sintéticos para probar a mano
 tests/           # núcleo puro + integración real

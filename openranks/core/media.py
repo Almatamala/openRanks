@@ -43,6 +43,11 @@ class MediaInfo:
     video_duration_s: float | None = None
     nb_frames: int | None = None
     nominal_fps: float | None = None
+    # Rotación de la matriz de visualización (0, 90, 180, 270) y tamaño que ve el
+    # reproductor. `width`/`height` son los codificados: no cambian con la rotación.
+    rotation: int = 0
+    display_width: int | None = None
+    display_height: int | None = None
 
     @property
     def has_audio(self) -> bool:
@@ -62,6 +67,11 @@ class MediaInfo:
         sides = [side for side in (self.width, self.height) if side]
         return min(sides) if len(sides) == 2 else 0
 
+    @property
+    def visible_size(self) -> tuple[int | None, int | None]:
+        """Tamaño después de aplicar la rotación; es el que ve el reproductor."""
+        return (self.display_width or self.width, self.display_height or self.height)
+
     def to_source_entry(self, *, position: int, sha256: str) -> dict:
         """Entrada del manifiesto. Solo el **nombre** del archivo: regla de repo público."""
         return {
@@ -75,6 +85,9 @@ class MediaInfo:
             "fps": None if self.fps is None else round(self.fps, 3),
             "nominal_fps": None if self.nominal_fps is None else round(self.nominal_fps, 3),
             "nb_frames": self.nb_frames,
+            "rotation": self.rotation,
+            "display_width": self.display_width or self.width,
+            "display_height": self.display_height or self.height,
             "video_codec": self.video_codec,
             "pix_fmt": self.pix_fmt,
             "has_audio": self.has_audio,
@@ -113,6 +126,27 @@ def _parse_int(raw: object) -> int | None:
         return None
 
 
+def _parse_rotation(video: dict) -> int:
+    """Rotación de visualización, normalizada a 0/90/180/270.
+
+    ffprobe la publica en ``side_data_list[].rotation`` (a veces negativa) y, en
+    archivos antiguos, en ``tags.rotate``. Se prefiere la side data.
+    """
+    raw_values: list[object] = []
+    for item in video.get("side_data_list") or []:
+        if isinstance(item, dict) and item.get("rotation") is not None:
+            raw_values.append(item["rotation"])
+    tags = video.get("tags") or {}
+    if isinstance(tags, dict) and tags.get("rotate") is not None:
+        raw_values.append(tags["rotate"])
+    for raw in raw_values:
+        try:
+            return int(round(float(raw))) % 360
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def parse_probe(path: Path, payload: dict) -> MediaInfo:
     """Convierte la salida JSON de ffprobe en ``MediaInfo`` (función pura)."""
     fmt = payload.get("format") or {}
@@ -132,11 +166,19 @@ def parse_probe(path: Path, payload: dict) -> MediaInfo:
     if video is not None:
         fps = _parse_fraction(video.get("avg_frame_rate")) or _parse_fraction(video.get("r_frame_rate"))
 
+    width = _parse_int(video.get("width")) if video else None
+    height = _parse_int(video.get("height")) if video else None
+    rotation = _parse_rotation(video) if video else 0
+    if width and height and rotation in (90, 270):
+        display_width, display_height = height, width
+    else:
+        display_width, display_height = width, height
+
     return MediaInfo(
         path=path,
         duration_s=0.0 if duration is None else duration,
-        width=_parse_int(video.get("width")) if video else None,
-        height=_parse_int(video.get("height")) if video else None,
+        width=width,
+        height=height,
         fps=fps,
         video_codec=video.get("codec_name") if video else None,
         pix_fmt=video.get("pix_fmt") if video else None,
@@ -147,6 +189,9 @@ def parse_probe(path: Path, payload: dict) -> MediaInfo:
         video_duration_s=_parse_float(video.get("duration")) if video else None,
         nb_frames=_parse_int(video.get("nb_frames")) if video else None,
         nominal_fps=_parse_fraction(video.get("r_frame_rate")) if video else None,
+        rotation=rotation,
+        display_width=display_width,
+        display_height=display_height,
     )
 
 

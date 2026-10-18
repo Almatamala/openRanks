@@ -8,6 +8,7 @@ seco (unión por copia de streams, sin recodificar).
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -59,9 +60,11 @@ def test_full_size_assembly_meets_the_l1_criterion(ffmpeg_bin, ffprobe_bin, synt
     assert payload["layer"] == "L1"
     assert payload["plan"]["clip_count"] == 5
     assert payload["measured"]["total_duration_s"] is not None
-    # 5 clips + la unión, y 5 fuentes medidas.
+    # 5 clips + la unión, y 5 fuentes medidas con su decisión de encuadre.
     assert len(payload["outputs"]) == 6
     assert len(payload["sources"]) == 5
+    assert all("framing" in source for source in payload["sources"])
+    assert all(source["framing"]["clasificacion"] in {"A", "B"} for source in payload["sources"])
 
 
 def test_normalized_clips_are_already_ready(ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path):
@@ -103,6 +106,58 @@ def test_loudness_lands_on_the_target(ffmpeg_bin, ffprobe_bin, synthetic_clips, 
     # La unión se midió al final: debe caer en −14 LUFS (±2).
     assert result.loudness.get("input_i") is not None
     assert float(result.loudness["input_i"]) == pytest.approx(-14.0, abs=2.0)
+
+
+def _make_pillarbox(ffmpeg_bin: str, path: Path) -> Path:
+    """640x360 con un clip vertical nítido de 200x360 centrado y fondo desenfocado."""
+    subprocess.run(
+        [
+            ffmpeg_bin,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=640x360:rate=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=200x360:rate=30",
+            "-filter_complex",
+            "[0:v]boxblur=30:3[bg];[1:v]scale=200:360[fg];[bg][fg]overlay=220:0:shortest=1[out]",
+            "-map",
+            "[out]",
+            "-t",
+            "2",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "30",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path
+
+
+def test_auto_fit_applies_the_detected_crop_in_the_assembly(
+    ffmpeg_bin, ffprobe_bin, write_binding, tmp_path
+):
+    source = _make_pillarbox(ffmpeg_bin, tmp_path / "pillarbox.mp4")
+    binding = load_binding(write_binding([source] * 5), _small())
+    result = assemble(binding, tmp_path / "out", config=_small(), ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin)
+    payload = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert all(s["framing"]["clasificacion"] == "A" for s in payload["sources"])
+    assert all(s["framing"]["crop"] is not None for s in payload["sources"])
+    assert (probe(ffprobe_bin, result.union).width, probe(ffprobe_bin, result.union).height) == (180, 320)
 
 
 def test_a_clip_that_breaks_the_contract_aborts_the_whole_run(

@@ -444,8 +444,8 @@ export default function Page() {
               clips
             </h2>
             <p className="hint">
-              Se encajan los clips a 9:16 y 30 fps (banda central, sin recortar arriba ni
-              abajo) con el audio normalizado.
+              Se detecta el área útil de cada clip y se encaja a 9:16 y 30 fps, con el
+              audio normalizado y relleno negro cuando hace falta.
             </p>
             {slots.map((slot) => (
               <div className="slot" key={slot.position}>

@@ -8,6 +8,7 @@ import pytest
 
 from openranks.core import ffmpeg as ff
 from openranks.core.config import Config
+from openranks.core.framing import Crop
 
 CONFIG = Config()
 
@@ -42,9 +43,25 @@ def test_video_filter_band_fills_the_band_and_crops_only_the_sides():
     assert "setsar=1" in chain and "fps=30" in chain and "format=yuv420p" in chain
 
 
-def test_video_filter_band_is_the_default_fit():
+def test_video_filter_band_is_still_available_and_auto_is_resolved_before_it():
     assert ff.video_filter(CONFIG) == ff.video_filter(CONFIG, "band")
-    assert CONFIG.fit == "band"
+    assert CONFIG.fit == "auto"
+    with pytest.raises(ValueError, match="fit='auto'"):
+        ff.video_filter(CONFIG, "auto")
+
+
+def test_video_filter_prepends_the_detected_crop():
+    crop = Crop(w=608, h=1080, x=656, y=0)
+    chain = ff.video_filter(CONFIG, "contain", crop)
+    assert chain.startswith("crop=608:1080:656:0,")
+    assert "scale=1080:1920:force_original_aspect_ratio=decrease" in chain
+    assert "pad=1080:1920" in chain
+    assert "setsar=1" in chain and "fps=30" in chain and "format=yuv420p" in chain
+
+
+def test_video_filter_rejects_an_odd_crop():
+    with pytest.raises(ValueError, match="pares"):
+        ff.video_filter(CONFIG, "contain", Crop(w=607, h=1080, x=656, y=0))
 
 
 def test_video_filter_cover_crops_to_the_vertical_frame():
@@ -78,8 +95,25 @@ def test_normalize_argv_carries_the_l1_output_contract():
     assert argv[argv.index("-video_track_timescale") + 1] == "30000"
     # Nada de metadatos del origen (equivalente a METADATA_SCRUB) y mp4 optimizado.
     assert argv[argv.index("-map_metadata") + 1] == "-1"
+    # La rotación ya se aplicó; el MP4 normalizado no la vuelve a declarar.
+    assert argv[argv.index("-metadata:s:v:0") + 1] == "rotate=0"
     assert "+faststart" in argv
     assert "anullsrc" not in joined
+
+
+def test_normalize_argv_carries_the_crop_into_the_filter():
+    argv = ff.normalize_argv(
+        "ffmpeg",
+        Path("in.mp4"),
+        Path("out.mp4"),
+        config=CONFIG,
+        has_audio=True,
+        fit="contain",
+        crop=Crop(w=608, h=1080, x=656, y=0),
+    )
+    chain = argv[argv.index("-vf") + 1]
+    assert chain.startswith("crop=608:1080:656:0,")
+    assert "force_original_aspect_ratio=decrease" in chain
 
 
 def test_normalize_argv_injects_silence_for_a_clip_without_audio():
