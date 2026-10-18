@@ -3,7 +3,7 @@
 Función pura y testeable sin FFmpeg (§7.6). El montaje es **siempre de corte seco**,
 así que la ventana temporal de cada badge y de cada rótulo es la suma acumulada de
 los tramos anteriores: el reparto del tiempo tiene que cuadrar con la unión o el
-último badge y el CTA se desincronizan del vídeo.
+último badge se desincroniza del vídeo.
 
 El estilo es **bloqueado** (ADR-8): lo único que cambia entre rankings es el texto
 (título y nombres de los puestos). Todo lo demás vive en el preset.
@@ -326,7 +326,6 @@ def build_spec(
     # a 10), no las del preset, para que la columna se reparta sola entre las alturas.
     ladder = dict(style["rank_ladder"])
     label_style = style["clip_label"]
-    cta = style["cta"]
 
     positions = [window.position for window in windows if not window.is_cold_open]
     ladder["slots"] = max(1, len(positions))
@@ -393,8 +392,6 @@ def build_spec(
         max_height=max(1.0, bottom_limit - SAFE_TOP),
     )
 
-    # El CTA se ve en el cierre. Su ventana no puede salirse del vídeo.
-    cta_from = max(0.0, round(total - float(cta["hold_s"]), 3))
     return {
         "layer": "L2",
         "preset": style.get("theme", "top5-default"),
@@ -421,7 +418,6 @@ def build_spec(
             "slots": slots,
         },
         "clip_labels": clips,
-        "cta": {"text": cta["text"], "y": cta["y"], "from_s": cta_from, "to_s": round(total, 3)},
         "editable_surface": {
             "fields": ["title", "labels"],
             "note": "(ADR-8) solo el título y el nombre de los puestos; el resto es el preset bloqueado",

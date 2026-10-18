@@ -74,8 +74,9 @@ def test_ass_script_has_one_event_per_element():
     assert "Style: Badge,Arial,132" in script
     # 1 título + 5 tramos nítidos + 8 casillas atenuadas (las 4 que aún no han llegado y
     # las 4 ya pasadas; el 1 cierra el vídeo y no se atenúa después) + 5 rótulos nítidos
-    # + 4 rótulos atenuados + 1 CTA
-    assert script.count("\nDialogue:") == 24
+    # + 4 rótulos atenuados. Sin CTA: el cierre es la escalera y los rótulos.
+    assert script.count("\nDialogue:") == 23
+    assert ",Cta," not in script and "Style: Cta," not in script
 
 
 def test_ass_title_puts_the_number_in_accent_and_bigger():
@@ -298,7 +299,7 @@ def test_the_italic_switch_flips_the_italic_field_of_every_style():
 
     plain = build_ass(_spec(), _style(), Config())
     cursive = build_ass(_spec(), get_style({"italic": True}), Config())
-    for name in ("Title", "TitleBg", "Badge", "Label", "Cta"):
+    for name in ("Title", "TitleBg", "Badge", "Label"):
         assert italic_field(plain, name) == "0"
         assert italic_field(cursive, name) == "-1"
 

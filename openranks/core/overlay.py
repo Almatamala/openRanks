@@ -97,7 +97,6 @@ DEFAULT_STYLE: dict = {
         # Separación horizontal entre el centro de la casilla y el rótulo.
         "dx": 132,
     },
-    "cta": {"text": "SÍGUEME PARA EL TOP 4", "y": 1610, "size": 58, "color": "#FFFFFF", "hold_s": 4.0, "fade_ms": 300},
 }
 
 
@@ -119,7 +118,6 @@ STYLE_SOURCES: dict[str, str] = {
     "Título": "openranks/core/overlay.py → DEFAULT_STYLE[\"title\"]",
     "Escalera": "openranks/core/overlay.py → DEFAULT_STYLE[\"rank_ladder\"]",
     "Rótulo": "openranks/core/overlay.py → DEFAULT_STYLE[\"clip_label\"] (texto al lado de su casilla)",
-    "CTA": "openranks/core/overlay.py → DEFAULT_STYLE[\"cta\"]",
     "Colores": "openranks/core/specs.py → RANK_COLORS (color por puesto)",
 }
 
@@ -134,7 +132,6 @@ def describe_style(style: dict | None = None) -> list[dict]:
     title = current["title"]
     ladder = current["rank_ladder"]
     label = current["clip_label"]
-    cta = current["cta"]
     rows: list[tuple[str, str, object, str]] = [
         ("Fuente", "font", current["font"], "Tipografía del overlay; libass la busca **por nombre** (Arial, DejaVu Sans…)."),
         (
@@ -186,11 +183,6 @@ def describe_style(style: dict | None = None) -> list[dict]:
             label["fade_ms"],
             "Fundido de entrada del rótulo. Se queda hasta el final, pero al acabar el turno de su puesto se atenúa y se difumina igual que su casilla.",
         ),
-        ("CTA", "cta.text", cta["text"], "Texto del cierre (invita a seguir la cuenta)."),
-        ("CTA", "cta.y", cta["y"], "Altura del CTA, dentro de la zona segura inferior (§9.1)."),
-        ("CTA", "cta.size", cta["size"], "Tamaño del texto del CTA que cierra el vídeo."),
-        ("CTA", "cta.hold_s", cta["hold_s"], "Segundos que el CTA se ve al final del vídeo."),
-        ("CTA", "cta.fade_ms", cta["fade_ms"], "Duración del fundido del CTA."),
         ("Colores", "rank_colors", RANK_COLORS, "Color de cada puesto (oro/plata/bronce en el podio)."),
     ]
     return [
@@ -343,7 +335,7 @@ def _style_line(
 
 
 def build_ass(spec: dict, style: dict, config: Config) -> str:
-    """Script ASS con un evento por badge, rótulo, título y CTA.
+    """Script ASS con un evento por badge, rótulo y título.
 
     La escalera está **completa desde el primer fotograma** (``5`` abajo → ``1`` arriba)
     y lo que llega con cada clip es su turno: el número activo se ve nítido y los demás
@@ -358,7 +350,6 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     title_anchor = spec["title"].get("anchor_y", title["y"])
     ladder = style["rank_ladder"]
     label = style["clip_label"]
-    cta = style["cta"]
 
     lines: list[str] = [
         "[Script Info]",
@@ -406,7 +397,6 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
             stroke=label["stroke_px"],
             italic=italic,
         ),
-        _style_line("Cta", font=font, size=cta["size"], color=cta["color"], stroke=7, italic=italic),
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -481,14 +471,6 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
                 f"Dialogue: 0,{ass_time(active_end)},{ass_time(end)},Label,,0,0,0,,"
                 f"{{{anchor}{dim_cmd}}}{body}"
             )
-
-    # CTA: solo en el cierre.
-    item = spec["cta"]
-    lines.append(
-        f"Dialogue: 0,{ass_time(item['from_s'])},{ass_time(item['to_s'])},Cta,,0,0,0,,"
-        f"{{\\an5\\pos({centre_x},{item['y']})\\fad({int(cta['fade_ms'] / 2)},{int(cta['fade_ms'] / 2)})}}"
-        f"{_escape_text(item['text'])}"
-    )
 
     return "\n".join(lines) + "\n"
 

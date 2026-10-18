@@ -186,12 +186,9 @@ def test_cold_open_has_no_badge_but_keeps_the_windows_aligned():
     assert spec["total_duration_s"] == pytest.approx(37.0)
 
 
-def test_cta_only_covers_the_closing_seconds():
-    spec = _spec()
-    cta = spec["cta"]
-    assert cta["from_s"] == pytest.approx(31.0)
-    assert cta["to_s"] == pytest.approx(35.0)
-    assert cta["from_s"] > spec["rank_ladder"]["slots"][0]["from_s"]
+def test_the_ranking_ends_without_a_cta():
+    """El cierre no lleva CTA: la edición termina con la escalera y el último rótulo."""
+    assert "cta" not in _spec()
 
 
 def test_editable_surface_is_only_text():

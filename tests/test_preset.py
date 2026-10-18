@@ -38,7 +38,7 @@ def test_every_setting_explains_itself_and_points_at_its_file():
 
 def test_the_groups_you_touch_to_improve_the_template_are_there():
     groups = {row["group"] for row in describe_style()}
-    assert {"Fuente", "Título", "Escalera", "Rótulo", "CTA", "Colores"} <= groups
+    assert {"Fuente", "Título", "Escalera", "Rótulo", "Colores"} <= groups
 
 
 def test_every_source_group_is_covered():
@@ -105,7 +105,7 @@ def test_the_italic_switch_is_listed_and_can_be_saved(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "key", ["title.size", "title.background", "rank_ladder.y_top", "rank_ladder.y_bottom", "cta.hold_s"]
+    "key", ["title.size", "title.background", "rank_ladder.y_top", "rank_ladder.y_bottom", "rank_ladder.size"]
 )
 def test_the_geometry_knobs_are_numeric(key):
     rows = {row["key"]: row["value"] for row in describe_style()}

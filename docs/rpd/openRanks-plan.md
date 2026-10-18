@@ -27,7 +27,7 @@ vídeo terminado.** El orden sigue vigente: `L1 → L2 → L3 → L4`.
 | Prio | Capa | Qué entrega | Estado |
 | --- | --- | --- | --- |
 | **1** | **L1 · Ensamblador** | Los clips ya listos (normalizados, 9:16, 30 fps, audio a −14 LUFS) **y su unión en un solo vídeo vertical en corte seco** | **Hecho** |
-| **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, escalera de rangos, rótulo por puesto, medallas del podio, atenuado de lo que no tiene el turno y CTA. **Render automático y estilo bloqueado** | **Hecho** |
+| **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, escalera de rangos, rótulo por puesto, medallas del podio, atenuado de lo que no tiene el turno. **Render automático y estilo bloqueado** | **Hecho** |
 | **3** | **L3 · Extractora** | Los clips obtenidos solos desde un vídeo largo: segmentación, screening, scoring y selección — *el riesgo técnico real* | Pendiente |
 | **4** | **L4 · Integrador** | Orquestación de punta a punta, publicación y operación | Pendiente (el panel ya cubre L1/L2) |
 
@@ -49,7 +49,7 @@ Lo que está construido y verificado, con la pieza donde vive:
 | Medición del material | `openranks/core/media.py` | `ffprobe`, contrato del clip de entrada y del archivo normalizado |
 | Comandos de FFmpeg | `openranks/core/ffmpeg.py` | Normalización a la banda central, `loudnorm` en dos pasadas, unión por copia de streams |
 | Plan del montaje | `openranks/core/plan.py` | Orden `#5 → #1`, cold open opcional, duración real (suma exacta) |
-| Overlay (spec y ASS) | `openranks/core/specs.py`, `core/overlay.py` | Ventanas de tiempo, encaje del título, escalera, rótulos, CTA y el script ASS |
+| Overlay (spec y ASS) | `openranks/core/specs.py`, `core/overlay.py` | Ventanas de tiempo, encaje del título, escalera, rótulos y el script ASS |
 | Progreso | `openranks/core/progress.py` | Porcentaje medido, fase con nombre humano y ETA honesto en el panel |
 | Orquestación L1 / L2 | `openranks/assemble.py`, `openranks/overlay.py` | Montar, verificar y editar, con manifiesto en cada paso |
 | CLI | `openranks/cli.py` | `assemble`, `render`, `preview`, `preset`, `probe` |
@@ -108,7 +108,7 @@ ajustar y **guardar** una parte:
 | Tamaño del número de cada puesto | `rank_ladder.size` | Sí |
 | Posición horizontal de la escalera | `rank_ladder.x` | Sí |
 | Altura del `#1` y del `#5` | `rank_ladder.y_top` / `y_bottom` | Sí |
-| Colores, contornos, fundidos, medallas, rótulo, CTA | — | No: son de fábrica |
+| Colores, contornos, fundidos, medallas, rótulo | — | No: son de fábrica |
 
 **El preset guardado persiste entre sesiones.** Se escribe en el directorio de trabajos
 (`web/.jobs/preset.json` en local, `/data/jobs/preset.json` dentro del contenedor, que es un
@@ -145,7 +145,7 @@ Las referencias `§n` apuntan siempre a este documento.
 
 Construimos un servicio que, a partir de material de vídeo largo, produce un **short vertical
 9:16 de tipo "TOP 5..10"**: momentos graciosos/locos/adorables, ordenados en ranking, con el
-número de posición, un rótulo por puesto y un cierre con CTA.
+número de posición y un rótulo por puesto.
 
 El valor no está en «cortar vídeo» —eso ya existe en el repo de referencia— sino en las
 cuatro capacidades que el nicho exige y que hoy **no** existen en OpenShorts:
@@ -220,7 +220,6 @@ Anatomía del short objetivo, según lo que **dicen** los dos vídeos de referen
 │ [3]                          │  la casilla de turno nítida y el resto atenuado
 │ [2]        [ CLIP ]          │  clip 9:16 encuadrado
 │ [1]                          │
-│                      ⓘ  CTA  │  y = 1610, dentro de la safe area
 └──────────────────────────────┘
 ```
 
@@ -257,7 +256,7 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
 | 1 | Ingesta de **archivo subido** (los clips que aporta el operador) | **Hecho** |
 | 2 | Normalización: `ffprobe`, encuadre vertical, 30 fps, audio a −14 LUFS | **Hecho** |
 | 3 | **Unión en corte seco** en un solo vídeo vertical | **Hecho** |
-| 4 | Edición del estándar sobre la unión (título, escalera, rótulos, CTA) | **Hecho** |
+| 4 | Edición del estándar sobre la unión (título, escalera, rótulos) | **Hecho** |
 | 5 | **Plantilla editable y persistente** (fuente, cursiva, tamaño y posición) | **Hecho** |
 | 6 | **Panel único** con progreso por fase, errores accionables y descargas | **Hecho** |
 | 7 | Re-render de solo el overlay al cambiar textos | **Hecho** |
@@ -436,7 +435,7 @@ fuente; duración total dentro de 30–58 s en el 95 % de los rankings.
 1. `openranks assemble --edit` encadena L1 y L2; `openranks render` rehace **solo** el overlay
    sobre un `union.mp4` ya montado.
 2. El spec de la edición lo construye `core/specs.py` (puro, testeable): ventanas de tiempo de
-   cada badge, escalera, rótulos, CTA, encaje del título y duración total.
+   cada badge, escalera, rótulos, encaje del título y duración total.
 3. La capa de overlay se dibuja con un script **ASS** sobre la unión, con el mismo encuadre y
    formato (1080x1920, 30 fps, yuv420p), `-map_metadata -1` y `+faststart`.
 4. Artefactos: `ranking.mp4` (final), `cover.jpg` (fotograma con la escalera completa),
@@ -710,7 +709,7 @@ is_current`, `ranking_items(ranking_id, position)`, `jobs(state, created_at)`,
 
 | Zona | Reservado | Uso |
 | --- | --- | --- |
-| Inferior | y > 1560 | UI de la plataforma (caption/usuario) → solo CTA discreto y texto corto |
+| Inferior | y > 1560 | UI de la plataforma (caption/usuario) → nada permanente: se deja libre |
 | Derecha | x > 960 | botonera de TikTok → nada crítico |
 | Superior | y < 96 | UI de cámara/estado → el título empieza en y=96 |
 | Centro | 340 < y < 1500 | contenido del clip: nada permanente más allá de la escalera |
@@ -735,8 +734,11 @@ puesto en `openranks/core/specs.py` (`RANK_COLORS`). Lo que hay hoy:
 | Turno | La casilla **activa** se ve nítida durante su clip; las demás **se atenúan y difuminan** (`dim_alpha`, `dim_blur`) |
 | Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx`); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
 | Encaje del clip | `band` por defecto (`OPENRANKS_FIT`); `contain` no recorta y `cover` llena el marco |
-| CTA | Texto de cierre (`cta.text`), visible los últimos `cta.hold_s` segundos |
 | Preset editable | Una **parte** se ajusta y guarda desde el panel: `font`, `italic`, `title.size`, `title.background`, `rank_ladder.{size,x,y_top,y_bottom}` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
+
+**Sin CTA de cierre.** El estándar no dibuja ningún texto de «sígueme» al final: el vídeo
+termina con la escalera completa y el rótulo del `#1`. La franja inferior queda libre para la
+UI de la plataforma (§9.1).
 
 **Todo ajuste se puede consultar sin leer el código**: `openranks preset` (o
 `openranks preset --json`, que es lo que consume el panel) lista cada valor con **qué es y en
@@ -748,7 +750,7 @@ La edición se compone con un **script ASS** dibujado por **libass** encima del 
 L1, mediante el mismo motor que hace L1:
 
 - **Un evento por elemento**: el título (con el número en su color inline), la casilla de cada
-  puesto, el rótulo de cada puesto y el CTA.
+  puesto y el rótulo de cada puesto.
 - **La escalera está completa desde el primer fotograma**: todas las casillas están puestas y
   lo que llega con cada clip es su **turno**; la activa se ve nítida (con un pulso al activarse)
   y el resto atenuadas y difuminadas.
@@ -903,7 +905,7 @@ Este producto republica fragmentos de vídeo de terceros; ese es su riesgo princ
 7. **Edición transformativa como requisito, no como estilo.** El motivo declarado de añadir
    rótulos propios, títulos y una edición encima es que el vídeo deje de ser una recopilación y
    pase a ser un producto editado. En el diseño eso se traduce en **nunca publicar un clip ajeno
-   sin capa propia** (título, rótulo, escalera o CTA) y no permitir el modo «publicar el
+   sin capa propia** (título, rótulo o escalera) y no permitir el modo «publicar el
    compilado tal cual».
 
 **Puerta de salida L0**: checklist legal firmado por el operador sobre qué fuentes puede usar.
@@ -919,7 +921,7 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 | --- | --- | --- |
 | **L0** — Esqueleto | repo, contrato de entrada, medición, CI, legal | **Hecho** (el despliegue completo con Postgres/MinIO llega con L4) |
 | **L1** — Clips listos y unión vertical | normalización 9:16 por clip, unión en corte seco, audio a −14 LUFS | **Hecho** |
-| **L2** — Edición del estándar | overlay ASS, escalera, rótulos, CTA, cover, spec, preset editable | **Hecho** |
+| **L2** — Edición del estándar | overlay ASS, escalera, rótulos, cover, spec, preset editable | **Hecho** |
 | **L3** — Extractora | ingesta de YouTube, segmentación, screening, señales, scoring, selección | Pendiente |
 | **L4** — Integrador | orquestación de punta a punta, publicación, trazabilidad, endurecimiento | Pendiente |
 
@@ -948,7 +950,7 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 | Entregable | Detalle |
 | --- | --- |
 | Plantilla = datos | `Template + Binding → spec.json`; **`Template` bloqueado** y `Binding` con **solo texto** (título + N nombres) |
-| Overlays | escalera de posición con la casilla de turno nítida, rótulo por clip, medallas del podio y CTA |
+| Overlays | escalera de posición con la casilla de turno nítida, rótulo por clip, medallas del podio |
 | Renderer | **ASS + FFmpeg** (`libass`), el mismo motor que hace L1 (§9.3). Sin segundo runtime |
 | Cover + verificaciones | `cover.jpg`, `spec.json`, `manifest.json` y determinismo (mismo spec ⇒ mismo MP4) |
 | Render automático | **sin ningún paso manual de montaje**: dados el preset y los textos, el MP4 sale solo |
@@ -1074,7 +1076,7 @@ plano se mide contra la definición equivocada).
 1. **Foto de referencia del banner**: ¿el operador la sube por ranking, o hay una biblioteca fija
    por temática y el sistema solo elige? El MVP asume una biblioteca propia en `assets/banners/`
    y el banner entra como parte del preset (no por vídeo).
-2. **Idioma de los textos** (`clip_label`, título, CTA) y **tono**: el set de calibración debe
+2. **Idioma de los textos** (`clip_label`, título) y **tono**: el set de calibración debe
    etiquetarse en ese idioma.
 3. **Volumen objetivo** (shorts/día) para dimensionar `WORKER_CONCURRENCY` y el presupuesto de
    Gemini.

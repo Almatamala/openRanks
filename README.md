@@ -45,7 +45,7 @@ está **nítida** y el resto **atenuadas y difuminadas**, tanto las que aún no 
 como las que ya pasaron. El **rótulo de cada puesto** va **al lado de su propia
 casilla**, **entra con su clip y se queda hasta el final** —los textos se acumulan, no
 se sustituyen—, y **en cuanto su puesto cede el turno se atenúa y se difumina igual que
-su casilla**: solo el del puesto actual queda nítido. Cierra el **CTA**. El montaje es
+su casilla**: solo el del puesto actual queda nítido. **No hay CTA de cierre.** El montaje es
 **siempre de corte seco**: los clips se pegan uno tras otro, en orden, sin transiciones
 ni solapes, así que el ranking dura exactamente la suma de sus tramos.
 
@@ -180,7 +180,6 @@ O en el panel, en la tarjeta **«Plantilla de la edición»**. Dónde vive cada 
 | Medallas del podio (🥇🥈🥉) | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]["medals"]` |
 | Casilla activa nítida / resto difuminadas | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]["dim_alpha"]` / `["dim_blur"]` |
 | Rótulo de cada puesto (va al lado de su casilla y se atenúa al acabar su turno) | `openranks/core/overlay.py` | `DEFAULT_STYLE["clip_label"]` |
-| CTA de cierre | `openranks/core/overlay.py` | `DEFAULT_STYLE["cta"]` |
 | Color por puesto (oro/plata/bronce) | `openranks/core/specs.py` | `RANK_COLORS` |
 | Con qué anima (fundidos, entrada de badges) | `openranks/core/overlay.py` | `build_ass()` |
 | Dónde cae cada elemento en el tiempo | `openranks/core/specs.py` | `build_spec()` |

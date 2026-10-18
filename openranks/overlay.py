@@ -1,8 +1,8 @@
 """L2 — la edición del estándar sobre el ``union.mp4`` que produjo L1 (§12).
 
 Sobre el vídeo ya unido se añade **toda la edición del formato**: título con el
-número destacado, la escalera de rangos (``#5`` abajo → ``#1`` arriba), el rótulo
-de cada puesto y el CTA. La salida es ``ranking.mp4`` + ``spec.json``.
+número destacado, la escalera de rangos (``#5`` abajo → ``#1`` arriba) y el rótulo
+de cada puesto. La salida es ``ranking.mp4`` + ``spec.json``.
 
 Contrato entre capas (§12): L2 **solo** lee ``union.mp4`` y el ``manifest.json`` de
 L1, nunca llama a L1. Y como el estilo está bloqueado (ADR-8), cambiar solo un texto
