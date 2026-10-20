@@ -39,7 +39,7 @@ def test_the_panel_offers_the_same_positions_as_the_engine():
 
 def test_text_limits_match_the_plan_9_5():
     config = Config()
-    assert config.title_layer_chars == 28
+    assert config.title_layer_chars == 40
     assert config.title_layers_max == 3
     assert config.label_chars == 24
     assert config.label_words == 4

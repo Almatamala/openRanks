@@ -68,7 +68,7 @@ class Config:
     hard_max_total_seconds: float = 60.0
 
     # Límites del texto editable (§9.5). Si el texto no cabe, el que falla es el input.
-    title_layer_chars: int = 28
+    title_layer_chars: int = 40
     title_layers_max: int = 3
     label_words: int = 4
     label_chars: int = 24

@@ -6,7 +6,7 @@
 import { visibleLength } from "./title";
 
 export const LIMITS = {
-  titleLayerChars: 28,
+  titleLayerChars: 40,
   titleLayersMax: 3,
   labelChars: 24,
   labelWords: 4,
@@ -43,6 +43,11 @@ export function titleErrors(title: string): string[] {
   return errors;
 }
 
+/** Cuenta caracteres Unicode (un emoji = 1), no unidades UTF-16 del navegador. */
+export function textLength(text: string): number {
+  return Array.from(text).length;
+}
+
 export function labelErrors(position: number, label: string): string[] {
   const errors: string[] = [];
   const text = label.trim();
@@ -50,8 +55,9 @@ export function labelErrors(position: number, label: string): string[] {
     errors.push(`El puesto #${position} necesita un nombre.`);
     return errors;
   }
-  if (text.length > LIMITS.labelChars)
-    errors.push(`El nombre del #${position} tiene ${text.length} caracteres; el máximo es ${LIMITS.labelChars}.`);
+  const length = textLength(text);
+  if (length > LIMITS.labelChars)
+    errors.push(`El nombre del #${position} tiene ${length} caracteres; el máximo es ${LIMITS.labelChars}.`);
   if (text.split(/\s+/).length > LIMITS.labelWords)
     errors.push(`El nombre del #${position} tiene más de ${LIMITS.labelWords} palabras.`);
   return errors;

@@ -82,7 +82,7 @@ def test_empty_label_is_rejected():
 
 
 def test_title_layer_over_limit_is_rejected():
-    binding = Binding(title="TOP 5 GATOS", items=_items(), title_layers=("X" * 29,))
+    binding = Binding(title="TOP 5 GATOS", items=_items(), title_layers=("X" * 41,))
     with pytest.raises(BindingError, match="capa de título 1"):
         validate_binding(binding, Config(), check_paths=False)
 
