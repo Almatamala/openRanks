@@ -63,6 +63,8 @@ def test_manifest_declares_the_editable_surface_and_the_plan():
     assert payload["config"]["target"] == "1080x1920"
     assert payload["plan"]["clip_count"] == 5
     assert payload["editable_surface"]["title"] == "TOP 5 GATOS"
+    assert payload["editable_surface"]["subtitle"] == ""
+    assert payload["plan"]["subtitle"] == ""
     assert payload["measured"]["total_duration_s"] == 30.012
     assert "rutas" not in json.dumps(payload)
 

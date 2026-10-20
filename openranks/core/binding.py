@@ -1,8 +1,8 @@
 """Binding: la parte *editable* del render (ADR-8).
 
-Solo texto entra desde fuera: el **título del vídeo** y el **nombre de cada
-puesto**. Este módulo lo valida contra los límites de §9.5 antes de tocar FFmpeg,
-porque si el texto no cabe, el error es del input y no del render.
+Solo texto entra desde fuera: el **título del vídeo**, su **subtítulo opcional** y el
+**nombre de cada puesto**. Este módulo lo valida contra los límites de §9.5 antes de
+tocar FFmpeg, porque si el texto no cabe, el error es del input y no del render.
 """
 
 from __future__ import annotations
@@ -31,11 +31,13 @@ class ClipItem:
 
 @dataclass(frozen=True)
 class Binding:
-    """Título del vídeo + los puestos (de 5 a 10), con sus nombres."""
+    """Título del vídeo + subtítulo opcional + los puestos (de 5 a 10), con sus nombres."""
 
     title: str
     items: tuple[ClipItem, ...]
     title_layers: tuple[str, ...] = ()
+    # Opcional: si viene vacío no se dibuja. Va siempre debajo del título (§9.2).
+    subtitle: str = ""
 
     @property
     def ordered(self) -> tuple[ClipItem, ...]:
@@ -89,6 +91,10 @@ def validate_binding(binding: Binding, config: Config | None = None, *, check_pa
 
     if len(binding.layers) > cfg.title_layers_max:
         errors.append(f"hay {len(binding.layers)} capas de título; el máximo es {cfg.title_layers_max}")
+
+    subtitle = binding.subtitle.strip()
+    if subtitle and len(subtitle) > cfg.title_layer_chars:
+        errors.append(f"el subtítulo tiene {len(subtitle)} caracteres; el máximo es {cfg.title_layer_chars}")
 
     if not cfg.items_min <= cfg.items <= cfg.items_max:
         errors.append(
@@ -154,6 +160,7 @@ def load_binding(path: str | Path, config: Config | None = None) -> Binding:
         items.append(ClipItem(position=position, path=clip_path, label=str(raw.get("label", ""))))
 
     title = str(payload.get("title", ""))
+    subtitle = str(payload.get("subtitle", ""))
     raw_layers = payload.get("title_layers") or []
     if not isinstance(raw_layers, list):
         raise BindingError("title_layers debe ser una lista de textos")
@@ -162,6 +169,7 @@ def load_binding(path: str | Path, config: Config | None = None) -> Binding:
         title=title,
         items=tuple(items),
         title_layers=tuple(str(layer) for layer in raw_layers),
+        subtitle=subtitle,
     )
     validate_binding(binding, config)
     return binding

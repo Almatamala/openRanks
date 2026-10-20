@@ -175,15 +175,43 @@ def test_ass_escapes_user_text_so_braces_do_not_break_the_overlay():
     assert r"CAOS \\ TOTAL" in script
 
 
-def test_title_background_switches_to_the_opaque_box_style():
+def test_the_title_has_no_opaque_background_option_any_more():
+    """La caja negra se quitó del producto: el título siempre va con contorno."""
+    assert "background" not in DEFAULT_STYLE["title"]
+    assert "bg_pad" not in DEFAULT_STYLE["title"]
+    script = build_ass(_spec(), _style(), Config())
+    assert "TitleBg" not in script
+    assert ",Title," in script
+
+
+def test_a_subtitle_is_drawn_below_the_title_with_its_own_size():
     style = _style()
-    style["title"]["background"] = True
-    script = build_ass(_spec(), style, Config())
-    assert "Style: TitleBg," in script
-    title_line = next(line for line in script.splitlines() if ",TitleBg," in line)
-    assert "\\an5\\pos(540,168)" in title_line
-    # Sin fondo, el título se dibuja con el estilo normal (contorno, no caja).
-    assert ",TitleBg," not in build_ass(_spec(), _style(), Config())
+    style["subtitle"]["size"] = 52
+    spec = build_spec(
+        title="TOP 5 GATOS",
+        subtitle="LOS MÁS LOCOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 6)},
+        segments=[{"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(5, 0, -1)],
+        cold_open_s=0.0,
+        style=style,
+        config=Config(),
+    )
+    script = build_ass(spec, style, Config())
+    title_line = next(line for line in script.splitlines() if ",Title," in line)
+    subtitle_line = next(line for line in script.splitlines() if ",Subtitle," in line)
+    assert "LOS MÁS LOCOS" in subtitle_line
+    # Estilo propio, con el tamaño del subtítulo (no el del título).
+    assert "Style: Subtitle,Arial,52," in script
+    # Va **debajo** del título: su centro cae por debajo del bloque del título.
+    assert spec["subtitle"]["anchor_y"] > spec["title"]["anchor_y"]
+    assert f"\\pos(540,{spec['subtitle']['anchor_y']:g})" in subtitle_line
+    assert title_line != subtitle_line
+
+
+def test_without_subtitle_text_no_subtitle_event_is_written():
+    script = build_ass(_spec(), _style(), Config())
+    assert ",Subtitle," not in script
+    assert "Style: Subtitle," in script
 
 
 def test_style_overrides_do_not_mutate_the_preset():
@@ -299,7 +327,7 @@ def test_the_italic_switch_flips_the_italic_field_of_every_style():
 
     plain = build_ass(_spec(), _style(), Config())
     cursive = build_ass(_spec(), get_style({"italic": True}), Config())
-    for name in ("Title", "TitleBg", "Badge", "Label"):
+    for name in ("Title", "Subtitle", "Badge", "Label"):
         assert italic_field(plain, name) == "0"
         assert italic_field(cursive, name) == "-1"
 

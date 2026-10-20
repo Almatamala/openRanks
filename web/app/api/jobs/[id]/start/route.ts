@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isSafeId, patchStatus, readStatus } from "@/lib/jobs";
-import { clampPositions, labelErrors, positionsFor, titleErrors } from "@/lib/limits";
+import { clampPositions, labelErrors, positionsFor, subtitleErrors, titleErrors } from "@/lib/limits";
 import { JobError, isRunning, startJob } from "@/lib/pipeline";
 
 export const runtime = "nodejs";
@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 interface StartBody {
   title?: unknown;
+  subtitle?: unknown;
   labels?: unknown;
   positions?: unknown;
 }
@@ -32,10 +33,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
+  // Opcional: un subtítulo vacío es válido y el vídeo sale sin él.
+  const subtitle = typeof body.subtitle === "string" ? body.subtitle.trim() : "";
   const positions = clampPositions(body.positions);
   const rawLabels = (body.labels ?? {}) as Record<string, unknown>;
   const labels: Record<string, string> = {};
-  const problems = [...titleErrors(title)];
+  const problems = [...titleErrors(title), ...subtitleErrors(subtitle)];
   for (const position of positionsFor(positions)) {
     const label = typeof rawLabels[String(position)] === "string" ? String(rawLabels[String(position)]).trim() : "";
     labels[String(position)] = label;
@@ -46,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const started = await startJob(id, { title, labels, positions });
+    const started = await startJob(id, { title, subtitle, labels, positions });
     return NextResponse.json(started, { status: 202 });
   } catch (error) {
     if (error instanceof JobError) {

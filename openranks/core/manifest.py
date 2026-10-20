@@ -52,8 +52,9 @@ def build_manifest(
         "plan": plan.to_manifest(),
         "editable_surface": {
             "title": plan.title,
+            "subtitle": getattr(plan, "subtitle", ""),
             "labels": {segment.output_name: segment.label for segment in plan.segments},
-            "note": "(ADR-8) lo único editable es el título y el nombre de los puestos; el render es automático",
+            "note": "(ADR-8) lo único editable es el título, el subtítulo opcional y el nombre de los puestos; el render es automático",
         },
         "sources": sources,
         "outputs": outputs,

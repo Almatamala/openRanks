@@ -91,6 +91,7 @@ def preview(
     dst: str | Path,
     *,
     title: str = "",
+    subtitle: str = "",
     labels: dict[int, str] | None = None,
     style_overrides: dict | None = None,
     font: str | None = None,
@@ -122,6 +123,7 @@ def preview(
     try:
         spec = build_spec(
             title=title,
+            subtitle=subtitle,
             labels=final_labels,
             segments=segments,
             cold_open_s=0.0,
@@ -162,6 +164,7 @@ def render(
     out_dir: str | Path,
     *,
     title: str | None = None,
+    subtitle: str | None = None,
     labels: dict[int, str] | None = None,
     style_overrides: dict | None = None,
     font: str | None = None,
@@ -174,8 +177,8 @@ def render(
 ) -> OverlayResult:
     """Compone el overlay sobre ``out_dir/union.mp4`` y escribe ``ranking.mp4``.
 
-    ``title`` y ``labels`` son los **únicos** campos editables (ADR-8); si no se
-    pasan, se toman los del manifiesto de L1.
+    ``title``, ``subtitle`` y ``labels`` son los **únicos** campos editables (ADR-8); si no
+    se pasan, se toman los del manifiesto de L1.
 
     ``track`` permite compartir la barra con el ensamblador para que el porcentaje
     no dé un salto atrás; en solitario (`openranks render`) se crea una barra propia.
@@ -201,6 +204,9 @@ def render(
     if font:
         style["font"] = font
     final_title = (title if title is not None else plan.get("title", "")).strip()
+    # El subtítulo es opcional y viaja con el plan (L1 → manifiesto → L2), igual que el
+    # título. `--subtitle ""` lo quita sin volver a montar.
+    final_subtitle = (subtitle if subtitle is not None else plan.get("subtitle", "")).strip()
     final_labels = dict(labels_from_segments(segments))
     if labels:
         final_labels.update({int(position): text for position, text in labels.items()})
@@ -209,6 +215,7 @@ def render(
     try:
         spec = build_spec(
             title=final_title,
+            subtitle=final_subtitle,
             labels=final_labels,
             segments=segments,
             cold_open_s=cold_open_s,
@@ -266,8 +273,9 @@ def render(
         },
         "edit": {
             "title": final_title,
+            "subtitle": final_subtitle,
             "labels": {str(position): text for position, text in sorted(final_labels.items(), reverse=True)},
-            "note": "(ADR-8) solo el título y los nombres de los puestos son editables",
+            "note": "(ADR-8) solo el título, el subtítulo opcional y los nombres de los puestos son editables",
         },
         "warnings": list(warnings),
     }

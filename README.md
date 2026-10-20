@@ -53,17 +53,17 @@ ni solapes, así que el ranking dura exactamente la suma de sus tramos.
 
 ## Regla dura del producto (ADR-8)
 
-Lo **único** editable es el **título del vídeo** y el **nombre de cada puesto**. El
-estilo (layout, posiciones, colores, tipografía, animaciones, duración) vive en el
-**preset bloqueado** y el **render es siempre automático**: no hay editor, ni
+Lo **único** editable es el **título del vídeo**, su **subtítulo opcional** y el **nombre
+de cada puesto**. El estilo (layout, posiciones, colores, tipografía, animaciones, duración)
+vive en el **preset bloqueado** y el **render es siempre automático**: no hay editor, ni
 timeline, ni exportación a mano. Cambiar un texto re-renderiza **solo la capa de
 overlay** —`openranks render`— sin volver a montar el vídeo.
 
 ## El panel
 
 `web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los clips
-(de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título y los nombres
-de los puestos, lanzar el montaje en corte seco y **ver el resultado en el panel**
+(de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título, un subtítulo
+opcional y los nombres de los puestos, lanzar el montaje en corte seco y **ver el resultado en el panel**
 (9:16 *inline*, portada y descargas). Muestra la fase en lenguaje humano («Preparando el clip #4 (2 de 5)»,
 «Uniendo los cinco clips en vertical»), valida el texto antes de gastar un montaje y
 no enseña rutas, ids internos ni JSON (§RF-9).
@@ -176,7 +176,8 @@ O en el panel, en la tarjeta **«Plantilla de la edición»**. Dónde vive cada 
 | Familias que ofrece el panel (con la **geométrica**) | `openranks/core/overlay.py` + `web/lib/preset.ts` | `FONT_FAMILIES` / `GEOMETRIC_FONT` (`URW Gothic`) |
 | Cursiva (itálica) de todo el texto | `openranks/core/overlay.py` | `DEFAULT_STYLE["italic"]` |
 | Título: altura, tamaño, colores, contorno | `openranks/core/overlay.py` | `DEFAULT_STYLE["title"]` |
-| Cómo se reparte el título (renglones y tamaño mínimo) | `openranks/core/specs.py` | `fit_title()`, `TITLE_SIDE_MARGIN`, `SAFE_TOP` |
+| Subtítulo: tamaño, color y contorno (siempre debajo del título) | `openranks/core/overlay.py` | `DEFAULT_STYLE["subtitle"]` |
+| Cómo se reparten título y subtítulo (renglones, hueco y tamaño mínimo) | `openranks/core/specs.py` | `fit_title()`, `SUBTITLE_GAP`, `TITLE_SIDE_MARGIN`, `SAFE_TOP` |
 | Palabras en amarillo / azul | `openranks/core/overlay.py` + `openranks/core/specs.py` | `DEFAULT_STYLE["title"]["accent"]` / `["accent_blue"]`, `title_layers()` |
 | Escalera: posición, alturas, tamaño, contorno | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]` |
 | Medallas del podio (🥇🥈🥉) | `openranks/core/overlay.py` | `DEFAULT_STYLE["rank_ladder"]["medals"]` |
@@ -198,9 +199,14 @@ centro. Ahí se cambia:
 | Dónde aparece el top (posición horizontal) | `rank_ladder.x` |
 | Altura del `#1` y del `#5` (recorrido de la escalera) | `rank_ladder.y_top` / `y_bottom` |
 | Tamaño de las letras del título | `title.size` |
-| Fondo negro detrás del título | `title.background` |
+| Altura del título (dónde empieza; el tope se amplía 20 px por debajo del hueco de la escalera) | `title.y` |
+| Tamaño de las letras del subtítulo (independiente del título) | `subtitle.size` |
 | Fuente de la letra (incluida la sans-serif **geométrica**) | `font` |
 | Letras **cursivas** | `italic` |
+
+El **texto del subtítulo** no vive en la plantilla: es opcional y se escribe por vídeo,
+igual que el título. Cuando está vacío no se dibuja; cuando hay texto, va **siempre debajo
+del título** y su tamaño se ajusta aparte.
 
 El **número de puestos** no vive en la plantilla: se elige por vídeo en el panel (de 5
 a 10) y la escalera se reparte sola entre las alturas guardadas.
@@ -220,7 +226,7 @@ cualquier `union.mp4` ya montado. El script ASS que sale de ahí queda en
 
 ```bash
 # Cómo se verá el texto, sin montar nada:
-python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --label 1=CIERRE
+python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --subtitle "MOMENTOS LOCOS" --label 1=CIERRE
 ```
 
 > **Medallas.** El podio se dibuja con 🥇🥈🥉. Son un glifo de fuente: si la máquina no
@@ -271,7 +277,7 @@ python -m openranks assemble --input demo/binding.json --out demo/render --edit
 python -m openranks render --dir demo/render --title "TOP 5 GATOS" --label 1=CIERRE
 
 # 2c) Ver la plantilla sobre fondo negro, sin montar nada (un PNG)
-python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --label 1=CIERRE
+python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --subtitle "MOMENTOS LOCOS" --label 1=CIERRE
 
 # 3) Inspección de cualquier archivo (informativa; no juzga)
 python -m openranks probe demo/render/ranking.mp4
@@ -282,6 +288,7 @@ El binding es lo único que se escribe a mano:
 ```json
 {
   "title": "TOP 5 GATOS",
+  "subtitle": "MOMENTOS LOCOS",
   "items": [
     { "position": 5, "path": "clips/clip-1.mp4", "label": "GATO VOLADOR" },
     { "position": 4, "path": "clips/clip-2.mp4", "label": "PERRO CAOS" },
@@ -293,9 +300,10 @@ El binding es lo único que se escribe a mano:
 ```
 
 `position: 1` es el mejor clip: cierra el vídeo. Las rutas se resuelven **relativas al
-JSON**, así que el binding es portable. Los límites de texto de §9.5 (28 caracteres
-por capa de título, 24 caracteres / 4 palabras por nombre) se validan al entrar: si el
-texto no cabe, falla el *input*, nunca el render.
+JSON**, así que el binding es portable. El **subtítulo** es opcional: si falta o está
+vacío, el vídeo sale sin él. Los límites de texto de §9.5 (28 caracteres por capa de
+título, 40 en el subtítulo, 24 caracteres / 4 palabras por nombre) se validan al entrar:
+si el texto no cabe, falla el *input*, nunca el render.
 
 ### Opciones útiles
 

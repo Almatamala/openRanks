@@ -40,6 +40,7 @@ class AssemblyPlan:
     segments: tuple[SegmentPlan, ...]
     cold_open_s: float
     warnings: tuple[str, ...] = ()
+    subtitle: str = ""
 
     @property
     def clip_count(self) -> int:
@@ -58,6 +59,7 @@ class AssemblyPlan:
     def to_manifest(self) -> dict:
         return {
             "title": self.title,
+            "subtitle": self.subtitle,
             "clip_count": self.clip_count,
             "cold_open_s": self.cold_open_s,
             "total_duration_s": round(self.total_duration_s, 3),
@@ -143,6 +145,7 @@ def build_plan(
         segments=tuple(segments),
         cold_open_s=cold_open_s,
         warnings=(),  # se rellena abajo con los avisos de duración
+        subtitle=binding.subtitle,
     )
 
     total = plan.total_duration_s
@@ -167,4 +170,5 @@ def build_plan(
         segments=plan.segments,
         cold_open_s=plan.cold_open_s,
         warnings=tuple(warnings),
+        subtitle=plan.subtitle,
     )

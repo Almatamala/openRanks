@@ -12,7 +12,9 @@ import { JOBS_DIR } from "./paths";
 export interface EditablePreset {
   font: string;
   italic: boolean;
-  title: { size: number; background: boolean };
+  title: { size: number; y: number };
+  /** El subtítulo es opcional; aquí solo se ajusta su tamaño (va siempre debajo). */
+  subtitle: { size: number };
   rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
 }
 
@@ -28,6 +30,9 @@ export const FONT_CHOICES = ["DejaVu Sans", "Liberation Sans", "DejaVu Serif", "
 /** Rangos de los deslizadores: espejo del lienzo 1080x1920. */
 export const PRESET_RANGES = {
   titleSize: [40, 220] as const,
+  /** Altura del título sobre el lienzo 1080x1920 (zona segura desde y=96). */
+  titleY: [96, 900] as const,
+  subtitleSize: [24, 140] as const,
   ladderSize: [60, 220] as const,
   x: [0, 1080] as const,
   yTop: [0, 1900] as const,
@@ -53,13 +58,17 @@ function pickFont(value: unknown): string {
 export function sanitizePreset(input: unknown): EditablePreset {
   const raw = (input ?? {}) as Partial<EditablePreset>;
   const title = (raw.title ?? {}) as Partial<EditablePreset["title"]>;
+  const subtitle = (raw.subtitle ?? {}) as Partial<EditablePreset["subtitle"]>;
   const ladder = (raw.rank_ladder ?? {}) as Partial<EditablePreset["rank_ladder"]>;
   return {
     font: pickFont(raw.font),
     italic: Boolean(raw.italic),
     title: {
       size: clamp(title.size, PRESET_RANGES.titleSize, 104),
-      background: Boolean(title.background),
+      y: clamp(title.y, PRESET_RANGES.titleY, 168),
+    },
+    subtitle: {
+      size: clamp(subtitle.size, PRESET_RANGES.subtitleSize, 64),
     },
     rank_ladder: {
       size: clamp(ladder.size, PRESET_RANGES.ladderSize, 132),

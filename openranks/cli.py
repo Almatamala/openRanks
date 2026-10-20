@@ -71,8 +71,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="L2 solo: re-compone la edición sobre un union.mp4 ya ensamblado (segundos, no minutos)",
     )
     render_cmd.add_argument("--dir", required=True, help="directorio que ya produjo `assemble` (con union.mp4 y manifest.json)")
-    render_cmd.add_argument("--input", default=None, help="binding JSON opcional del que tomar los textos (título y nombres)")
+    render_cmd.add_argument(
+        "--input", default=None, help="binding JSON opcional del que tomar los textos (título, subtítulo y nombres)"
+    )
     render_cmd.add_argument("--title", default=None, help="sobrescribe el título del vídeo")
+    render_cmd.add_argument(
+        "--subtitle", default=None, help="sobrescribe el subtítulo (opcional; vacío = sin subtítulo)"
+    )
     render_cmd.add_argument(
         "--label",
         action="append",
@@ -99,6 +104,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     preview_cmd.add_argument("--out", required=True, help="ruta del PNG de salida")
     preview_cmd.add_argument("--title", default="", help="título a dibujar")
+    preview_cmd.add_argument("--subtitle", default="", help="subtítulo opcional a dibujar (va debajo del título)")
     preview_cmd.add_argument(
         "--label",
         action="append",
@@ -223,7 +229,10 @@ def _run_preset(args: argparse.Namespace) -> int:
                         "italic": bool(style.get("italic", False)),
                         "title": {
                             "size": style["title"]["size"],
-                            "background": bool(style["title"]["background"]),
+                            "y": style["title"]["y"],
+                        },
+                        "subtitle": {
+                            "size": style["subtitle"]["size"],
                         },
                         "rank_ladder": {
                             "size": style["rank_ladder"]["size"],
@@ -264,6 +273,7 @@ def _run_preview(args: argparse.Namespace) -> int:
         result = preview(
             args.out,
             title=args.title or "",
+            subtitle=args.subtitle or "",
             labels=labels or None,
             style_overrides=_style_overrides(args.italic),
             font=args.font,
@@ -286,6 +296,12 @@ def _run_preview(args: argparse.Namespace) -> int:
                     "at_s": result.at_s,
                     "preset": result.spec.get("preset"),
                     "total_duration_s": result.spec["total_duration_s"],
+                    # Recorrido real del ajuste de altura del título: lo usa el panel
+                    # para que el deslizador no tenga tramos muertos.
+                    "title_y": {
+                        "min": result.spec["title"]["y_min"],
+                        "max": result.spec["title"]["y_max"],
+                    },
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -376,14 +392,17 @@ def _run_render(args: argparse.Namespace) -> int:
     try:
         labels = _parse_label_overrides(args.label)
         title = args.title
+        subtitle = args.subtitle
         if args.input:
             binding = load_binding(args.input, config)
             title = title if title is not None else binding.title
+            subtitle = subtitle if subtitle is not None else binding.subtitle
             for item in binding.items:
                 labels.setdefault(item.position, item.label)
         result = render(
             args.dir,
             title=title,
+            subtitle=subtitle,
             labels=labels or None,
             style_overrides=_style_overrides(args.italic),
             font=args.font,

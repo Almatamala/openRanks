@@ -62,9 +62,13 @@ DEFAULT_STYLE: dict = {
         # Segundo acento: el operador marca palabras con `_asi_`.
         "accent_blue": "#3B82F6",
         "stroke_px": 9,
-        # Fondo negro detrás del título (una caja opaca), opcional.
-        "background": False,
-        "bg_pad": 26,
+        "fade_ms": 400,
+    },
+    # Subtítulo opcional: va **siempre debajo del título** y tiene su propio tamaño.
+    "subtitle": {
+        "size": 64,
+        "color": "#FFFFFF",
+        "stroke_px": 7,
         "fade_ms": 400,
     },
     "rank_ladder": {
@@ -94,8 +98,8 @@ DEFAULT_STYLE: dict = {
         "color": "#FFFFFF",
         "stroke_px": 8,
         "fade_ms": 220,
-        # Separación horizontal entre el centro de la casilla y el rótulo.
-        "dx": 132,
+        # Separación horizontal entre el centro de la casilla y el rótulo
+        "dx": 85,
     },
 }
 
@@ -103,7 +107,10 @@ DEFAULT_STYLE: dict = {
 # Claves que el panel puede cambiar y **guardar** en un preset propio
 # (`OPENRANKS_PRESET_FILE`). Todo lo demás del preset sigue siendo fijo.
 EDITABLE_SECTIONS: dict[str, tuple[str, ...]] = {
-    "title": ("size", "background"),
+    # Altura (y) y tamaño del título, y tamaño del subtítulo: el texto del subtítulo
+    # entra por ranking, no por preset (ADR-8).
+    "title": ("size", "y"),
+    "subtitle": ("size",),
     "rank_ladder": ("size", "x", "y_top", "y_bottom"),
 }
 
@@ -116,6 +123,7 @@ EDITABLE_TOP_LEVEL: tuple[str, ...] = ("font", "italic")
 STYLE_SOURCES: dict[str, str] = {
     "Fuente": "openranks/core/overlay.py → DEFAULT_STYLE[\"font\"] (o OPENRANKS_FONT)",
     "Título": "openranks/core/overlay.py → DEFAULT_STYLE[\"title\"]",
+    "Subtítulo": "openranks/core/overlay.py → DEFAULT_STYLE[\"subtitle\"]",
     "Escalera": "openranks/core/overlay.py → DEFAULT_STYLE[\"rank_ladder\"]",
     "Rótulo": "openranks/core/overlay.py → DEFAULT_STYLE[\"clip_label\"] (texto al lado de su casilla)",
     "Colores": "openranks/core/specs.py → RANK_COLORS (color por puesto)",
@@ -130,6 +138,7 @@ def describe_style(style: dict | None = None) -> list[dict]:
     """
     current = style or get_style()
     title = current["title"]
+    subtitle = current["subtitle"]
     ladder = current["rank_ladder"]
     label = current["clip_label"]
     rows: list[tuple[str, str, object, str]] = [
@@ -159,9 +168,16 @@ def describe_style(style: dict | None = None) -> list[dict]:
         ("Título", "title.accent_blue", title["accent_blue"], "Segundo acento, azul: pinta lo marcado con `_palabra_`."),
         ("Título", "title.marcas", "*amarillo* · _azul_", "Marca en el propio título las palabras que salen en otro color (base blanco)."),
         ("Título", "title.stroke_px", title["stroke_px"], "Grosor del contorno negro: es lo que hace legible el texto sobre vídeo."),
-        ("Título", "title.background", title["background"], "Pinta una **caja negra** detrás del título: se lee sobre cualquier clip."),
-        ("Título", "title.bg_pad", title["bg_pad"], "Relleno de la caja negra alrededor del título (px)."),
         ("Título", "title.fade_ms", title["fade_ms"], "Duración del fundido de entrada del título."),
+        (
+            "Subtítulo",
+            "subtitle.size",
+            subtitle["size"],
+            "Tamaño del subtítulo, independiente del título. Es opcional: sin texto no se dibuja; con él, va siempre debajo.",
+        ),
+        ("Subtítulo", "subtitle.color", subtitle["color"], "Color del texto del subtítulo."),
+        ("Subtítulo", "subtitle.stroke_px", subtitle["stroke_px"], "Grosor del contorno del subtítulo."),
+        ("Subtítulo", "subtitle.fade_ms", subtitle["fade_ms"], "Duración del fundido de entrada del subtítulo."),
         ("Escalera", "rank_ladder.x", ladder["x"], "Centro horizontal de la columna de números."),
         ("Escalera", "rank_ladder.y_bottom", ladder["y_bottom"], "Altura del #5 (el de abajo)."),
         ("Escalera", "rank_ladder.y_top", ladder["y_top"], "Altura del #1 (el de arriba)."),
@@ -283,32 +299,43 @@ def _escape_text(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
-def _title_line(layers: list[dict], style: dict) -> str:
-    """Un renglón del título, con el número en su color y a mayor tamaño (§3).
+def _text_line(layers: list[dict], *, base_color: str) -> str:
+    """Un renglón ya repartido, con el color y la escala de cada capa.
 
     El reparto en renglones lo decidió `fit_title` (`core/specs.py`): aquí solo se
-    pintan las palabras que van en cada uno, con sus marcas de color y escala.
+    pintan las palabras que van en cada uno, con sus marcas de color y escala. El título
+    usa sus dos acentos (y el número a mayor tamaño); el subtítulo, un solo color.
     """
-    base = style["title"]["color"]
     parts: list[str] = []
     for layer in layers:
         text = _escape_text(str(layer["text"]))
         colour = str(layer["color"])
         scale = int(round(float(layer.get("scale", 1.0)) * 100))
-        if colour.upper() == base.upper() and scale == 100:
+        if colour.upper() == base_color.upper() and scale == 100:
             parts.append(text)
             continue
         parts.append(
             f"{{\\c{ass_color(colour)}\\fscx{scale}\\fscy{scale}}}{text}"
-            f"{{\\c{ass_color(base)}\\fscx100\\fscy100}}"
+            f"{{\\c{ass_color(base_color)}\\fscx100\\fscy100}}"
         )
     return " ".join(parts)
+
+
+def _block_text(lines: list[list[dict]], *, base_color: str) -> str:
+    r"""Renglones de un bloque de texto unidos con el salto duro de ASS (``\N``)."""
+    return "\\N".join(_text_line(line, base_color=base_color) for line in lines)
 
 
 def _title_text(spec: dict, style: dict) -> str:
     r"""Título completo: sus renglones, ya repartidos, unidos con el salto de ASS (``\N``)."""
     lines = spec["title"].get("lines") or [spec["title"]["layers"]]
-    return "\\N".join(_title_line(line, style) for line in lines)
+    return _block_text(lines, base_color=style["title"]["color"])
+
+
+def _subtitle_text(spec: dict, style: dict) -> str:
+    r"""Subtítulo completo: sus renglones, ya repartidos, unidos con ``\N``."""
+    lines = spec["subtitle"].get("lines") or []
+    return _block_text(lines, base_color=style["subtitle"]["color"])
 
 
 def _style_line(
@@ -320,22 +347,17 @@ def _style_line(
     stroke: int,
     bold: bool = True,
     italic: bool = False,
-    border_style: int = 1,
 ) -> str:
-    """Línea de estilo ASS.
-
-    ``border_style=3`` dibuja una **caja opaca** con el color del contorno: es lo que
-    usa el fondo negro del título (el contorno se reutiliza como relleno).
-    """
+    """Línea de estilo ASS."""
     return (
         f"Style: {name},{font},{size},{ass_color(color)},{ass_color(color)},"
-        f"{ass_color('#000000')},&H00000000,{'-1' if bold else '0'},{'-1' if italic else '0'},0,0,100,100,0,0,{border_style},"
+        f"{ass_color('#000000')},&H00000000,{'-1' if bold else '0'},{'-1' if italic else '0'},0,0,100,100,0,0,1,"
         f"{stroke},0,5,40,40,40,1"
     )
 
 
 def build_ass(spec: dict, style: dict, config: Config) -> str:
-    """Script ASS con un evento por badge, rótulo y título.
+    """Script ASS con un evento por badge, rótulo, título y subtítulo (si lo hay).
 
     La escalera está **completa desde el primer fotograma** (``5`` abajo → ``1`` arriba)
     y lo que llega con cada clip es su turno: el número activo se ve nítido y los demás
@@ -344,9 +366,11 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     font = style["font"]
     italic = bool(style.get("italic", False))
     title = style["title"]
-    # El título se dibuja con el tamaño **ya encajado** al hueco (`fit_title`), no con el
-    # que pide el preset: si no cabe, baja y se reparte en renglones.
+    subtitle = style["subtitle"]
+    # El título y el subtítulo se dibujan con el tamaño **ya encajado** al hueco
+    # (`fit_title`), no con el que pide el preset: si no caben, bajan y se reparten.
     title_size = int(round(float(spec["title"].get("size", title["size"]))))
+    subtitle_size = int(round(float(spec["subtitle"].get("size", subtitle["size"]))))
     title_anchor = spec["title"].get("anchor_y", title["y"])
     ladder = style["rank_ladder"]
     label = style["clip_label"]
@@ -373,13 +397,12 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
             italic=italic,
         ),
         _style_line(
-            "TitleBg",
+            "Subtitle",
             font=font,
-            size=title_size,
-            color=title["color"],
-            stroke=int(title.get("bg_pad", 26)),
+            size=subtitle_size,
+            color=subtitle["color"],
+            stroke=subtitle["stroke_px"],
             italic=italic,
-            border_style=3,
         ),
         _style_line(
             "Badge",
@@ -405,15 +428,23 @@ def build_ass(spec: dict, style: dict, config: Config) -> str:
     centre_x = config.target_width // 2
     total = spec["total_duration_s"]
 
-    # Título: arriba y visible todo el vídeo, con la entrada de L2. Con fondo negro se
-    # dibuja con la caja opaca (`TitleBg`); si no, con el estilo normal.
+    # Título: arriba y visible todo el vídeo, con la entrada de L2.
     title_start = max(0.0, min(0.4, total))
-    title_style = "TitleBg" if title.get("background") else "Title"
     lines.append(
-        f"Dialogue: 0,{ass_time(title_start)},{ass_time(total)},{title_style},,0,0,0,,"
+        f"Dialogue: 0,{ass_time(title_start)},{ass_time(total)},Title,,0,0,0,,"
         f"{{\\an5\\pos({centre_x},{float(title_anchor):g})\\fad({int(title['fade_ms'] / 2)},{int(title['fade_ms'] / 2)})}}"
         f"{_title_text(spec, style)}"
     )
+
+    # Subtítulo: opcional y **siempre debajo del título**; el spec ya trae su centro.
+    subtitle_spec = spec.get("subtitle") or {}
+    if subtitle_spec.get("text") and subtitle_spec.get("anchor_y") is not None:
+        lines.append(
+            f"Dialogue: 0,{ass_time(title_start)},{ass_time(total)},Subtitle,,0,0,0,,"
+            f"{{\\an5\\pos({centre_x},{float(subtitle_spec['anchor_y']):g})"
+            f"\\fad({int(subtitle['fade_ms'] / 2)},{int(subtitle['fade_ms'] / 2)})}}"
+            f"{_subtitle_text(spec, style)}"
+        )
 
     # Escalera de rangos: **todas** las casillas están puestas desde el primer fotograma.
     # La que tiene el turno se ve nítida (con un pulso al activarse) y el resto se atenúa

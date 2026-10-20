@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { clampPositions, LIMITS, labelErrors, POSITIONS_MAX, POSITIONS_MIN, positionsFor, titleErrors } from "@/lib/limits";
+import {
+  clampPositions,
+  LIMITS,
+  labelErrors,
+  POSITIONS_MAX,
+  POSITIONS_MIN,
+  positionsFor,
+  subtitleErrors,
+  textLength,
+  titleErrors,
+} from "@/lib/limits";
 import { formatDuration } from "@/lib/progress";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
 
@@ -29,7 +39,8 @@ interface Job {
 interface EditablePreset {
   font: string;
   italic: boolean;
-  title: { size: number; background: boolean };
+  title: { size: number; y: number };
+  subtitle: { size: number };
   rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
 }
 
@@ -37,11 +48,14 @@ type StylePatch = {
   font?: string;
   italic?: boolean;
   title?: Partial<EditablePreset["title"]>;
+  subtitle?: Partial<EditablePreset["subtitle"]>;
   rank_ladder?: Partial<EditablePreset["rank_ladder"]>;
 };
 
 interface PresetRanges {
   titleSize: [number, number];
+  titleY: [number, number];
+  subtitleSize: [number, number];
   ladderSize: [number, number];
   x: [number, number];
   yTop: [number, number];
@@ -91,6 +105,7 @@ export default function Page() {
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("TOP 5 MOMENTOS");
+  const [subtitle, setSubtitle] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +121,11 @@ export default function Page() {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
+  // Recorrido **real** de la altura del título, calculado por el motor: fuera de él
+  // el render no cambia (el título ya está pegado a la zona segura o a la escalera).
+  const [titleYRange, setTitleYRange] = useState<[number, number] | null>(null);
   const runToken = useRef(0);
+  const previewToken = useRef(0);
 
   // La plantilla vive en el motor: el panel la lee, la edita y la guarda (§RF-9.10).
   const cargarPlantilla = useCallback(async () => {
@@ -134,11 +153,13 @@ export default function Page() {
       if (!raw) return;
       const saved = JSON.parse(raw) as {
         title?: string;
+        subtitle?: string;
         positions?: number;
         labels?: Record<string, string>;
       };
       const count = clampPositions(saved.positions ?? POSITIONS_MIN);
       if (saved.title) setTitle(saved.title);
+      if (typeof saved.subtitle === "string") setSubtitle(saved.subtitle);
       setPositions(count);
       setSlots(
         positionsFor(count).map((position) => ({ position, file: null, label: saved.labels?.[String(position)] ?? "" })),
@@ -151,22 +172,63 @@ export default function Page() {
   useEffect(() => {
     const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label]));
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, positions, labels }));
+      window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, subtitle, positions, labels }));
     } catch {
       // Sin espacio o en modo privado: seguir, el estado vive en el servidor igual.
     }
-  }, [slots, title, positions]);
+  }, [slots, title, subtitle, positions]);
 
   // El render del motor (FFmpeg) **no es instantáneo**: dibuja el overlay sobre negro
-  // pero tarda unos segundos, así que se pide con retardo y nunca en vivo.
-  const pedirRender = useCallback(() => {
-    const params = new URLSearchParams({ title: title.trim(), positions: String(positions) });
+  // pero tarda unos segundos, así que se pide con retardo y nunca en vivo. Se descarga
+  // con `fetch` para leer el recorrido real de la altura del título que manda el motor
+  // en las cabeceras; la imagen se sirve como blob para no depender de la caché.
+  const pedirRender = useCallback(async () => {
+    const token = ++previewToken.current;
+    const params = new URLSearchParams({ title: title.trim(), subtitle: subtitle.trim(), positions: String(positions) });
     for (const slot of slots) params.set(`label${slot.position}`, slot.label.trim());
     if (style) params.set("style", JSON.stringify(style));
     setPreviewFailed(false);
     setRendering(true);
-    setRenderUrl(`/api/preview?${params.toString()}&t=${Date.now()}`);
-  }, [title, slots, style, positions]);
+    try {
+      const response = await fetch(`/api/preview?${params.toString()}&t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("sin vista previa");
+      if (previewToken.current !== token) return;
+
+      const rawMin = Number.parseFloat(response.headers.get("X-OpenRanks-Title-Y-Min") ?? "");
+      const rawMax = Number.parseFloat(response.headers.get("X-OpenRanks-Title-Y-Max") ?? "");
+      if (Number.isFinite(rawMin) && Number.isFinite(rawMax) && rawMax >= rawMin) {
+        const bounds: [number, number] = [Math.round(rawMin), Math.round(rawMax)];
+        setTitleYRange(bounds);
+        // Si el valor guardado quedó fuera del hueco (otro texto o tamaño), se deja en
+        // el borde para que lo que muestra la plantilla sea lo que se guarda.
+        setStyle((current) => {
+          if (!current) return current;
+          const clamped = Math.min(bounds[1], Math.max(bounds[0], current.title.y));
+          return clamped === current.title.y
+            ? current
+            : { ...current, title: { ...current.title, y: clamped } };
+        });
+      }
+
+      const blob = await response.blob();
+      if (previewToken.current !== token) return;
+      setRenderUrl(URL.createObjectURL(blob));
+    } catch {
+      if (previewToken.current === token) setPreviewFailed(true);
+    } finally {
+      if (previewToken.current === token) setRendering(false);
+    }
+  }, [title, subtitle, slots, style, positions]);
+
+  // La imagen vive en un objeto URL: se libera al desmontar o al llegar otra nueva.
+  useEffect(() => {
+    if (!renderUrl) return;
+    return () => URL.revokeObjectURL(renderUrl);
+  }, [renderUrl]);
+
+  useEffect(() => () => {
+    previewToken.current += 1;
+  }, []);
 
   // El render exacto es **implícito**: no hay botón que lo pida. Se pide solo, con una
   // pausa, cuando cambia el título, un rótulo o la plantilla: arrastrar un deslizador no
@@ -204,7 +266,7 @@ export default function Page() {
     [setSlot],
   );
 
-  const problems = problemList(slots, title);
+  const problems = problemList(slots, title, subtitle);
 
   const patchStyle = useCallback((patch: StylePatch) => {
     setStyle((current) =>
@@ -213,6 +275,7 @@ export default function Page() {
             font: patch.font ?? current.font,
             italic: patch.italic ?? current.italic,
             title: { ...current.title, ...patch.title },
+            subtitle: { ...current.subtitle, ...patch.subtitle },
             rank_ladder: { ...current.rank_ladder, ...patch.rank_ladder },
           }
         : current,
@@ -259,6 +322,10 @@ export default function Page() {
   // Hay cambios en pantalla que el montaje todavía no usaría: se avisa.
   const dirty = style !== null && savedStyle !== null && styleKey(style) !== styleKey(savedStyle);
 
+  // El deslizador de altura solo recorre el hueco donde el motor mueve el título.
+  const titleYBounds: [number, number] = titleYRange ?? preset?.ranges?.titleY ?? [96, 900];
+  const titleYValue = Math.min(titleYBounds[1], Math.max(titleYBounds[0], style?.title.y ?? titleYBounds[0]));
+
   const poll = useCallback(async (id: string, token: number) => {
     for (;;) {
       if (runToken.current !== token) return;
@@ -280,15 +347,16 @@ export default function Page() {
   const startPayload = useCallback(
     () => ({
       title: title.trim(),
+      subtitle: subtitle.trim(),
       labels: Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label.trim()])),
       positions,
     }),
-    [slots, title, positions],
+    [slots, title, subtitle, positions],
   );
 
   const montar = useCallback(async () => {
-    if (problemList(slots, title).length > 0) {
-      setError(problemList(slots, title)[0]);
+    if (problemList(slots, title, subtitle).length > 0) {
+      setError(problemList(slots, title, subtitle)[0]);
       return;
     }
     const token = ++runToken.current;
@@ -321,7 +389,7 @@ export default function Page() {
     } finally {
       if (runToken.current === token) setBusy(false);
     }
-  }, [slots, title, startPayload, poll]);
+  }, [slots, title, subtitle, startPayload, poll]);
 
   const reintentar = useCallback(async () => {
     if (!job) {
@@ -487,7 +555,7 @@ export default function Page() {
 
           <section className="card">
             <h2>
-              <span className="step">2</span>El título
+              <span className="step">2</span>El título y el subtítulo
             </h2>
             <p className="hint">
               El número se pinta solo, con su propio color. Máximo {LIMITS.titleLayerChars} caracteres (las marcas
@@ -507,6 +575,25 @@ export default function Page() {
             <div className={`counter ${visibleLength(title) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {visibleLength(title)}/{LIMITS.titleLayerChars} caracteres
             </div>
+            <label className="field" htmlFor="subtitle" style={{ marginTop: 16 }}>
+              Subtítulo del vídeo (opcional)
+            </label>
+            <input
+              id="subtitle"
+              type="text"
+              value={subtitle}
+              maxLength={LIMITS.titleLayerChars * 2}
+              placeholder="p. ej. LOS MOMENTOS MÁS LOCOS"
+              disabled={running}
+              onChange={(event) => setSubtitle(event.target.value)}
+            />
+            <div className={`counter ${textLength(subtitle.trim()) > LIMITS.titleLayerChars ? "over" : ""}`}>
+              {textLength(subtitle.trim())}/{LIMITS.titleLayerChars} caracteres
+            </div>
+            <p className="hint">
+              Si lo dejas vacío no se dibuja. Cuando lo escribes, va siempre debajo del título y el
+              tamaño de sus letras se ajusta aparte en la plantilla.
+            </p>
             <p className="hint" style={{ marginTop: 12 }}>
               Toca una palabra para cambiar su color: blanco → <strong>amarillo</strong> → <strong>azul</strong>. En
               el texto se marca con <code>*amarillo*</code> y <code>_azul_</code>.
@@ -711,14 +798,28 @@ export default function Page() {
                       onChange={(value) => patchStyle({ title: { size: value } })}
                     />
 
-                    <label className="control switch">
-                      <input
-                        type="checkbox"
-                        checked={style.title.background}
-                        onChange={(event) => patchStyle({ title: { background: event.target.checked } })}
-                      />
-                      Fondo negro detrás del título
-                    </label>
+                    <RangeControl
+                      id="title-y"
+                      label="Altura del título"
+                      value={titleYValue}
+                      range={titleYBounds}
+                      onChange={(value) => patchStyle({ title: { y: value } })}
+                    />
+
+                    <RangeControl
+                      id="subtitle-size"
+                      label="Tamaño de las letras del subtítulo"
+                      value={style.subtitle.size}
+                      range={preset?.ranges?.subtitleSize ?? ([24, 140] as [number, number])}
+                      onChange={(value) => patchStyle({ subtitle: { size: value } })}
+                    />
+
+                    <p className="hint">
+                      El subtítulo es opcional y va siempre debajo del título. Si el texto no cabe
+                      sobre la escalera, el motor sube el bloque y reduce el tamaño solo. La altura
+                      del título recorre solo el hueco libre: con un título de dos líneas el margen
+                      es pequeño.
+                    </p>
 
                     <RangeControl
                       id="ladder-size"
@@ -789,8 +890,8 @@ export default function Page() {
       ) : null}
 
       <footer className="note">
-        Solo el título y los nombres de los puestos son editables: el resto del estilo vive en el preset bloqueado y el
-        render es siempre automático.
+        Solo el título, el subtítulo opcional y los nombres de los puestos son editables: el resto del estilo vive en el
+        preset bloqueado y el render es siempre automático.
       </footer>
     </main>
   );
@@ -798,12 +899,13 @@ export default function Page() {
 
 /** Clave estable para comparar si la plantilla en pantalla difiere de la guardada. */
 function styleKey(value: EditablePreset): string {
-  const { font, italic, title, rank_ladder } = value;
+  const { font, italic, title, subtitle, rank_ladder } = value;
   return [
     font,
     italic,
     title.size,
-    title.background,
+    title.y,
+    subtitle.size,
     rank_ladder.size,
     rank_ladder.x,
     rank_ladder.y_top,
@@ -853,12 +955,13 @@ function RangeControl({
 }
 
 /** Reúne los problemas del formulario con el mismo límite que valida el motor (§9.5). */
-function problemList(slots: Slot[], title: string): string[] {
+function problemList(slots: Slot[], title: string, subtitle: string): string[] {
   const list: string[] = [];
   const pending = slots.filter((slot) => !slot.file);
   if (pending.length === 1) list.push(`Falta el clip del puesto ${pending[0].position}.`);
   else if (pending.length > 1) list.push(`Faltan ${pending.length} clips: puestos ${pending.map((slot) => slot.position).join(", ")}.`);
   list.push(...titleErrors(title));
+  list.push(...subtitleErrors(subtitle));
   for (const slot of slots) list.push(...labelErrors(slot.position, slot.label));
   return list;
 }

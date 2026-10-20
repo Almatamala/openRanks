@@ -39,7 +39,7 @@ function friendlyError(stderr: string, code: number | null): string {
     .filter((line) => line && !line.startsWith("File \"") && !line.startsWith("Traceback"));
   const last = lines[lines.length - 1];
   if (last) return last.replace(/^(entrada inválida|fallo el ensamblado|fallo el render):\s*/i, "");
-  if (code === 2) return "Algún dato de entrada no es válido. Revisa el título y los nombres de los puestos.";
+  if (code === 2) return "Algún dato de entrada no es válido. Revisa el título, el subtítulo y los nombres de los puestos.";
   return "El montaje se paró sin decir por qué. Vuelve a intentarlo.";
 }
 
@@ -68,7 +68,11 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
     return { position, path: relative, label: request.labels[String(position)] ?? "" };
   });
 
-  writeFileSync(bindingPath(id), JSON.stringify({ title: request.title, items }, null, 2), "utf-8");
+  writeFileSync(
+    bindingPath(id),
+    JSON.stringify({ title: request.title, subtitle: request.subtitle, items }, null, 2),
+    "utf-8",
+  );
 
   const engine = await resolveEngine();
   if (!engine.python) throw new JobError(engine.problems[0] ?? "No hay un motor con el que montar.");

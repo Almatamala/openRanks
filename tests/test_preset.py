@@ -38,7 +38,7 @@ def test_every_setting_explains_itself_and_points_at_its_file():
 
 def test_the_groups_you_touch_to_improve_the_template_are_there():
     groups = {row["group"] for row in describe_style()}
-    assert {"Fuente", "Título", "Escalera", "Rótulo", "Colores"} <= groups
+    assert {"Fuente", "Título", "Subtítulo", "Escalera", "Rótulo", "Colores"} <= groups
 
 
 def test_every_source_group_is_covered():
@@ -105,7 +105,8 @@ def test_the_italic_switch_is_listed_and_can_be_saved(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "key", ["title.size", "title.background", "rank_ladder.y_top", "rank_ladder.y_bottom", "rank_ladder.size"]
+    "key",
+    ["title.size", "title.y", "subtitle.size", "rank_ladder.y_top", "rank_ladder.y_bottom", "rank_ladder.size"],
 )
 def test_the_geometry_knobs_are_numeric(key):
     rows = {row["key"]: row["value"] for row in describe_style()}
@@ -118,17 +119,29 @@ def _write_preset(tmp_path, payload) -> str:
     return str(path)
 
 
+def test_the_title_background_option_is_gone_from_the_preset():
+    assert "background" not in DEFAULT_STYLE["title"]
+    assert "background" not in EDITABLE_SECTIONS["title"]
+    assert {row["key"] for row in describe_style()}.isdisjoint({"title.background", "title.bg_pad"})
+
+
 def test_a_saved_preset_wins_over_the_factory_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "OPENRANKS_PRESET_FILE",
         _write_preset(
             tmp_path,
-            {"font": "Liberation Sans", "title": {"size": 150, "background": True}, "rank_ladder": {"size": 90, "x": 300}},
+            {
+                "font": "Liberation Sans",
+                "title": {"size": 150, "y": 240},
+                "subtitle": {"size": 48},
+                "rank_ladder": {"size": 90, "x": 300},
+            },
         ),
     )
     style = get_style()
     assert style["font"] == "Liberation Sans"
-    assert style["title"]["size"] == 150 and style["title"]["background"] is True
+    assert style["title"]["size"] == 150 and style["title"]["y"] == 240
+    assert style["subtitle"]["size"] == 48
     assert style["rank_ladder"]["size"] == 90 and style["rank_ladder"]["x"] == 300
     # Lo que no se guardó sigue siendo el valor de fábrica.
     assert style["title"]["color"] == DEFAULT_STYLE["title"]["color"]
@@ -155,6 +168,6 @@ def test_a_corrupt_or_unknown_saved_preset_is_ignored(tmp_path, monkeypatch):
     assert get_style()["title"]["size"] == DEFAULT_STYLE["title"]["size"]
 
     # Solo entran las claves editables: nada de colarse el layout entero.
-    monkeypatch.setenv("OPENRANKS_PRESET_FILE", _write_preset(tmp_path, {"title": {"y": 999}, "hack": 1}))
+    monkeypatch.setenv("OPENRANKS_PRESET_FILE", _write_preset(tmp_path, {"title": {"color": "#00FF00"}, "hack": 1}))
     assert load_saved_preset() == {}
     assert "title" in EDITABLE_SECTIONS

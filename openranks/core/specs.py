@@ -6,7 +6,7 @@ los tramos anteriores: el reparto del tiempo tiene que cuadrar con la unión o e
 último badge se desincroniza del vídeo.
 
 El estilo es **bloqueado** (ADR-8): lo único que cambia entre rankings es el texto
-(título y nombres de los puestos). Todo lo demás vive en el preset.
+(título, subtítulo opcional y nombres de los puestos). Todo lo demás vive en el preset.
 """
 
 from __future__ import annotations
@@ -41,6 +41,10 @@ TITLE_SIDE_MARGIN = 96  # zona segura: `x > 960` es botonera; simétrico a la iz
 TITLE_BOTTOM_GAP = 24  # aire entre el título y la primera casilla de la escalera
 TITLE_LINE_HEIGHT = 1.16  # interlineado, en múltiplos del tamaño de la fuente
 TITLE_MIN_SIZE = 40  # por debajo de esto el título no se lee
+# Subtítulo: opcional, **siempre debajo del título**, con su propio tamaño (§9.2).
+SUBTITLE_GAP = 0  # aire entre el bloque del título y el del subtítulo
+SUBTITLE_MIN_SIZE = 28  # por debajo de esto el subtítulo no se lee
+SUBTITLE_LINES_MAX = 2  # el subtítulo es una línea de apoyo, no un párrafo
 
 
 class SpecError(ValueError):
@@ -269,6 +273,30 @@ def title_anchor_y(*, lines: int, line_height: float, y: float, bottom_limit: fl
     return round(top + block / 2, 3)
 
 
+def title_y_bounds(*, lines: int, line_height: float, bottom_limit: float) -> tuple[float, float]:
+    """Recorrido **real** de ``title.y``: fuera de estos valores el título no se mueve.
+
+    El bloque de título no puede salirse de la zona segura por arriba ni invadir la
+    escalera por abajo, así que un título de varias líneas (o muy grande) deja poco
+    margen. El panel usa este recorrido para que el deslizador no tenga tramos muertos.
+    """
+    block = max(line_height, line_height * max(1, lines))
+    low = SAFE_TOP + line_height / 2
+    high = max(low, bottom_limit - block + line_height / 2)
+    return round(low, 3), round(high, 3)
+
+
+def subtitle_anchor_y(*, lines: int, line_height: float, top: float, bottom_limit: float) -> float:
+    """Centro del bloque de subtítulo: empieza **debajo del título** y no se sale.
+
+    El subtítulo no tiene posición propia en el preset (siempre va debajo del título);
+    solo se desliza hacia arriba si su bloque no cupiera antes de la escalera.
+    """
+    block = max(line_height, line_height * max(1, lines))
+    start = min(max(top, SAFE_TOP), max(SAFE_TOP, bottom_limit - block))
+    return round(start + block / 2, 3)
+
+
 def badge_medal(position: int, ladder: dict) -> str | None:
     """Glifo de medalla del podio (🥇🥈🥉) o ``None`` si esa casilla no lleva."""
     medals = ladder.get("medals") or {}
@@ -305,6 +333,7 @@ def badge_y(position: int, ladder: dict, *, slots: int | None = None) -> float:
 def build_spec(
     *,
     title: str,
+    subtitle: str = "",
     labels: dict[int, str],
     segments: Sequence[dict],
     cold_open_s: float,
@@ -322,6 +351,7 @@ def build_spec(
         raise SpecError("el plan no tiene tramos: no hay nada que renderizar")
 
     title_style = style["title"]
+    subtitle_style = style["subtitle"]
     # Copia: la escalera lleva tantas casillas como puestos tenga **este** ranking (de 5
     # a 10), no las del preset, para que la columna se reparta sola entre las alturas.
     ladder = dict(style["rank_ladder"])
@@ -383,14 +413,76 @@ def build_spec(
             blue_color=title_style.get("accent_blue", ACCENT_BLUE),
         )
     )
-    bottom_limit = float(ladder["y_top"]) - TITLE_BOTTOM_GAP
+    bottom_limit = float(ladder["y_top"]) - TITLE_BOTTOM_GAP 
+    subtitle_text = subtitle.strip()
+    safe_width = max(1.0, config.target_width - 2 * TITLE_SIDE_MARGIN)
+    subtitle_layers = [{"text": subtitle_text, "color": subtitle_style["color"]}] if subtitle_text else []
+    # El subtítulo va **siempre debajo del título**: se le reserva la altura que de
+    # verdad ocupa (ya encajada, con sus renglones) antes de encajar el título, de modo
+    # que nunca se solapen ni invadan la escalera.
+    subtitle_reserve = 0.0
+    if subtitle_text:
+        draft_subtitle = fit_title(
+            subtitle_layers,
+            size=float(subtitle_style["size"]),
+            max_width=safe_width,
+            max_lines=SUBTITLE_LINES_MAX,
+            max_height=max(1.0, bottom_limit),
+            min_size=SUBTITLE_MIN_SIZE,
+        )
+        subtitle_reserve = (
+            draft_subtitle["line_height"] * max(1, len(draft_subtitle["lines"])) + SUBTITLE_GAP
+        )
+    title_bottom_limit = max(SAFE_TOP, bottom_limit - subtitle_reserve)
     fitted = fit_title(
         title_layers_list,
         size=float(title_style["size"]),
-        max_width=max(1.0, config.target_width - 2 * TITLE_SIDE_MARGIN),
+        max_width=safe_width,
         max_lines=config.title_layers_max,
-        max_height=max(1.0, bottom_limit - SAFE_TOP),
+        max_height=max(1.0, title_bottom_limit - SAFE_TOP),
     )
+    title_anchor = title_anchor_y(
+        lines=len(fitted["lines"]),
+        line_height=fitted["line_height"],
+        y=float(title_style["y"]),
+        bottom_limit=title_bottom_limit,
+    )
+    title_block = max(fitted["line_height"], fitted["line_height"] * max(1, len(fitted["lines"])))
+    title_y_min, title_y_max = title_y_bounds(
+        lines=len(fitted["lines"]),
+        line_height=fitted["line_height"],
+        bottom_limit=title_bottom_limit,
+    )
+
+    subtitle_spec: dict = {
+        "text": "",
+        "size": int(round(float(subtitle_style["size"]))),
+        "line_height": round(float(subtitle_style["size"]) * TITLE_LINE_HEIGHT, 3),
+        "anchor_y": None,
+        "lines": [],
+    }
+    if subtitle_text:
+        subtitle_top = min(title_anchor + title_block / 2 + SUBTITLE_GAP, bottom_limit)
+        fitted_subtitle = fit_title(
+            subtitle_layers,
+            size=float(subtitle_style["size"]),
+            max_width=safe_width,
+            max_lines=SUBTITLE_LINES_MAX,
+            max_height=max(1.0, bottom_limit - subtitle_top),
+            min_size=SUBTITLE_MIN_SIZE,
+        )
+        subtitle_spec = {
+            "text": subtitle_text,
+            "size": fitted_subtitle["size"],
+            "line_height": fitted_subtitle["line_height"],
+            "anchor_y": subtitle_anchor_y(
+                lines=len(fitted_subtitle["lines"]),
+                line_height=fitted_subtitle["line_height"],
+                top=subtitle_top,
+                bottom_limit=bottom_limit,
+            ),
+            "lines": fitted_subtitle["lines"],
+        }
 
     return {
         "layer": "L2",
@@ -401,16 +493,19 @@ def build_spec(
         "title": {
             "text": title,
             "y": title_style["y"],
+            # Recorrido efectivo del ajuste de altura: con estos valores (y solo con
+            # ellos) el título se mueve; fuera, el motor lo deja pegado al límite.
+            "y_min": title_y_min,
+            "y_max": title_y_max,
             # Lo que de verdad se dibuja: tamaño ya ajustado, renglones y altura del
             # centro del bloque. `layers` se mantiene para leer el título de un vistazo.
             "size": fitted["size"],
             "line_height": fitted["line_height"],
-            "anchor_y": title_anchor_y(
-                lines=len(fitted["lines"]), line_height=fitted["line_height"], y=float(title_style["y"]), bottom_limit=bottom_limit
-            ),
+            "anchor_y": title_anchor,
             "lines": fitted["lines"],
             "layers": title_layers_list,
         },
+        "subtitle": subtitle_spec,
         "rank_ladder": {
             "variant": ladder.get("variant", "ladder"),
             "x": ladder["x"],
@@ -419,8 +514,8 @@ def build_spec(
         },
         "clip_labels": clips,
         "editable_surface": {
-            "fields": ["title", "labels"],
-            "note": "(ADR-8) solo el título y el nombre de los puestos; el resto es el preset bloqueado",
+            "fields": ["title", "subtitle", "labels"],
+            "note": "(ADR-8) solo el título, el subtítulo opcional y el nombre de los puestos; el resto es el preset bloqueado",
         },
         "windows": [
             {

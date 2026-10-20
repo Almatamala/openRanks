@@ -43,6 +43,16 @@ export function titleErrors(title: string): string[] {
   return errors;
 }
 
+/** El subtítulo es **opcional**; si se escribe, cabe en el mismo límite que una capa. */
+export function subtitleErrors(subtitle: string): string[] {
+  const text = subtitle.trim();
+  if (!text) return [];
+  const length = textLength(text);
+  return length > LIMITS.titleLayerChars
+    ? [`El subtítulo tiene ${length} caracteres; el máximo es ${LIMITS.titleLayerChars}.`]
+    : [];
+}
+
 /** Cuenta caracteres Unicode (un emoji = 1), no unidades UTF-16 del navegador. */
 export function textLength(text: string): number {
   return Array.from(text).length;

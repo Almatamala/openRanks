@@ -88,7 +88,7 @@ def test_assemble_with_edit_produces_the_ranking_and_the_cover(
     assert manifest["render"]["layer"] == "L2"
     assert manifest["render"]["ranking"]["file"] == "ranking.mp4"
     spec = json.loads(result.overlay.spec_path.read_text(encoding="utf-8"))
-    assert spec["editable_surface"]["fields"] == ["title", "labels"]
+    assert spec["editable_surface"]["fields"] == ["title", "subtitle", "labels"]
     assert spec["title"]["text"] == "TOP 5 GATOS"
 
 
@@ -152,6 +152,29 @@ def test_preview_draws_the_preset_over_black_without_any_clip(ffmpeg_bin, tmp_pa
     pixels = raw.read_bytes()
     # Sobre negro, si el overlay no se dibujara no habría ni un píxel encendido.
     assert len(pixels) > 0 and max(pixels) > 0
+
+
+def test_preview_cli_reports_the_real_title_height_band(ffmpeg_bin, tmp_path, capsys):
+    """El panel limita el deslizador de altura a la banda que publica el motor."""
+    from openranks.cli import main
+
+    code = main(
+        [
+            "preview",
+            "--out",
+            str(tmp_path / "preview.png"),
+            "--title",
+            "TOP 5 MOMENTOS",
+            "--ffmpeg",
+            ffmpeg_bin,
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    band = payload["title_y"]
+    assert band["min"] < band["max"]
+    assert band["min"] >= 96
 
 
 def test_render_cli_updates_the_texts(ffmpeg_bin, ffprobe_bin, l1_out, capsys):

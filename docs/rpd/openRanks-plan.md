@@ -64,14 +64,15 @@ consola, y el panel no enseña rutas, ids internos ni JSON crudo.
 
 ### La regla dura del producto (ADR-8)
 
-Del short terminado, **lo único editable es el texto**: el **título del vídeo** y el
-**nombre de cada puesto**. Todo lo demás —layout, posiciones, tipografía, colores,
+Del short terminado, **lo único editable es el texto**: el **título del vídeo**, su
+**subtítulo opcional** y el **nombre de cada puesto**. Todo lo demás —layout, posiciones, tipografía, colores,
 animaciones, duración y encuadre— vive en el **preset bloqueado** y no se toca por vídeo.
 El **render es siempre automático**: no hay editor, ni timeline, ni exportación a mano.
 
 Tres consecuencias que el código ya respeta:
 
-1. La revisión se limita a **aprobar / rechazar / sustituir un clip / editar los dos textos**.
+1. La revisión se limita a **aprobar / rechazar / sustituir un clip / editar los textos**
+   (título, subtítulo opcional y nombres de los puestos).
 2. El texto es input libre de una persona, así que el renderer lo encaja solo (§9.5),
    con las mismas reglas al entrar (`core/binding.py`).
 3. Cambiar un texto **no** recompone el vídeo: `openranks render` re-renderiza **solo la
@@ -105,7 +106,8 @@ ajustar y **guardar** una parte:
 | Fuente del overlay | `font` | Sí (lista blanca de familias) |
 | Cursiva de todo el texto | `italic` | Sí |
 | Tamaño del título | `title.size` | Sí |
-| Fondo negro tras el título | `title.background` | Sí |
+| Altura del título (solo el hueco real sobre la escalera) | `title.y` | Sí |
+| Tamaño del subtítulo (opcional, debajo del título) | `subtitle.size` | Sí |
 | Tamaño del número de cada puesto | `rank_ladder.size` | Sí |
 | Posición horizontal de la escalera | `rank_ladder.x` | Sí |
 | Altura del `#1` y del `#5` | `rank_ladder.y_top` / `y_bottom` | Sí |
@@ -299,8 +301,8 @@ pequeño que trabaja varios compilados por día). No hay multiusuario ni factura
 Flujo actual (lo que ya se puede hacer hoy, entero dentro del panel):
 
 1. Sube los clips, uno por puesto, y elige cuántos puestos tiene el ranking (de 5 a 10).
-2. Escribe el título y el nombre de cada puesto; el panel valida los límites antes de gastar
-   un montaje.
+2. Escribe el título, el subtítulo si lo quiere y el nombre de cada puesto; el panel valida
+   los límites antes de gastar un montaje.
 3. Ajusta la plantilla si hace falta (menú lateral, con el render exacto sobre negro) y la
    guarda.
 4. Monta: el panel muestra la fase y el tiempo restante.
@@ -464,7 +466,7 @@ audio se copia, así que la duración y la medición de loudness no cambian.
    del log. **(hecho)**
 2. La aprobación sigue siendo puerta de publicación (RF-8.2): un render no aprobado no se
    publica. *(pendiente, con L4)*
-3. **Superficie editable = solo texto (ADR-8)**: título y nombre de cada puesto. **No** existe
+3. **Superficie editable = solo texto (ADR-8)**: título, subtítulo opcional y nombre de cada puesto. **No** existe
    endpoint para recortar, reordenar, cambiar la plantilla ni tocar el estilo. **(hecho)**
 4. Un cambio de texto **no** obliga a recomponer el vídeo: se re-renderiza solo la capa de
    overlay sobre el `union.mp4` (segundos, no minutos). **(hecho)**
@@ -501,10 +503,10 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
    pantalla de móvil y lo dibuja **el motor** sobre fondo negro (no una imitación del navegador,
    que mentía con fuentes, trazos y medallas); los cambios se piden al terminar de mover el
    control, no en cada tirón.
-6. **Los dos textos editables se editan en su sitio**, con contador de caracteres y validación
-   en vivo antes de gastar un montaje (§9.5).
-7. **Nada del trabajo en curso se pierde.** El panel persiste el título, los nombres y el número
-   de puestos; el estado real vive en el servidor.
+6. **Todos los textos editables se editan en su sitio**, con contador de caracteres y
+   validación en vivo antes de gastar un montaje (§9.5).
+7. **Nada del trabajo en curso se pierde.** El panel persiste el título, el subtítulo, los
+   nombres y el número de puestos; el estado real vive en el servidor.
 8. **Legibilidad y accesibilidad.** Contraste sobre fondo oscuro, controles etiquetados
    (no iconos mudos), `aria` en la barra de progreso y foco visible.
 9. **Cero jerga interna.** La UI habla el idioma del operador («Nombre del puesto #3»,
@@ -728,9 +730,9 @@ is_current`, `ranking_items(ranking_id, position)`, `jobs(state, created_at)`,
 ### 9.2 Estilos (preset bloqueado)
 
 **El estilo no es editable por vídeo (ADR-8).** Se elige una vez y el render lo aplica tal cual.
-Lo único que varía entre rankings es el **texto**: el título del vídeo y el nombre de cada
-puesto. `Template` (layout, posiciones, colores, animaciones, duración) es **constante**;
-`Binding` lleva **solo texto**.
+Lo único que varía entre rankings es el **texto**: el título del vídeo, su subtítulo opcional y
+el nombre de cada puesto. `Template` (layout, posiciones, colores, animaciones, duración) es
+**constante**; `Binding` lleva **solo texto**.
 
 El preset de fábrica vive en `openranks/core/overlay.py` (`DEFAULT_STYLE`) y los colores por
 puesto en `openranks/core/specs.py` (`RANK_COLORS`). Lo que hay hoy:
@@ -739,13 +741,13 @@ puesto en `openranks/core/specs.py` (`RANK_COLORS`). Lo que hay hoy:
 | --- | --- |
 | Fuente | `font` (por defecto `Arial`; en el contenedor manda `OPENRANKS_FONT`). Familias ofrecidas: `DejaVu Sans`, `Liberation Sans`, `DejaVu Serif`, `URW Gothic` (sans-serif **geométrica**) y `Symbola` (símbolos y medallas) |
 | Cursiva | `italic`: itálica en todo el texto del overlay |
-| Color del título | Base blanco con contorno negro; el **número** va en acento y mayor (§3). El operador marca **palabras** con `*amarillo*` y `_azul_`; las marcas no se dibujan |
-| Fondo del título | Opcional (`title.background`): caja negra opaca detrás del título |
+| Título | Tamaño (`title.size`) y **altura** (`title.y`) ajustables; el motor publica en el spec el recorrido real (`y_min`/`y_max`) y el panel limita el deslizador a él; el tope se amplía **20 px** por debajo del hueco de la escalera (`TITLE_CAP_EXTRA`), así que el título se puede bajar un poco más que antes. Base blanco con contorno negro y el **número** en acento y mayor (§3). El operador marca **palabras** con `*amarillo*` y `_azul_`; las marcas no se dibujan |
+| Subtítulo | Opcional (`subtitle` en el binding): va **siempre debajo del título**, con su propio tamaño (`subtitle.size`), y no se dibuja si el texto está vacío. Título y subtítulo se encajan juntos: el bloque sube y reduce el tamaño antes que invadir la escalera |
 | Escalera | Cinco casillas fijas (o tantas como puestos); **🥇🥈🥉** en el podio (fuente monocroma `medal_font`) y el número en el resto; color por puesto (`RANK_COLORS`) |
 | Turno | La casilla **activa** se ve nítida durante su clip; las demás **se atenúan y difuminan** (`dim_alpha`, `dim_blur`) |
-| Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx`); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
+| Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx = 53 px`, un 60 % menos que los 132 px originales); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
 | Encaje del clip | `auto` por defecto (`OPENRANKS_FIT`): detecta el área útil y rellena con negro; `band`, `contain` y `cover` son elecciones explícitas |
-| Preset editable | Una **parte** se ajusta y guarda desde el panel: `font`, `italic`, `title.size`, `title.background`, `rank_ladder.{size,x,y_top,y_bottom}` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
+| Preset editable | Una **parte** se ajusta y guarda desde el panel: `font`, `italic`, `title.{size,y}`, `subtitle.size`, `rank_ladder.{size,x,y_top,y_bottom}` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
 
 **Sin CTA de cierre.** El estándar no dibuja ningún texto de «sígueme» al final: el vídeo
 termina con la escalera completa y el rótulo del `#1`. La franja inferior queda libre para la
@@ -760,8 +762,8 @@ qué archivo se cambia**. El panel lo enseña en la tarjeta «Plantilla de la ed
 La edición se compone con un **script ASS** dibujado por **libass** encima del `union.mp4` de
 L1, mediante el mismo motor que hace L1:
 
-- **Un evento por elemento**: el título (con el número en su color inline), la casilla de cada
-  puesto y el rótulo de cada puesto.
+- **Un evento por elemento**: el título (con el número en su color inline), el subtítulo
+  opcional justo debajo, la casilla de cada puesto y el rótulo de cada puesto.
 - **La escalera está completa desde el primer fotograma**: todas las casillas están puestas y
   lo que llega con cada clip es su **turno**; la activa se ve nítida (con un pulso al activarse)
   y el resto atenuadas y difuminadas.
@@ -791,6 +793,7 @@ deterministas, aplicadas también en la validación de entrada:
 | Regla | Valor por defecto |
 | --- | --- |
 | Título del vídeo | ≤ 28 caracteres por capa, 3 capas; envoltura a 2 líneas como máximo |
+| Subtítulo del vídeo | Opcional; ≤ 40 caracteres, 2 líneas como máximo, siempre debajo del título |
 | Nombre de cada puesto | ≤ 4 palabras / 24 caracteres; 2 líneas como máximo |
 | Reducción por encaje | *shrink-to-fit* acotado (hasta 0,8× del tamaño nominal); después, envoltura; después, truncado con elipsis |
 | Zona segura | el texto nunca invade las safe areas de §9.1 ni la banda de la escalera |
@@ -960,7 +963,7 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 
 | Entregable | Detalle |
 | --- | --- |
-| Plantilla = datos | `Template + Binding → spec.json`; **`Template` bloqueado** y `Binding` con **solo texto** (título + N nombres) |
+| Plantilla = datos | `Template + Binding → spec.json`; **`Template` bloqueado** y `Binding` con **solo texto** (título + subtítulo opcional + N nombres) |
 | Overlays | escalera de posición con la casilla de turno nítida, rótulo por clip, medallas del podio |
 | Renderer | **ASS + FFmpeg** (`libass`), el mismo motor que hace L1 (§9.3). Sin segundo runtime |
 | Cover + verificaciones | `cover.jpg`, `spec.json`, `manifest.json` y determinismo (mismo spec ⇒ mismo MP4) |
@@ -1076,7 +1079,7 @@ plano se mide contra la definición equivocada).
 | ADR-5 | **Frames, nunca vídeo completo a Gemini** | El repo documenta que `get_visual_clips` no tiene guarda de longitud (~1 M tok/hora); con frames el coste y el límite desaparecen |
 | ADR-6 | El **LLM puntúa, el código decide** | Heredado de `clip_selection.score_batches`: la comparación y las cuotas se hacen donde son medibles |
 | ADR-7 | **Construcción de atrás hacia delante por capas**: L1 → L2 → L3 → L4 | Decisión del operador: primero existe el producto terminado —formato y edición validados, algo publicable— y después se automatiza su entrada. Contrato entre capas = **archivos + manifiesto**, así L2 y L3 no se conocen. Invierte «el riesgo primero»: la extracción es la prio 3, con spike temprano y el set de evaluación cosechado de los recortes manuales de L1. El riesgo mayor (contenido ajeno sin capa propia, §11) lo cubren justamente L1/L2 |
-| ADR-8 | **Render 100 % automático y superficie editable = solo texto**: título del vídeo + nombre de cada puesto | Decisión del operador. El estándar visual lo fija el preset y no el operador por vídeo, así que el resultado es reproducible y comparable entre rankings, el trabajo humano se reduce a elegir y revisar, y el render nunca espera a nadie. Obliga a reglas de encaje automático del texto (§9.5) |
+| ADR-8 | **Render 100 % automático y superficie editable = solo texto**: título del vídeo + subtítulo opcional + nombre de cada puesto | Decisión del operador. El estándar visual lo fija el preset y no el operador por vídeo, así que el resultado es reproducible y comparable entre rankings, el trabajo humano se reduce a elegir y revisar, y el render nunca espera a nadie. Obliga a reglas de encaje automático del texto (§9.5) |
 | ADR-9 | **La interfaz es un requisito de producto, no un extra**: un **panel único** cubre el flujo de punta a punta, con progreso por fase, errores accionables, plantilla y textos en el mismo sitio | Decisión del operador: el producto debe ser cómodo y fácil de usar. El valor del servicio es ahorrar trabajo humano, y eso se pierde si el operador necesita terminal, `curl` o un editor. Convierte la usabilidad en criterio de aceptación medible (RF-9, §10.6) |
 | ADR-10 | **El montaje es siempre de corte seco**: sin transiciones, sin *swoosh* y sin zoom de entrada. La unión se hace por **copia de streams** | Decisión del operador (16-oct-2026). El formato de referencia usa transiciones animadas, pero el corte limpio se ve igual de bien en este nicho, elimina una generación de recodificación en la unión, quita dos decisiones por vídeo del panel y deja la capa transformativa donde de verdad se ve: el overlay. Consecuencia en el código: fuera `xfade` y fuera el `zoompan` del primer clip |
 | ADR-11 | **Encuadre automático**: el clip horizontal con un clip vertical centrado se recorta al **área nítida**; el vertical no se recorta. Si la confianza es baja, se rellena con negro sin recortar | Decisión del operador (18-oct-2026). Los clips de entrada llegan en los dos formatos y el operador no debe recortar a mano ni decidir por vídeo; el render sigue siendo automático (ADR-8). La detección usa 12 fotogramas a 192 px y un refino a resolución completa, así que no compite con la codificación. El caso de fallo (marca de agua en la zona borrosa) se resuelve ignorando islas nítidas aisladas y, si no hay confianza, no se recorta |

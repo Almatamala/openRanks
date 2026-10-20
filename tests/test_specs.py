@@ -7,6 +7,7 @@ import pytest
 from openranks.core.config import Config
 from openranks.core.overlay import DEFAULT_STYLE, get_style
 from openranks.core.specs import (
+    SUBTITLE_GAP,
     SpecError,
     badge_text,
     badge_y,
@@ -193,7 +194,7 @@ def test_the_ranking_ends_without_a_cta():
 
 def test_editable_surface_is_only_text():
     spec = _spec()
-    assert spec["editable_surface"]["fields"] == ["title", "labels"]
+    assert spec["editable_surface"]["fields"] == ["title", "subtitle", "labels"]
     assert spec["title"]["text"] == "TOP 5 GATOS"
     assert spec["title"]["layers"][1]["text"] == "5"
 
@@ -218,6 +219,111 @@ def test_a_ranking_of_ten_positions_builds_ten_slots():
     assert spec["total_duration_s"] == pytest.approx(50.0)
     # El último (el 1) queda arriba y el primero (el 10) abajo.
     assert slots[-1]["y"] < slots[0]["y"]
+
+
+def test_the_subtitle_is_optional_and_always_below_the_title():
+    base = _spec()
+    assert base["subtitle"]["text"] == "" and base["subtitle"]["anchor_y"] is None
+
+    style = get_style()
+    spec = build_spec(
+        title="TOP 5 GATOS",
+        subtitle="MOMENTOS LOCOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 6)},
+        segments=_segments(7.0),
+        cold_open_s=0.0,
+        style=style,
+        config=Config(),
+    )
+    title, subtitle = spec["title"], spec["subtitle"]
+    assert subtitle["text"] == "MOMENTOS LOCOS"
+    # El subtítulo tiene su propio tamaño y arranca por debajo del bloque del título.
+    assert subtitle["size"] == style["subtitle"]["size"] != title["size"]
+    title_bottom = title["anchor_y"] + title["line_height"] * len(title["lines"]) / 2
+    subtitle_top = subtitle["anchor_y"] - subtitle["line_height"] * len(subtitle["lines"]) / 2
+    assert subtitle_top >= title_bottom + SUBTITLE_GAP - 0.5
+    # Y nunca invade la escalera.
+    assert subtitle["anchor_y"] + subtitle["line_height"] * len(subtitle["lines"]) / 2 <= 392
+
+
+def test_a_long_subtitle_wraps_without_overlapping_the_title():
+    style = get_style({"subtitle": {"size": 24}})
+    spec = build_spec(
+        title="TOP 10 GATOS",
+        subtitle="MOMENTOS ABSOLUTAMENTE LOCOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 11)},
+        segments=_segments(5.0, count=10),
+        cold_open_s=0.0,
+        style=style,
+        config=Config(items=10),
+    )
+    title, subtitle = spec["title"], spec["subtitle"]
+    title_bottom = title["anchor_y"] + title["line_height"] * len(title["lines"]) / 2
+    subtitle_top = subtitle["anchor_y"] - subtitle["line_height"] * len(subtitle["lines"]) / 2
+    assert subtitle_top >= title_bottom + SUBTITLE_GAP - 0.5
+    assert subtitle["anchor_y"] + subtitle["line_height"] * len(subtitle["lines"]) / 2 <= 392
+
+
+def test_the_title_height_slider_has_a_real_band_without_dead_zones():
+    """Fuera de ``y_min``/``y_max`` el título no se mueve: el panel recorre solo esa banda."""
+
+    def spec_for(y: float) -> dict:
+        return build_spec(
+            title="TOP 5 MOMENTOS",
+            labels={position: "X" for position in range(1, 6)},
+            segments=_segments(7.0),
+            cold_open_s=0.0,
+            style=get_style({"title": {"y": y}}),
+            config=Config(),
+        )
+
+    spec = spec_for(168)
+    low, high = spec["title"]["y_min"], spec["title"]["y_max"]
+    assert low < high
+    # Los extremos del recorrido son alcanzables y fuera de ellos el ancla se repite.
+    assert spec_for(low - 100)["title"]["anchor_y"] == pytest.approx(spec_for(low)["title"]["anchor_y"])
+    assert spec_for(high + 100)["title"]["anchor_y"] == pytest.approx(spec_for(high)["title"]["anchor_y"])
+    # Dentro de la banda, cada posición distinta produce una altura distinta.
+    assert spec_for((low + high) / 2)["title"]["anchor_y"] > spec_for(low)["title"]["anchor_y"]
+
+
+def test_the_title_height_cap_is_20_px_below_the_ladder_gap():
+    """El tope del ajuste se amplía 20 px sobre el hueco de la escalera."""
+
+    def spec_for(y: float) -> dict:
+        return build_spec(
+            title="TOP 5 MOMENTOS",
+            labels={position: "X" for position in range(1, 6)},
+            segments=_segments(7.0),
+            cold_open_s=0.0,
+            style=get_style({"title": {"y": y}}),
+            config=Config(),
+        )
+
+    spec = spec_for(168)
+    title = spec["title"]
+    block = title["line_height"] * len(title["lines"])
+    at_cap = spec_for(title["y_max"])
+    # Abajo del todo, el bloque queda 20 px por debajo del hueco original.
+    assert at_cap["title"]["anchor_y"] + block / 2 == pytest.approx(392 - 24 + 20, abs=0.02)
+    # El mínimo no se toca: sigue siendo el de la zona segura.
+    assert title["y_min"] == pytest.approx(96 + title["line_height"] / 2, abs=0.02)
+
+
+def test_the_subtitle_size_is_independent_and_the_title_height_is_adjustable():
+    style = get_style({"title": {"y": 220}, "subtitle": {"size": 48}})
+    spec = build_spec(
+        title="TOP 5 GATOS",
+        subtitle="MOMENTOS LOCOS",
+        labels={position: f"RÓTULO {position}" for position in range(1, 6)},
+        segments=_segments(7.0),
+        cold_open_s=0.0,
+        style=style,
+        config=Config(),
+    )
+    assert spec["title"]["y"] == 220
+    assert spec["subtitle"]["size"] == 48
+    assert spec["subtitle"]["size"] != spec["title"]["size"]
 
 
 def test_the_title_is_fitted_to_the_space_it_has():

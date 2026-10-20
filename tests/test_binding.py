@@ -87,6 +87,12 @@ def test_title_layer_over_limit_is_rejected():
         validate_binding(binding, Config(), check_paths=False)
 
 
+def test_the_subtitle_is_optional_but_has_the_same_length_limit_as_a_title_layer():
+    validate_binding(Binding(title="TOP 5 GATOS", items=_items(), subtitle="MOMENTOS LOCOS"), Config(), check_paths=False)
+    with pytest.raises(BindingError, match="subtítulo"):
+        validate_binding(Binding(title="TOP 5 GATOS", items=_items(), subtitle="X" * 41), Config(), check_paths=False)
+
+
 def test_too_many_title_layers_are_rejected():
     binding = Binding(title="TOP 5 GATOS", items=_items(), title_layers=("TOP", "5", "GATOS", "EXTRA"))
     with pytest.raises(BindingError, match="capas de título"):
@@ -110,10 +116,13 @@ def test_load_binding_resolves_paths_relative_to_the_json(tmp_path):
         clip.write_bytes(b"x")
         entries.append({"position": index, "path": f"clips/clip-{index}.mp4", "label": f"PUESTO {index}"})
     binding_path = tmp_path / "binding.json"
-    binding_path.write_text(json.dumps({"title": "TOP 5 GATOS", "items": entries}), encoding="utf-8")
+    binding_path.write_text(
+        json.dumps({"title": "TOP 5 GATOS", "subtitle": "LOS MÁS LOCOS", "items": entries}), encoding="utf-8"
+    )
 
     binding = load_binding(binding_path, Config())
     assert len(binding.items) == 5
+    assert binding.subtitle == "LOS MÁS LOCOS"
     assert all(item.path.is_file() for item in binding.items)
 
 

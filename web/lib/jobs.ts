@@ -9,6 +9,8 @@ export type JobState = "created" | "uploading" | "running" | "done" | "failed";
 
 export interface JobRequest {
   title: string;
+  /** Opcional: si viene vacío, el vídeo va sin subtítulo. */
+  subtitle: string;
   labels: Record<string, string>;
   /** Puestos del ranking (de 5 a 10): fija la escalera y el contrato del motor. */
   positions: number;
