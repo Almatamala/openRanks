@@ -21,7 +21,7 @@ from .core import ffmpeg as ff
 from .core.config import Config
 from .core.media import probe, validate_normalized
 from .core.manifest import sha256_file, utc_now, write_manifest
-from .core.overlay import build_ass, cover_argv, get_style, overlay_argv, preview_argv
+from .core.overlay import build_ass, get_style, overlay_argv, preview_argv
 from .core.progress import SPAN_EDIT_ONLY, Progress, ProgressCallback
 from .core.runner import run, stderr_warnings
 from .core.specs import SpecError, build_spec, labels_from_segments
@@ -42,7 +42,6 @@ class OverlayError(RuntimeError):
 class OverlayResult:
     out_dir: Path
     ranking: Path
-    cover: Path | None
     spec_path: Path
     spec: dict
     render_ms: int | None = None
@@ -59,8 +58,6 @@ class OverlayResult:
             f"{len(self.spec['rank_ladder']['slots'])} puestos editados",
             f"   spec: {self.spec_path.name}",
         ]
-        if self.cover is not None:
-            lines.append(f"   portada: {self.cover.name}")
         for warning in self.warnings:
             lines.append(f"   aviso: {warning}")
         return "\n".join(lines)
@@ -245,12 +242,7 @@ def render(
         raise OverlayError("el ranking renderizado no cumple el formato de salida", check.errors)
     warnings.extend(f"ranking: {warning}" for warning in check.warnings)
 
-    cover: Path | None = None
-    if info.duration_s > 0:
-        tracker.editing_step(0.9, "Sacando la portada")
-        cover = out_dir / "cover.jpg"
-        run(cover_argv(ffmpeg_bin, ranking, cover, at_s=max(0.0, info.duration_s - 0.4)))
-
+    tracker.editing_step(0.9, "Cerrando la edición")
     spec_path = write_manifest(out_dir / "spec.json", spec)
 
     payload = loaded["manifest"]
@@ -262,7 +254,6 @@ def render(
         "preset": style.get("theme"),
         "spec": spec_path.name,
         "ranking": {"file": ranking.name, "sha256": sha256_file(ranking), "bytes": ranking.stat().st_size},
-        "cover": None if cover is None else cover.name,
         "measured": {
             "duration_s": round(info.duration_s, 3),
             "width": info.width,
@@ -285,7 +276,6 @@ def render(
     return OverlayResult(
         out_dir=out_dir,
         ranking=ranking,
-        cover=cover,
         spec_path=spec_path,
         spec=spec,
         extra_warnings=tuple(warnings),

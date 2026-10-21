@@ -27,10 +27,10 @@ vídeo terminado.** El orden sigue vigente: `L1 → L2 → L3 → L4` (ADR-7).
 | **4** | **L4 · Integrador** | Orquestación de punta a punta, publicación y operación | Pendiente (el panel ya cubre L1/L2) |
 
 **Contrato entre capas.** Cada capa consume la salida de la anterior como **archivos +
-manifiesto**, nunca como llamadas acopladas. L1 produce `clips/*.mp4` + `union.mp4` +
-`manifest.json`; L2 produce `ranking.mp4` + `cover.jpg` + `spec.json`; L3 producirá **los
-mismos `clips/*.mp4`** que el operador aporta a mano hoy. Consecuencia: **L2 y L3 no se
-conocen entre sí** y L4 solo orquesta.
+manifiesto**, nunca como llamadas acopladas. L1 produce `prepared/NN.mp4` + `union.mp4` +
+`manifest.json` (y `assemble` sigue haciendo las tres de una vez para uso por CLI); L2 produce
+`ranking.mp4` + `spec.json`; L3 producirá **los mismos `clips/*.mp4`** que el operador aporta a
+mano hoy. Consecuencia: **L2 y L3 no se conocen entre sí** y L4 solo orquesta.
 
 ---
 
@@ -48,8 +48,9 @@ Lo que está construido y verificado, con la pieza donde vive:
 | Overlay (spec y ASS) | `openranks/core/specs.py`, `core/overlay.py` | Ventanas de tiempo, encaje del título, escalera, rótulos y el script ASS |
 | Progreso | `openranks/core/progress.py` | Porcentaje medido, fase con nombre humano y ETA honesto en el panel |
 | Orquestación L1 / L2 | `openranks/assemble.py`, `openranks/overlay.py` | Montar, verificar y editar, con manifiesto en cada paso |
-| CLI | `openranks/cli.py` | `assemble`, `render`, `preview`, `preset`, `probe`, `fit` |
-| Panel | `web/` (Next.js) | Flujo completo sin terminal: subir, escribir, montar, ver, descargar |
+| Etapas de L1 | `openranks/prepare.py`, `openranks/join.py` | Preparar **un** puesto al subirlo (el tick) y unir los preparados al pulsar «Montar», antes del render |
+| CLI | `openranks/cli.py` | `assemble`, `prepare`, `join`, `render`, `preview`, `preset`, `probe`, `fit` |
+| Panel | `web/` (Next.js) | Flujo completo sin terminal: subir (prepara solo), escribir, montar, ver y descargar el ranking |
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
 | Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
 
@@ -96,8 +97,9 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 | Normalización por clip | 1080x1920 / 30 fps / yuv420p; **encuadre automático** con detección del área útil y fallback sin recorte; `band`/`contain`/`cover` siguen disponibles |
 | «Sin recortes pendientes» | el clip final se publica tal cual: bordes limpios, sin barras negras, sin recodificar después |
 | Unión vertical | `core/plan.py`: orden `#5 → #1`, cold open opcional y duración real (suma exacta), **corte seco por copia de streams** |
-| Salida doble | **un archivo descargable por puesto** + **un solo `union.mp4`** con audio a −14 LUFS |
-| **Salida (criterio)** | `ffprobe` valida los archivos (1080x1920, 30 fps, yuv420p, audio presente) y el operador los descarga del panel |
+| Preparación por puesto | `prepare` normaliza **un** clip al subirlo y deja `prepared/NN.mp4`: es lo que enciende el tick del panel, sin bloquear los demás puestos |
+| Salida interna | **un clip preparado por puesto** + **un solo `union.mp4`** con audio a −14 LUFS; ninguno se descarga |
+| **Salida (criterio)** | `ffprobe` valida los archivos (1080x1920, 30 fps, yuv420p, audio presente); el operador solo descarga el `ranking.mp4` que produce L2 |
 
 ### L2 — Entregable 2: la edición del estándar · **hecho**
 
@@ -106,7 +108,7 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 | Plantilla = datos | `Template + Binding → spec.json`; **`Template` bloqueado** y `Binding` con **solo texto** (título + subtítulo opcional + N nombres) |
 | Overlays | escalera de posición con la casilla de turno nítida, rótulo por clip, medallas del podio |
 | Renderer | **ASS + FFmpeg** (`libass`), el mismo motor que hace L1 (§9.3). Sin segundo runtime |
-| Cover + verificaciones | `cover.jpg`, `spec.json`, `manifest.json` y determinismo (mismo spec ⇒ mismo MP4) |
+| Verificaciones | `spec.json`, `manifest.json` y determinismo (mismo spec ⇒ mismo MP4); **sin portada** |
 | Render automático | **sin ningún paso manual de montaje**: dados el preset y los textos, el MP4 sale solo |
 | Cambio de texto | re-render de **solo la capa de overlay** sobre el `union.mp4`, recalculando el encaje de §9.5 |
 | **Salida (criterio)** | sobre el `union.mp4` de L1 sale un `ranking.mp4` publicable; el overlay **dibuja de verdad** (test de píxeles) y el cambio de texto tarda segundos |
@@ -155,14 +157,16 @@ El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → 
 - **Núcleo puro** (sin FFmpeg, sin red): plan y duración del corte seco, contrato del binding y
   límites del texto, ranking de 5 a 10 puestos, badges y rótulos (ventana nítida y atenuada),
   colores por puesto, título en capas y su encaje, script ASS, `argv` de FFmpeg, monotonía del
-  porcentaje y listado del preset. Son `tests/test_{binding,plan,specs,ffmpeg_args,media,
-  manifest,config,overlay_args,progress,preset}.py`.
+  porcentaje, plan de la unión a partir de los clips preparados y listado del preset. Son
+  `tests/test_{binding,plan,specs,ffmpeg_args,media,manifest,config,overlay_args,progress,
+  preset,staged}.py`.
 - **Integración** (FFmpeg de verdad sobre clips sintéticos, marcados `integration`):
   `test_assemble_e2e.py` comprueba el criterio de salida de L1 (300 fotogramas y 10,0 s con 5
   clips de 2 s, sin audio perdido), `test_overlay_e2e.py` que `ranking.mp4` es 1080x1920/30
-  fps/yuv420p con audio, que se escriben portada y spec **y que el overlay dibuja de verdad**
-  (comparación de píxeles contra la unión), y `test_framing_e2e.py` el encuadre de un clip sobre
-  fondo borroso y su normalización con el crop. Se saltan si no hay FFmpeg.
+  fps/yuv420p con audio **y que el overlay dibuja de verdad** (comparación de píxeles contra la
+  unión); `test_staged_e2e.py` el flujo por etapas (`prepare` por puesto → `join` → `render`, con
+  la unión intacta y sin portada), y `test_framing_e2e.py` el encuadre de un clip sobre fondo
+  borroso y su normalización con el crop. Se saltan si no hay FFmpeg.
 - **Contrato con el panel**: hay tests que leen `web/lib/limits.ts` y `web/lib/preset.ts` para
   garantizar que el panel no ofrece lo que el motor rechaza (puestos, límites de texto y
   familias tipográficas).

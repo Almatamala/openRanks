@@ -5,8 +5,16 @@ import { pipeline } from "node:stream/promises";
 
 import { NextResponse } from "next/server";
 
-import { inputDir, isSafeId, patchStatus, readStatus, uploadedPositions } from "@/lib/jobs";
-import { POSITIONS_MAX } from "@/lib/limits";
+import {
+  inputDir,
+  isSafeId,
+  patchClip,
+  patchStatus,
+  readStatus,
+  renderDir,
+  uploadedPositions,
+} from "@/lib/jobs";
+import { clampPositions, POSITIONS_MAX } from "@/lib/limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +61,29 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const uploaded = uploadedPositions(id);
-  patchStatus(id, { state: "uploading", phase: "Subiendo los clips", uploaded });
-  return NextResponse.json({ ok: true, uploaded });
+  const current = readStatus(id);
+  const items = clampPositions(new URL(request.url).searchParams.get("items") ?? current?.request.positions);
+
+  // El clip llega sin preparar: su tick se apaga hasta que el motor lo normalice, y la
+  // unión/edición anteriores dejan de valer porque el material cambió.
+  for (const name of ["union.mp4", "manifest.json", "ranking.mp4", "spec.json"]) {
+    rmSync(path.join(renderDir(id), name), { force: true });
+  }
+  patchStatus(id, {
+    state: "uploading",
+    phase: "Preparando los clips",
+    progress: 0,
+    progressDetail: null,
+    error: null,
+    startedAt: null,
+    finishedAt: null,
+    result: null,
+    revision: (current?.revision ?? 0) + 1,
+    request: { ...current?.request, positions: items },
+    join: { state: "idle", error: null },
+    uploaded,
+  });
+  patchClip(id, slot, { state: "uploading", error: null, durationS: null, percent: 0 });
+
+  return NextResponse.json({ ok: true, uploaded, revision: (current?.revision ?? 0) + 1 });
 }

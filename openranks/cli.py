@@ -17,10 +17,12 @@ from .core.binding import BindingError, load_binding
 from .core.config import Config
 from .core.ffmpeg import ToolNotFound
 from .core.plan import PlanError
-from .core.progress import PROGRESS_PREFIX, ProgressEvent
+from .core.progress import PROGRESS_PREFIX, SPAN_PREPARE, Progress, ProgressEvent
 from .core.runner import ToolError
 from .core.specs import MAX_POSITIONS, MIN_POSITIONS
+from .join import JoinError, join
 from .overlay import OverlayError, preview, render
+from .prepare import PrepareError, prepare_clip, prepared_file, write_metadata
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -55,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "central de 1184 px y recorta laterales; contain lo encaja entero sin recortar; cover recorta para llenar todo el marco",
     )
     assembly.add_argument("--cold-open-seconds", type=float, default=0.0, help="adelanto del #1 al principio; 0 = desactivado (por defecto)")
-    assembly.add_argument("--edit", action="store_true", help="encadena L2: añade la edición del estándar (ranking.mp4 + cover)")
+    assembly.add_argument("--edit", action="store_true", help="encadena L2: añade la edición del estándar (ranking.mp4)")
     assembly.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
     assembly.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
     assembly.add_argument(
@@ -65,6 +67,65 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     assembly.add_argument("--json", action="store_true", help="salida legible por máquina")
     assembly.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    prepare_cmd = subparsers.add_parser(
+        "prepare",
+        help="prepara **un** clip al entrar (encuadre + 1080x1920 + audio): deja el tick listo",
+    )
+    prepare_cmd.add_argument("--input", required=True, help="clip de entrada ya listo para el ranking")
+    prepare_cmd.add_argument("--out", required=True, help="directorio del trabajo (deja prepared/NN.mp4 y NN.json)")
+    prepare_cmd.add_argument(
+        "--position",
+        type=int,
+        required=True,
+        choices=range(1, MAX_POSITIONS + 1),
+        help="puesto del ranking al que pertenece el clip",
+    )
+    prepare_cmd.add_argument(
+        "--items",
+        type=int,
+        choices=range(MIN_POSITIONS, MAX_POSITIONS + 1),
+        default=None,
+        help="puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo)",
+    )
+    prepare_cmd.add_argument(
+        "--fit",
+        choices=("auto", "band", "contain", "cover"),
+        default=None,
+        help="auto (por defecto) detecta el área útil; band/contain/cover son elecciones explícitas",
+    )
+    prepare_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    prepare_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    prepare_cmd.add_argument("--progress", action="store_true", help="emite el avance en porcentaje real por stderr")
+    prepare_cmd.add_argument("--json", action="store_true", help="salida legible por máquina")
+    prepare_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    join_cmd = subparsers.add_parser(
+        "join",
+        help="une los clips ya preparados en union.mp4 (sin recodificar ni volver a mirar los originales)",
+    )
+    join_cmd.add_argument("--out", required=True, help="directorio del trabajo con prepared/NN.mp4")
+    join_cmd.add_argument(
+        "--items",
+        type=int,
+        choices=range(MIN_POSITIONS, MAX_POSITIONS + 1),
+        default=None,
+        help="puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo)",
+    )
+    join_cmd.add_argument("--title", default="", help="título del vídeo (queda en el manifiesto; L2 lo puede cambiar)")
+    join_cmd.add_argument("--subtitle", default="", help="subtítulo opcional")
+    join_cmd.add_argument(
+        "--label",
+        action="append",
+        default=None,
+        metavar="POS=TEXTO",
+        help="nombre de un puesto (repetible), p. ej. --label 1=GATO VOLADOR",
+    )
+    join_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    join_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    join_cmd.add_argument("--progress", action="store_true", help="emite el avance en porcentaje real por stderr")
+    join_cmd.add_argument("--json", action="store_true", help="salida legible por máquina")
+    join_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
 
     render_cmd = subparsers.add_parser(
         "render",
@@ -195,6 +256,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run_fit(args)
     if args.command == "render":
         return _run_render(args)
+    if args.command == "prepare":
+        return _run_prepare(args)
+    if args.command == "join":
+        return _run_join(args)
     if args.command == "preset":
         return _run_preset(args)
     if args.command == "preview":
@@ -350,7 +415,6 @@ def _run_assemble(args: argparse.Namespace) -> int:
             payload.update(
                 {
                     "ranking": str(result.overlay.ranking),
-                    "cover": None if result.overlay.cover is None else str(result.overlay.cover),
                     "spec": str(result.overlay.spec_path),
                 }
             )
@@ -424,9 +488,110 @@ def _run_render(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "ranking": str(result.ranking),
-                    "cover": None if result.cover is None else str(result.cover),
                     "spec": str(result.spec_path),
                     "total_duration_s": result.spec["total_duration_s"],
+                    "warnings": list(result.warnings),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(result.summary())
+    return EXIT_OK
+
+
+def _run_prepare(args: argparse.Namespace) -> int:
+    """Prepara **un** clip al entrar: es lo que dispara el tick del panel.
+
+    El archivo de salida depende solo del puesto (``prepared/05.mp4``), así que el
+    rótulo se puede escribir después sin volver a normalizar nada.
+    """
+    config = _config_with_items(Config.from_env(), args.items)
+    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
+    tracker = Progress(_progress_sink() if args.progress else None, span=SPAN_PREPARE)
+    tracker.preparing(f"Preparando el puesto #{args.position}")
+    try:
+        clip = prepare_clip(
+            args.input,
+            prepared_file(args.out, args.position),
+            position=args.position,
+            config=config,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            fit=args.fit,
+            log=say,
+        )
+        metadata = write_metadata(args.out, clip)
+    except PrepareError as exc:
+        print(f"fallo la preparación: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT if exc.reasons else EXIT_FAILED
+    except (ToolError, ToolNotFound) as exc:
+        print(f"fallo la preparación: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    tracker.normalizing(1, 1, "Clip listo")
+    tracker.finishing("Clip listo")
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "position": clip.position,
+                    "file": str(clip.output),
+                    "duration_s": round(clip.duration_s, 3),
+                    "has_audio": clip.normalized.has_audio,
+                    "metadata": str(metadata),
+                    "warnings": list(clip.warnings),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(f"OK {clip.output} ({clip.duration_s:.2f}s, puesto #{clip.position})")
+        for warning in clip.warnings:
+            print(f"   aviso: {warning}")
+    return EXIT_OK
+
+
+def _run_join(args: argparse.Namespace) -> int:
+    """Une los clips ya preparados: el paso barato del montaje."""
+    config = _config_with_items(Config.from_env(), args.items)
+    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
+    try:
+        labels = _parse_label_overrides(args.label)
+        result = join(
+            args.out,
+            title=args.title or "",
+            subtitle=args.subtitle or "",
+            labels=labels,
+            positions=config.items,
+            config=config,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            log=say,
+            progress=_progress_sink() if args.progress else None,
+        )
+    except (BindingError, PlanError) as exc:
+        print(f"entrada inválida: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except JoinError as exc:
+        # Toda causa de JoinError es del material de entrada (falta un tick, un clip no
+        # cumple el formato): se informa como entrada inválida.
+        print(f"fallo la unión: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (ToolError, ToolNotFound) as exc:
+        print(f"fallo la unión: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "union": str(result.union),
+                    "manifest": str(result.manifest_path),
+                    "total_duration_s": result.total_measured_s,
+                    "loudness_lufs": result.loudness.get("input_i"),
                     "warnings": list(result.warnings),
                 },
                 indent=2,

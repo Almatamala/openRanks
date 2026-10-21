@@ -19,11 +19,13 @@ export const dynamic = "force-dynamic";
 
 const run = promisify(execFile);
 
-/** El preset (efectivo, ya con el guardado aplicado) es constante hasta que se guarda. */
-let cached: Record<string, unknown> | null = null;
-
+/**
+ * Listado del motor, **sin caché**: el preset efectivo cambia al guardar y al
+ * restablecer. Cachearlo dejaba el «Restablecer» mostrando la versión guardada
+ * anterior (el motor ya leía los valores de fábrica, pero el panel servía la copia
+ * vieja del listado).
+ */
 async function loadPreset() {
-  if (cached) return cached;
   const engine = await resolveEngine();
   if (!engine.python) throw new Error(engine.problems[0] ?? "No hay motor con el que leer la plantilla.");
   const { stdout } = await run(
@@ -37,8 +39,7 @@ async function loadPreset() {
       env: engineEnv(),
     },
   );
-  cached = JSON.parse(stdout) as Record<string, unknown>;
-  return cached;
+  return JSON.parse(stdout) as Record<string, unknown>;
 }
 
 /**
@@ -80,13 +81,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El cuerpo no es JSON válido." }, { status: 400 });
   }
   const preset = writePreset(sanitizePreset(body));
-  cached = null; // el listado del motor cambia con el preset guardado
   return NextResponse.json({ saved: preset, hasSaved: true });
 }
 
 /** Vuelve a los valores de fábrica. */
 export async function DELETE() {
   clearPreset();
-  cached = null;
   return NextResponse.json({ saved: null, hasSaved: false });
 }

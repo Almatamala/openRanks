@@ -12,7 +12,6 @@ from openranks.core.overlay import (
     ass_color,
     ass_time,
     build_ass,
-    cover_argv,
     escape_filter_path,
     get_style,
     overlay_argv,
@@ -260,13 +259,6 @@ def test_an_explicit_font_beats_the_environment(monkeypatch):
 def test_without_the_env_the_factory_font_is_the_one(monkeypatch):
     monkeypatch.delenv("OPENRANKS_FONT", raising=False)
     assert get_style()["font"] == "Arial"
-
-
-def test_cover_argv_seeks_before_the_input():
-    argv = cover_argv("ffmpeg", Path("ranking.mp4"), Path("cover.jpg"), at_s=34.6)
-    assert argv[argv.index("-ss") + 1] == "34.600"
-    assert argv.index("-ss") < argv.index("-i")
-    assert argv[-1] == "cover.jpg"
 
 
 def _spec_of(count: int, title: str = "TOP 5 GATOS", *, segment_s: float = 7.0) -> dict:

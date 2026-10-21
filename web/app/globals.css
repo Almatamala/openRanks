@@ -157,6 +157,44 @@ header.top p {
   color: var(--muted);
 }
 
+/* El selector del archivo y, en su extremo derecho, el estado del puesto (spinner o tick). */
+.slot .file-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slot .file-field input[type="file"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.slot .file-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.slot .file-badge.ready {
+  background: rgba(52, 211, 153, 0.14);
+  border-color: rgba(52, 211, 153, 0.5);
+  color: var(--ok);
+}
+
+.slot .file-badge.busy .spinner {
+  width: 11px;
+  height: 11px;
+}
+
 label.field {
   display: block;
   font-size: 14px;
@@ -187,6 +225,77 @@ input[type="text"]:focus {
 
 .counter.over {
   color: var(--bad);
+}
+
+/* Estado de cada puesto: el tick es la señal de que el clip ya está preparado. */
+.slot-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.slot-status .size {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.slot .tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(52, 211, 153, 0.16);
+  border: 1px solid rgba(52, 211, 153, 0.6);
+  color: var(--ok);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.slot-status.failed {
+  color: #fecaca;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+button.small {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+a.button-link {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+a.button-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .options {
@@ -323,38 +432,6 @@ video {
   border-radius: 12px;
   background: #000;
   display: block;
-}
-
-.cover {
-  width: 100%;
-  max-width: 220px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-
-.downloads {
-  list-style: none;
-  padding: 0;
-  margin: 14px 0 0;
-}
-
-.downloads li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 15px;
-}
-
-.downloads li:last-child {
-  border-bottom: 0;
-}
-
-.downloads .size {
-  color: var(--muted);
-  font-size: 13px;
 }
 
 details.log summary {

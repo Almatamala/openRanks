@@ -578,19 +578,3 @@ def preview_argv(ffmpeg: str, dst: Path, *, ass_file: Path, at_s: float, config:
         "1",
         str(dst),
     ]
-
-
-def cover_argv(ffmpeg: str, src: Path, dst: Path, *, at_s: float) -> list[str]:
-    """Portada: un fotograma de la unión con la escalera ya completa (§9.4)."""
-    return [
-        *base_argv(ffmpeg),
-        "-ss",
-        f"{max(0.0, at_s):.3f}",
-        "-i",
-        str(src),
-        "-frames:v",
-        "1",
-        "-q:v",
-        "3",
-        str(dst),
-    ]

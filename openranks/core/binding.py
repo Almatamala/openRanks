@@ -111,10 +111,6 @@ def validate_binding(binding: Binding, config: Config | None = None, *, check_pa
             errors.append(
                 f"el nombre del puesto #{item.position} tiene {len(label)} caracteres; el máximo es {cfg.label_chars}"
             )
-        if len(label.split()) > cfg.label_words:
-            errors.append(
-                f"el nombre del puesto #{item.position} tiene {len(label.split())} palabras; el máximo es {cfg.label_words}"
-            )
         if check_paths and not item.path.is_file():
             errors.append(f"no existe el archivo del puesto #{item.position}: {item.path.name}")
 

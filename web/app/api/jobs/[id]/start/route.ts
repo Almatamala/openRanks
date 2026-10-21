@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isSafeId, patchStatus, readStatus } from "@/lib/jobs";
-import { clampPositions, labelErrors, positionsFor, subtitleErrors, titleErrors } from "@/lib/limits";
+import { parseTextRequest } from "@/lib/limits";
 import { JobError, isRunning, startJob } from "@/lib/pipeline";
 
 export const runtime = "nodejs";
@@ -15,8 +15,9 @@ interface StartBody {
 }
 
 /**
- * Valida el texto **antes** de gastar un montaje (RPD §9.5, RF-7.4): si el título o
- * un nombre no cabe, el error es del formulario, no del render.
+ * Monta el ranking: une los clips preparados si aún no hay unión y compone la edición
+ * (L2) encima. Valida el texto antes de gastar trabajo (RPD §9.5, RF-7.4): si el título
+ * o un nombre no cabe, el error es del formulario.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,18 +33,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "No se entendió la petición." }, { status: 400 });
   }
 
-  const title = typeof body.title === "string" ? body.title.trim() : "";
-  // Opcional: un subtítulo vacío es válido y el vídeo sale sin él.
-  const subtitle = typeof body.subtitle === "string" ? body.subtitle.trim() : "";
-  const positions = clampPositions(body.positions);
-  const rawLabels = (body.labels ?? {}) as Record<string, unknown>;
-  const labels: Record<string, string> = {};
-  const problems = [...titleErrors(title), ...subtitleErrors(subtitle)];
-  for (const position of positionsFor(positions)) {
-    const label = typeof rawLabels[String(position)] === "string" ? String(rawLabels[String(position)]).trim() : "";
-    labels[String(position)] = label;
-    problems.push(...labelErrors(position, label));
-  }
+  const { title, subtitle, positions, labels, problems } = parseTextRequest(body);
   if (problems.length > 0) {
     return NextResponse.json({ error: problems[0], problems }, { status: 400 });
   }

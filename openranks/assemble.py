@@ -1,8 +1,12 @@
-"""Ensamblador L1: los clips listos y su unión en un solo vídeo vertical (§12).
+"""Ensamblador L1 completo: los clips listos y su unión en un solo vídeo vertical (§12).
 
-Secuencia: medir → validar → normalizar cada clip (dos pasadas de ``loudnorm``) →
-unir en corte seco → verificar → manifiesto. Todo automático: no hay pasos manuales
-(ADR-8).
+Secuencia: medir → validar → preparar cada clip (dos pasadas de ``loudnorm``) → unir
+en corte seco → verificar → manifiesto. Todo automático: no hay pasos manuales (ADR-8).
+
+Las dos piezas caras viven en sus módulos (``prepare.prepare_clip`` y
+``join.join_clips``) porque el panel las ejecuta **por separado**: prepara cada clip al
+subirlo y deja la unión hecha antes de que el operador pulse «Montar». Aquí solo se
+encadenan, para que por CLI siga habiendo un comando que lo hace todo.
 
 Con ``edit=True`` encadena además **L2** (la edición del estándar) sobre el
 ``union.mp4``: es la conveniencia del panel, pero L2 vive en su propio módulo y
@@ -15,18 +19,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import TOOL_VERSION
 from .core import ffmpeg as ff
 from .core.binding import Binding
 from .core.config import Config
 from .core.framing import FramingDecision, FramingError, fallback_decision
-from .core.manifest import build_manifest, sha256_file, utc_now, write_manifest
-from .core.media import MediaInfo, probe, validate_normalized, validate_ready_clip
-from .framing import analyze
+from .core.manifest import sha256_file
+from .core.media import MediaInfo, probe, validate_ready_clip
 from .core.plan import AssemblyPlan, build_plan
 from .core.progress import SPAN_FULL, Progress, ProgressCallback
-from .core.runner import run, stderr_warnings, version_of
+from .framing import analyze
+from .join import JoinResult, join_clips, staged_from_prepared
 from .overlay import OverlayResult, render as render_overlay
+from .prepare import PreparedClip, PrepareError, prepare_clip
 
 Logger = Callable[[str], None]
 
@@ -73,10 +77,7 @@ class AssemblyResult:
         for segment in self.plan.segments:
             lines.append(f"   #{segment.position:<2} {segment.output_name} ({segment.label})")
         if self.overlay is not None:
-            lines.append(
-                f"   edición: {self.overlay.ranking.name}"
-                + ("" if self.overlay.cover is None else f" + {self.overlay.cover.name}")
-            )
+            lines.append(f"   edición: {self.overlay.ranking.name}")
         for warning in self.warnings:
             lines.append(f"   aviso: {warning}")
         return "\n".join(lines)
@@ -121,15 +122,12 @@ def assemble(
     clips_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = utc_now()
-
     # 1) Medir y validar las fuentes: un clip que no vale no se ensambla a medias.
     track.preparing(f"Midiendo los {len(binding.items)} clips")
     say(f"midiendo {len(binding.items)} clips de entrada")
     infos: dict[int, MediaInfo] = {}
     source_entries: list[dict] = []
     source_errors: list[str] = []
-    collected: list[str] = []
     decisions: dict[Path, FramingDecision] = {}
     for item in sorted(binding.items, key=lambda entry: entry.position, reverse=True):
         info = probe(ffprobe_bin, item.path)
@@ -158,7 +156,6 @@ def assemble(
                 decisions[item.path] = decision
                 say(f"  #{item.position}: {decision.reason} (confianza {decision.confidence:.2f})")
                 for warning in decision.warnings:
-                    collected.append(f"#{item.position}: {warning}")
                     say(f"  aviso #{item.position}: {warning}")
             entry["framing"] = decision.to_manifest()
         source_entries.append(entry)
@@ -170,99 +167,82 @@ def assemble(
     for warning in plan.warnings:
         say(f"  aviso: {warning}")
 
-    # 3) Normalizar cada tramo a 1080x1920 / 30 fps / yuv420p, audio a −14 LUFS.
-    normalized: list[Path] = []
-    outputs: list[dict] = []
-    for index, segment in enumerate(plan.segments):
-        where = "el adelanto del #1" if segment.is_cold_open else f"el clip #{segment.position}"
-        track.normalizing(index, len(plan.segments), f"Preparando {where} ({index + 1} de {len(plan.segments)})")
-        destination = (work_dir if segment.is_cold_open else clips_dir) / segment.output_name
-        # El clip ya se midió al validar la entrada: no hace falta otro `ffprobe` por
-        # tramo. El cold open usa el medio del `#1`, que es de donde sale.
-        info = infos[binding.best.position] if segment.is_cold_open else infos[segment.position]
-        measured = None
-        if info.has_audio:
-            say(f"  #{segment.position}: midiendo loudness")
-            measured = _measure_loudness(ffmpeg_bin, segment.source, cfg)
-        say(f"  #{segment.position}: normalizando -> {destination.relative_to(out_dir).as_posix()}")
-        limit = segment.duration_s if segment.is_cold_open else None
-        decision = decisions.get(segment.source)
-        if fit == "auto" and decision is not None:
-            # `sin_cambios` solo significa que no hay crop; el clip igual se
-            # re-encodea a 30 fps/yuv420p para que la unión por copia funcione.
-            segment_fit = "contain" if decision.fit == "sin_cambios" else decision.fit
-            segment_crop = decision.crop
-        elif fit == "auto":
-            segment_fit = "contain"
-            segment_crop = None
-            collected.append(f"#{segment.position}: no había decisión de encuadre; se rellena con negro")
-        else:
-            segment_fit = fit
-            segment_crop = None
-        completed = run(
-            ff.normalize_argv(
-                ffmpeg_bin,
+    # 3) Preparar cada tramo: encuadre, 1080x1920 / 30 fps / yuv420p y audio a −14 LUFS.
+    # El cold open reutiliza la fuente del #1 y solo se recorta al final, así que se
+    # prepara después del clip completo.
+    prepared: dict[int, PreparedClip] = {}
+    total_steps = len(plan.segments)
+    done = 0
+    for segment in plan.segments:
+        if segment.is_cold_open:
+            continue
+        where = f"Preparando el clip #{segment.position} ({done + 1} de {total_steps})"
+        track.normalizing(done, total_steps, where)
+        info = infos[segment.position]
+        try:
+            clip = prepare_clip(
                 segment.source,
-                destination,
+                clips_dir / segment.output_name,
+                position=segment.position,
                 config=cfg,
-                has_audio=info.has_audio,
-                fit=segment_fit,
-                crop=segment_crop,
-                measured=measured,
-                limit_s=limit,
-                duration_s=segment.duration_s,
+                ffmpeg=ffmpeg_bin,
+                ffprobe=ffprobe_bin,
+                fit=fit,
+                info=info,
+                decision=decisions.get(segment.source),
+                log=say,
             )
-        )
-        collected.extend(stderr_warnings(completed.stderr, where=f"#{segment.position}"))
-        destination_info = probe(ffprobe_bin, destination)
-        check = validate_normalized(destination_info, cfg)
-        if not check.ok:
-            raise AssemblyError(f"el clip normalizado #{segment.position} no cumple el formato", check.errors)
-        collected.extend(f"#{segment.position}: {warning}" for warning in check.warnings)
-        normalized.append(destination)
+        except PrepareError as exc:
+            raise AssemblyError(f"no se pudo preparar el clip #{segment.position}", exc.reasons) from exc
+        prepared[segment.position] = clip
+        done += 1
+
+    for segment in plan.segments:
         if not segment.is_cold_open:
-            outputs.append(_output_entry(destination, destination_info, kind="clip"))
+            continue
+        track.normalizing(done, total_steps, "Preparando el adelanto del #1")
+        info = infos[binding.best.position]
+        try:
+            prepared[0] = prepare_clip(
+                segment.source,
+                work_dir / segment.output_name,
+                position=0,
+                config=cfg,
+                ffmpeg=ffmpeg_bin,
+                ffprobe=ffprobe_bin,
+                fit=fit,
+                limit_s=segment.duration_s,
+                info=info,
+                decision=decisions.get(segment.source),
+                log=say,
+            )
+        except PrepareError as exc:
+            raise AssemblyError("no se pudo preparar el adelanto del #1", exc.reasons) from exc
+        done += 1
 
-    # 4) Unión de corte seco: los tramos ya comparten formato exacto, así que se pegan
-    # por copia de streams, sin recodificar.
-    union = out_dir / "union.mp4"
-    track.joining(f"Uniendo los {len(normalized)} clips en vertical")
-    say(f"uniendo {len(normalized)} tramos por copia de streams")
-    list_file = work_dir / "concat.txt"
-    list_file.write_text(ff.concat_list_text(normalized), encoding="utf-8")
-    completed = run(ff.concat_copy_argv(ffmpeg_bin, list_file, union))
-    collected.extend(stderr_warnings(completed.stderr, where="unión"))
+    # 4) Unión por copia de streams + verificación + manifiesto.
+    staged = [
+        staged_from_prepared(prepared[segment.position])
+        for segment in plan.segments
+    ]
+    try:
+        joined: JoinResult = join_clips(
+            plan,
+            staged,
+            out_dir,
+            config=cfg,
+            ffmpeg=ffmpeg_bin,
+            ffprobe=ffprobe_bin,
+            source_entries=source_entries,
+            track=track,
+            log=say,
+        )
+    except Exception as exc:
+        if isinstance(exc, AssemblyError):
+            raise
+        raise AssemblyError("no se pudo unir el vídeo", (str(exc),)) from exc
 
-    # 5) Verificar la unión contra el criterio de salida.
-    union_info = probe(ffprobe_bin, union)
-    union_check = validate_normalized(union_info, cfg)
-    if not union_check.ok:
-        raise AssemblyError("la unión no cumple el formato de salida", union_check.errors)
-    collected.extend(f"unión: {warning}" for warning in union_check.warnings)
-    collected.extend(_output_warnings(info=union_info, plan=plan, config=cfg))
-    for warning in collected:
-        say(f"  aviso: {warning}")
-    outputs.append(_output_entry(union, union_info, kind="union"))
-
-    loudness = _measure_loudness(ffmpeg_bin, union, cfg) or {}
-
-    # 6) Manifiesto.
-    payload = build_manifest(
-        plan=plan,
-        sources=source_entries,
-        outputs=outputs,
-        ffmpeg_version=version_of(ffmpeg_bin),
-        tool_version=TOOL_VERSION,
-        config=cfg,
-        started_at=started_at,
-        finished_at=utc_now(),
-        total_measured_s=union_info.duration_s,
-        loudness_measured=loudness,
-    )
-    payload["measured"]["warnings"] = list(collected)
-    manifest_path = write_manifest(out_dir / "manifest.json", payload)
-
-    # 7) L2 (opcional): la edición del estándar sobre la unión recién hecha.
+    # 5) L2 (opcional): la edición del estándar sobre la unión recién hecha.
     overlay_result: OverlayResult | None = None
     if edit:
         say("añadiendo la edición (L2)")
@@ -282,60 +262,12 @@ def assemble(
 
     return AssemblyResult(
         out_dir=out_dir,
-        clips=tuple(clips_dir / segment.output_name for segment in plan.segments if not segment.is_cold_open),
-        union=union,
-        manifest_path=manifest_path,
+        clips=tuple(prepared[segment.position].output for segment in plan.segments if not segment.is_cold_open),
+        union=joined.union,
+        manifest_path=joined.manifest_path,
         plan=plan,
-        total_measured_s=union_info.duration_s,
-        loudness=loudness,
-        extra_warnings=tuple(collected),
+        total_measured_s=joined.total_measured_s,
+        loudness=joined.loudness,
+        extra_warnings=joined.warnings,
         overlay=overlay_result,
     )
-
-
-def _measure_loudness(ffmpeg_bin: str, path: Path, cfg: Config) -> dict | None:
-    """Primera pasada de ``loudnorm``: mide y no escribe salida."""
-    completed = run(ff.measure_loudness_argv(ffmpeg_bin, path, cfg), check=False)
-    return ff.parse_loudnorm_json(completed.stderr or "")
-
-
-def _output_entry(path: Path, info: MediaInfo, *, kind: str) -> dict:
-    return {
-        "kind": kind,
-        "file": path.name,
-        "sha256": sha256_file(path),
-        "bytes": path.stat().st_size,
-        "duration_s": round(info.duration_s, 3),
-        "width": info.width,
-        "height": info.height,
-        "fps": None if info.fps is None else round(info.fps, 3),
-        "nominal_fps": None if info.nominal_fps is None else round(info.nominal_fps, 3),
-        "nb_frames": info.nb_frames,
-        "pix_fmt": info.pix_fmt,
-        "has_audio": info.has_audio,
-    }
-
-
-def _output_warnings(*, info: MediaInfo, plan: AssemblyPlan, config: Config) -> tuple[str, ...]:
-    """Verificación de la unión: fotogramas esperados y duración planificada.
-
-    El recuento de fotogramas es la comprobación exacta (la duración del contenedor
-    puede arrastrar redondeos), así que se revisa primero. Nada de esto sustituye al
-    contrato de formato, que ya se validó como error.
-    """
-    warnings: list[str] = []
-
-    # El montaje es de corte seco, así que no se pierde ningún fotograma: la expectativa
-    # es la duración del plan (la suma de los tramos) por los fps.
-    expected_frames = round(plan.total_duration_s * config.fps)
-    if info.nb_frames is not None and info.nb_frames != expected_frames:
-        warnings.append(f"la unión tiene {info.nb_frames} fotogramas y el plan esperaba {expected_frames}")
-
-    expected = plan.total_duration_s
-    tolerance = max(0.2, expected * 0.01)
-    if abs(info.duration_s - expected) > tolerance:
-        warnings.append(
-            f"la unión dura {info.duration_s:.2f}s y el plan decía {expected:.2f}s "
-            f"(tolerancia {tolerance:.2f}s): revisa las fuentes"
-        )
-    return tuple(warnings)

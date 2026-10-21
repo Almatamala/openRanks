@@ -1,8 +1,8 @@
 """Integración real de L2: la edición del estándar sobre la unión de L1.
 
-Comprueba el criterio de §9.4 (``ranking.mp4`` 1080x1920 con overlay, ``cover.jpg``
-y ``spec.json``) y que el overlay **dibuja de verdad**: sin texto, la edición no
-existe aunque el MP4 sea válido.
+Comprueba el criterio de §9.4 (``ranking.mp4`` 1080x1920 con overlay y ``spec.json``,
+sin portada: el único entregable es el vídeo final) y que el overlay **dibuja de
+verdad**: sin texto, la edición no existe aunque el MP4 sea válido.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def l1_out(ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path) ->
     return out
 
 
-def test_assemble_with_edit_produces_the_ranking_and_the_cover(
+def test_assemble_with_edit_produces_the_ranking_without_a_cover(
     ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path
 ):
     binding = load_binding(write_binding(synthetic_clips, title="TOP 5 GATOS"), _fast())
@@ -73,7 +73,9 @@ def test_assemble_with_edit_produces_the_ranking_and_the_cover(
 
     assert result.overlay is not None
     ranking = result.overlay.ranking
-    assert ranking.is_file() and result.overlay.cover.is_file() and result.overlay.spec_path.is_file()
+    assert ranking.is_file() and result.overlay.spec_path.is_file()
+    # El único entregable es el ranking final: ni portada ni fotogramas sueltos.
+    assert not (tmp_path / "out" / "cover.jpg").exists()
 
     info = probe(ffprobe_bin, ranking)
     assert (info.width, info.height) == (1080, 1920)

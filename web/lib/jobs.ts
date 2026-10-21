@@ -7,6 +7,32 @@ import { estimateRemainingSeconds, type ProgressEvent } from "./progress";
 
 export type JobState = "created" | "uploading" | "running" | "done" | "failed";
 
+/**
+ * Estado de un puesto. El clip se prepara **al subirlo** (no al montar), así que el
+ * panel puede enseñar un tick por puesto mientras el operador sigue trabajando.
+ */
+export type ClipState = "uploading" | "preparing" | "ready" | "failed";
+
+export interface ClipStatus {
+  state: ClipState;
+  error: string | null;
+  /** Duración lista para el plan (segundos), cuando el clip ya está preparado. */
+  durationS: number | null;
+  /** Avance de la preparación de **ese** clip (0-100), si el motor lo publica. */
+  percent?: number;
+}
+
+/**
+ * Estado de la unión: se hace al pulsar «Montar», justo antes del render. Si ya existe
+ * de un montaje anterior, «Montar» solo vuelve a componer la edición sobre ella.
+ */
+export type JoinState = "idle" | "joining" | "ready" | "failed";
+
+export interface JoinStatus {
+  state: JoinState;
+  error: string | null;
+}
+
 export interface JobRequest {
   title: string;
   /** Opcional: si viene vacío, el vídeo va sin subtítulo. */
@@ -38,6 +64,10 @@ export interface JobStatus {
   finishedAt: string | null;
   request: Partial<JobRequest>;
   uploaded: number[];
+  /** Se incrementa con cada clip nuevo: una unión vieja no puede darse por buena. */
+  revision: number;
+  clips: Record<string, ClipStatus>;
+  join: JoinStatus;
   result: Record<string, unknown> | null;
 }
 
@@ -87,6 +117,9 @@ export function createJob(): JobStatus {
     finishedAt: null,
     request: {},
     uploaded: [],
+    revision: 0,
+    clips: {},
+    join: { state: "idle", error: null },
     result: null,
   };
   writeStatus(id, status);
@@ -113,6 +146,35 @@ export function patchStatus(id: string, patch: Partial<JobStatus>): JobStatus {
   const current = readStatus(id);
   if (!current) throw new Error(`no existe el trabajo ${id}`);
   return writeStatus(id, { ...current, ...patch });
+}
+
+export function patchClip(id: string, position: number, patch: Partial<ClipStatus>): JobStatus {
+  const current = readStatus(id);
+  if (!current) throw new Error(`no existe el trabajo ${id}`);
+  const previous = current.clips[String(position)] ?? { state: "uploading" as const, error: null, durationS: null };
+  return patchStatus(id, {
+    clips: { ...current.clips, [String(position)]: { ...previous, ...patch } },
+  });
+}
+
+export function patchJoin(id: string, patch: Partial<JoinStatus>): JobStatus {
+  const current = readStatus(id);
+  if (!current) throw new Error(`no existe el trabajo ${id}`);
+  return patchStatus(id, { join: { ...current.join, ...patch } });
+}
+
+/** Puestos que espera este trabajo (los fija el panel al subir el primer clip). */
+export function expectedPositions(status: JobStatus): number {
+  return status.request.positions ?? TOTAL_POSITIONS;
+}
+
+/** ¿Están todos los puestos con su tick? Es la condición para unir y para montar. */
+export function allClipsReady(status: JobStatus): boolean {
+  const count = expectedPositions(status);
+  for (let position = 1; position <= count; position += 1) {
+    if (status.clips[String(position)]?.state !== "ready") return false;
+  }
+  return true;
 }
 
 /**
@@ -166,50 +228,36 @@ export function inferPhase(id: string, status: JobStatus): { phase: string; prog
   if (status.state === "failed") return { phase: "Se paró", progress: 100 };
   // Mientras el motor publique su avance, ese manda: está medido.
   if (status.progressDetail) return { phase: status.progressDetail.label || status.phase, progress: status.progress };
+  // Montando la edición pero todavía sin el primer evento: nada de dar el 100 % por
+  // hecho solo porque los clips estén listos.
+  if (status.state === "running") return { phase: status.phase || "Añadiendo la edición", progress: 2 };
   const render = renderDir(id);
+  if (status.join.state === "joining") return { phase: "Uniendo los clips", progress: 70 };
+  if (status.join.state === "ready" && allClipsReady(status)) return { phase: "Listo para montar", progress: 100 };
+
+  const count = expectedPositions(status);
+  const values = Object.values(status.clips);
+  const ready = values.filter((clip) => clip.state === "ready").length;
+  const preparing = values.filter((clip) => clip.state === "preparing").length;
+  if (preparing > 0) return { phase: "Preparando los clips", progress: Math.round((ready / Math.max(1, count)) * 60) };
+  if (ready > 0) return { phase: `Preparados ${ready} de ${count}`, progress: Math.round((ready / Math.max(1, count)) * 60) };
   if (existsSync(path.join(render, "ranking.mp4"))) return { phase: "Cerrando el render", progress: 96 };
   if (existsSync(path.join(render, "union.mp4"))) return { phase: "Añadiendo la edición", progress: 82 };
-  const clips = path.join(render, "clips");
-  if (existsSync(clips) && readdirSync(clips).some((name) => name.endsWith(".mp4")))
-    return { phase: "Normalizando los clips", progress: 20 };
-  if (status.uploaded.length < (status.request.positions ?? TOTAL_POSITIONS))
-    return { phase: "Subiendo los clips", progress: 2 };
+  if (status.uploaded.length < count) return { phase: "Subiendo los clips", progress: 2 };
   return { phase: "Preparando la entrada", progress: 4 };
 }
 
-const ARTIFACT_LABELS: Record<string, { label: string; kind: Artifact["kind"] }> = {
-  "ranking.mp4": { label: "Ranking final (con la edición)", kind: "video" },
-  "cover.jpg": { label: "Portada", kind: "image" },
-  "union.mp4": { label: "Unión sin editar (L1)", kind: "video" },
-  "spec.json": { label: "Especificación del render", kind: "json" },
-  "manifest.json": { label: "Ficha técnica", kind: "json" },
-};
-
+/**
+ * Lo único que el operador usa es el **ranking final**. La unión, los clips preparados,
+ * el spec y el manifiesto son piezas internas: se quedan en disco para trazabilidad,
+ * pero ni se listan ni se sirven.
+ */
 export function listArtifacts(id: string): Artifact[] {
-  const render = renderDir(id);
-  if (!existsSync(render)) return [];
-  const found: Artifact[] = [];
-
-  const push = (relative: string) => {
-    const absolute = path.join(render, relative);
-    if (!existsSync(absolute)) return;
-    const stat = statSync(absolute);
-    if (!stat.isFile()) return;
-    const known = ARTIFACT_LABELS[relative] ?? {
-      label: relative.startsWith("clips/") ? `Clip ${relative.slice(6)}` : relative,
-      kind: relative.endsWith(".mp4") ? ("video" as const) : ("json" as const),
-    };
-    found.push({ path: relative, label: known.label, kind: known.kind, bytes: stat.size });
-  };
-
-  for (const name of ["ranking.mp4", "cover.jpg", "union.mp4", "spec.json", "manifest.json"]) push(name);
-  const clips = path.join(render, "clips");
-  if (existsSync(clips)) {
-    for (const name of readdirSync(clips).filter((entry) => entry.endsWith(".mp4")).sort()) {
-      push(`clips/${name}`);
-    }
-  }
-  return found;
+  const ranking = path.join(renderDir(id), "ranking.mp4");
+  if (!existsSync(ranking)) return [];
+  const stat = statSync(ranking);
+  if (!stat.isFile()) return [];
+  return [{ path: "ranking.mp4", label: "Ranking final", kind: "video", bytes: stat.size }];
 }
 
 /** Comprueba que un artefacto pedido por la API es uno de los que la lista ofrece. */

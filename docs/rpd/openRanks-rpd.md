@@ -137,10 +137,10 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
 | --- | --- | --- |
 | 1 | Ingesta de **archivo subido** (los clips que aporta el operador) | **Hecho** |
 | 2 | Normalización: `ffprobe`, encuadre automático (recorte del área útil o relleno), 30 fps, audio a −14 LUFS | **Hecho** |
-| 3 | **Unión en corte seco** en un solo vídeo vertical | **Hecho** |
+| 3 | **Preparación por puesto al subir** (tick) y **unión en corte seco al montar**, en un solo vídeo vertical | **Hecho** |
 | 4 | Edición del estándar sobre la unión (título, escalera, rótulos) | **Hecho** |
 | 5 | **Plantilla editable y persistente** (fuente, cursiva, tamaño y posición) | **Hecho** |
-| 6 | **Panel único** con progreso por fase, errores accionables y descargas | **Hecho** |
+| 6 | **Panel único** con progreso por fase, errores accionables y descarga del ranking final | **Hecho** |
 | 7 | Re-render de solo el overlay al cambiar textos | **Hecho** |
 | 8 | Ingesta de **URL de YouTube** y de los N últimos de un canal | Pendiente (L3) |
 | 9 | **Detección de compilado vs. clip único** con confianza, y **segmentación** | Pendiente (L3) |
@@ -176,13 +176,20 @@ pequeño que trabaja varios compilados por día). No hay multiusuario ni factura
 
 Flujo actual (lo que ya se puede hacer hoy, entero dentro del panel):
 
-1. Sube los clips, uno por puesto, y elige cuántos puestos tiene el ranking (de 5 a 10).
+1. Elige cuántos puestos tiene el ranking (de 5 a 10) y sube los clips, uno por puesto. Al
+   entrar, **cada clip se prepara solo** (encuadre, 1080x1920, 30 fps, audio a −14 LUFS) y su
+   puesto muestra un **tick** cuando está listo. Mientras uno se prepara puede seguir subiendo
+   los demás o escribiendo nombres: no hay que esperar.
 2. Escribe el título, el subtítulo si lo quiere y el nombre de cada puesto; el panel valida
-   los límites antes de gastar un montaje.
+   los límites antes de gastar un render.
 3. Ajusta la plantilla si hace falta (menú lateral, con el render exacto sobre negro) y la
    guarda.
-4. Monta: el panel muestra la fase y el tiempo restante.
-5. Ve el `ranking.mp4` en 9:16 dentro del panel, la portada, y descarga cualquier artefacto.
+4. Con todos los ticks puestos, **Montar** une los clips (corte seco, sin recodificar) y
+   compone la edición sobre esa unión; si la unión ya existe, solo rehace la edición. La
+   unión no se hace antes: así un cambio de orden o un clip reemplazado no deja uniones de
+   más. El panel muestra la fase y el tiempo restante.
+5. Ve el `ranking.mp4` en 9:16 dentro del panel y lo descarga: es el **único** archivo que se
+   entrega (no hay portada ni fichas técnicas).
 6. Si cambia un texto, vuelve a montar la edición sobre el mismo vídeo (segundos).
 
 Flujo completo objetivo (cuando lleguen L3 y L4): pegar una URL → el sistema segmenta, filtra
@@ -222,14 +229,18 @@ Historias de usuario (con criterio de aceptación resumido):
    afina el borde a resolución completa. Si la confianza es baja, **no se recorta** y se rellena
    con negro. `band`, `contain` y `cover` quedan como elección explícita. Audio a **−14 LUFS**
    con dos pasadas de `loudnorm`.
-4. Los tramos se unen **en corte seco** (`#5 → #1`, con cold open opcional) por **copia de
-   streams**, sin recodificar.
-5. Salidas: un archivo por puesto (`clips/05-<nombre>.mp4` … `clips/01-<nombre>.mp4`),
-   `union.mp4` y `manifest.json` con fuentes, hashes, formato y loudness medida.
+4. El trabajo se reparte por etapas: `prepare` normaliza **un** puesto cada vez (lo que enciende
+   su tick) y `join` une los clips ya preparados **en corte seco** (`#5 → #1`, con cold open
+   opcional) por **copia de streams**, sin recodificar, al pulsar «Montar».
+5. Salidas internas: `prepared/NN.mp4` por puesto, `union.mp4` y `manifest.json` con fuentes,
+   hashes, formato y loudness medida. Ninguna de las tres es un entregable del panel: lo único
+   que el operador descarga es el `ranking.mp4` que produce L2.
 
-**Criterio de aceptación** (verificado en `tests/test_assemble_e2e.py`): los seis archivos
-validan con `ffprobe` (1080x1920, 30 fps, yuv420p, audio presente) y el unido cae en la banda
-de 30–58 s; con 5 clips de 2 s, la unión da **300 fotogramas y 10,0 s exactos**.
+**Criterio de aceptación** (verificado en `tests/test_assemble_e2e.py` y `tests/test_staged_e2e.py`):
+los clips preparados y la unión validan con `ffprobe` (1080x1920, 30 fps, yuv420p, audio
+presente) y el unido cae en la banda de 30–58 s; con 5 clips de 2 s, la unión da **300
+fotogramas y 10,0 s exactos**. El flujo por etapas comprueba además que `join` no mira los
+originales y que `render` deja la unión **byte a byte igual**.
 El encuadre tiene su propia suite (`tests/test_framing.py`, `test_framing_args.py` y
 `test_framing_e2e.py`): clasificación sin análisis, recorte de un clip sobre fondo borroso,
 agua ajena ignorada, rotación y salida normalizada.
@@ -325,9 +336,9 @@ fuente; duración total dentro de 30–58 s en el 95 % de los rankings.
    cada badge, escalera, rótulos, encaje del título y duración total.
 3. La capa de overlay se dibuja con un script **ASS** sobre la unión, con el mismo encuadre y
    formato (1080x1920, 30 fps, yuv420p), `-map_metadata -1` y `+faststart`.
-4. Artefactos: `ranking.mp4` (final), `cover.jpg` (fotograma con la escalera completa),
-   `spec.json` (props exactas, reproducible) y el `manifest.json` de L1 ampliado con el bloque
-   de L2 (trazabilidad: capa, preset, hashes, medidas y avisos).
+4. Artefactos: `ranking.mp4` (final y **único entregable**), `spec.json` (props exactas,
+   reproducible) y el `manifest.json` de L1 ampliado con el bloque de L2 (trazabilidad: capa,
+   preset, hashes, medidas y avisos). **No se genera portada.**
 5. **Watermark de marca** del operador: fuera del MVP; cuando entre, se aplica como último paso
    para que el archivo canónico quede limpio.
 
@@ -365,13 +376,18 @@ audio se copia, así que la duración y la medición de loudness no cambian.
 editor de vídeo, ni una segunda web: si una tarea del flujo de §5 no se puede cerrar desde el
 panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Router).
 
-1. **Un solo sitio.** El panel cubre el flujo de L1/L2 —clips, textos, plantilla, montaje,
-   resultado y descargas— sin cambiar de herramienta.
+1. **Un solo sitio.** El panel cubre el flujo de L1/L2 —clips (que se preparan solos al
+   entrar), textos, plantilla, montaje, resultado y la descarga del ranking— sin cambiar de
+   herramienta.
 2. **Mínimos pasos.** Iniciar un montaje = subir los clips + un botón. Ajustar la plantilla =
    arrastrar un control. Ningún paso obligatorio pide escribir un id, una ruta ni JSON.
 3. **Estado y progreso siempre visibles.** Cada job muestra su **fase con nombre humano**
-   («Preparando el clip #4 (2 de 5)», «Uniendo los 5 clips en vertical»), su avance medido y un
-   **tiempo restante estimado**; nunca un spinner mudo.
+   («Preparando el clip #4», «Añadiendo la edición»), su avance medido y un **tiempo restante
+   estimado**; nunca un spinner mudo. Además, **cada puesto tiene su propio estado**, en la
+   esquina de su selector de archivo: spinner mientras sube o se prepara, **tick** cuando el
+   clip ya está listo, o error con reintento debajo.
+   - **El trabajo pesado no bloquea.** La preparación corre en segundo plano por puesto, así que
+     se pueden subir otros clips o escribir nombres mientras uno termina.
 4. **Errores accionables, en lenguaje humano.** Cada fallo se muestra como *qué pasó + qué
    hacer + botón de reintentar*. Prohibido en la UI: `stack traces`, rutas de fichero, ids
    internos, JSON crudo y códigos de error sin traducir.
@@ -472,16 +488,16 @@ Lo construido (L1 + L2 + panel) en un solo servicio:
                  ┌──────────────────┐
    operador ────►│  panel (Next.js) │  subir clips, textos, plantilla, ver, descargar
                  └────────┬─────────┘
-                          │ proceso hijo (CLI)
+                          │ proceso hijo (CLI), uno por etapa
                  ┌────────▼───────────────┐
-                 │  motor (Python)        │  openranks assemble --edit
-                 │  L1: medir→normalizar  │
-                 │      →unir (corte seco)│
+                 │  motor (Python)        │  prepare (un puesto)      → prepared/NN.mp4
+                 │  L1: medir→normalizar  │  join   (al montar)       → union.mp4
+                 │      →unir (corte seco)│  render (solo edición)    → ranking.mp4
                  │  L2: overlay ASS       │
                  └────────┬───────────────┘
                           │ FFmpeg / libass
                  ┌────────▼─────────┐
-                 │  trabajos en disco│  input/, clips/, union.mp4, ranking.mp4, manifiestos
+                 │  trabajos en disco│  input/, render/prepared/, union.mp4, ranking.mp4, manifiestos
                  └──────────────────┘
 ```
 
@@ -499,10 +515,12 @@ el estado, MinIO para el almacenamiento objeto, worker de análisis y publicaci�
 ```
 openranks/
   core/           config, binding, media, ffmpeg, framing, plan, runner, manifest, specs, overlay, progress
-  assemble.py     orquestación de L1: medir → encuadrar → normalizar → unir → verificar → manifiesto
+  assemble.py     orquestación de L1 en un paso: medir → encuadrar → normalizar → unir → verificar → manifiesto
+  prepare.py      prepara **un** clip al subirlo: deja prepared/NN.mp4 (el tick del panel)
+  join.py         une los clips ya preparados en union.mp4 al montar, sin recodificar
   framing.py      análisis de encuadre con FFmpeg (muestreo, refino, JSON)
-  overlay.py      orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + cover + spec
-  cli.py          openranks assemble | render | preview | preset | probe | fit
+  overlay.py      orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + spec
+  cli.py          openranks assemble | prepare | join | render | preview | preset | probe | fit
 web/              panel Next.js (App Router): API de trabajos, preset, vista previa y la UI
 scripts/          clips sintéticos para probar a mano
 tests/            núcleo puro (sin FFmpeg) + integración real
@@ -547,9 +565,11 @@ el dimensionado por CPU y por rate limit de Gemini, no por VRAM.
 ## 8. Modelo de datos
 
 **Hoy** el estado de un trabajo vive en disco, dentro del directorio de trabajos: `status.json`
-(estado, fase, avance y resultado), `binding.json` (título, subtítulo opcional y puestos),
-`input/` (los clips subidos), `render/` (clips normalizados, `union.mp4`, `ranking.mp4`,
-`cover.jpg`, `spec.json`, `manifest.json`) y `log.txt`.
+(estado, fase, avance, `clips{}` con el tick de cada puesto, `join` y resultado), `binding.json`
+(título, subtítulo opcional y puestos), `input/` (los clips subidos), `render/`
+(`prepared/NN.mp4` con los clips ya preparados, `union.mp4`, `ranking.mp4`, `spec.json`,
+`manifest.json`) y `log.txt`. La unión y las piezas intermedias quedan solo para trazabilidad:
+la API únicamente sirve `ranking.mp4`.
 
 **Con L3/L4** entra Postgres con el esquema mínimo siguiente:
 
@@ -665,11 +685,10 @@ L1, mediante el mismo motor que hace L1:
 
 | Artefacto | Especificación |
 | --- | --- |
-| `ranking.mp4` | 1080x1920, 30 fps, H.264 High, CRF 19, yuv420p, audio copiado, `+faststart`, ≤ 60 s |
-| `cover.jpg` | fotograma con la escalera completa, 1080x1920 |
-| `spec.json` | props exactas del render (reproducible) |
-| `manifest.json` | ids y hashes de los tramos, scores, `prompt_version`, modelo, tokens, coste, duración, versión del motor y avisos |
-| `clips/*.mp4` | un archivo normalizado y descargable por puesto |
+| `ranking.mp4` | 1080x1920, 30 fps, H.264 High, CRF 19, yuv420p, audio copiado, `+faststart`, ≤ 60 s. **Único archivo que se entrega** |
+| `spec.json` | props exactas del render (reproducible); interno |
+| `manifest.json` | ids y hashes de los tramos, scores, `prompt_version`, modelo, tokens, coste, duración, versión del motor y avisos; interno |
+| `prepared/NN.mp4` | clip normalizado de un puesto; pieza interna de la unión (no se descarga) |
 
 ### 9.5 Encaje del texto editable (obligatorio)
 
@@ -681,7 +700,7 @@ deterministas, aplicadas también en la validación de entrada:
 | --- | --- |
 | Título del vídeo | ≤ 40 caracteres; el renderer lo reparte en hasta **3 renglones** |
 | Subtítulo del vídeo | Opcional; ≤ 40 caracteres, 2 renglones como máximo, siempre debajo del título |
-| Nombre de cada puesto | ≤ 4 palabras / 24 caracteres; se dibuja en **una línea** junto a su casilla. El límite de entrada mantiene el rótulo corto: si algún día se amplía, habrá que añadirle el mismo encaje que al título |
+| Nombre de cada puesto | ≤ 24 caracteres (**sin tope de palabras**); se dibuja en **una línea** junto a su casilla. El límite de entrada mantiene el rótulo corto: si algún día se amplía, habrá que añadirle el mismo encaje que al título |
 | Reducción por encaje | *shrink-to-fit*: baja el tamaño en pasos del 5 % hasta `TITLE_MIN_SIZE` (40 px) o `SUBTITLE_MIN_SIZE` (28 px); el texto no se trunca |
 | Zona segura | el texto nunca invade las safe areas de §9.1 ni la banda de la escalera; el título dispone de `TITLE_CAP_EXTRA = 20 px` dentro del hueco de la escalera |
 | Prohibido | que un texto largo mueva posiciones, cambie la duración de un clip o altere el timing de los badges |

@@ -40,6 +40,21 @@ SPAN_EDIT_ONLY: dict[str, tuple[float, float]] = {
     "finishing": (88.0, 100.0),
 }
 
+# Reparto de la **preparación de un solo clip** (lo que dispara el panel al subirlo):
+# medir/analizar el encuadre es rápido y normalizar se lleva casi todo.
+SPAN_PREPARE: dict[str, tuple[float, float]] = {
+    "preparing": (0.0, 4.0),
+    "normalizing": (4.0, 96.0),
+    "finishing": (96.0, 100.0),
+}
+
+# Reparto de la **unión** de clips ya preparados: pegar por copia de streams es un
+# instante; medir la unión para el manifiesto es lo que tarda.
+SPAN_JOIN: dict[str, tuple[float, float]] = {
+    "joining": (0.0, 70.0),
+    "finishing": (70.0, 100.0),
+}
+
 PHASES = ("preparing", "normalizing", "joining", "editing", "finishing")
 
 # Las líneas de progreso van por **stderr** con este prefijo, para no mezclarse con

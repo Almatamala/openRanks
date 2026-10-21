@@ -72,7 +72,6 @@ class Config:
     # Renglones en los que `fit_title` puede repartir el título (no "capas" de texto:
     # el título es una sola cadena con marcas de color).
     title_lines_max: int = 3
-    label_words: int = 4
     label_chars: int = 24
 
     # Un clip por debajo de este lado corto no puede llenar el marco con calidad.

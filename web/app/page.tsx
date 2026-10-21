@@ -20,6 +20,18 @@ type Artifact = { path: string; label: string; kind: "video" | "image" | "json";
 
 type ProgressEvent = { percent: number; phase: string; label: string; step?: number; total?: number };
 
+/** Estado de un puesto: se prepara al subirlo y su tick es la señal de que está listo. */
+type ClipState = "uploading" | "preparing" | "ready" | "failed";
+
+type ClipStatus = {
+  state: ClipState;
+  error: string | null;
+  durationS?: number | null;
+  percent?: number;
+};
+
+type JoinState = "idle" | "joining" | "ready" | "failed";
+
 interface Job {
   id: string;
   state: "created" | "uploading" | "running" | "done" | "failed";
@@ -32,6 +44,8 @@ interface Job {
   error: string | null;
   artifacts: Artifact[];
   logTail: string;
+  clips: Record<string, ClipStatus>;
+  join: { state: JoinState; error: string | null };
   result: Record<string, unknown> | null;
 }
 
@@ -90,7 +104,7 @@ function initialSlots(count: number): Slot[] {
   return positionsFor(count).map((position) => ({ position, file: null, label: "" }));
 }
 
-/** `TOP 5 MOMENTOS` → `TOP 8 MOMENTOS`: el número del título sigue al de puestos. */
+/** `TOP 5 MOMENTOS` → `TOP 8 MOMENTOS`: si el título lleva un número, sigue al de puestos. */
 function retitleForCount(title: string, count: number): string {
   return title.replace(/^(\s*top\s*)\d+/i, (_, head: string) => `${head}${count}`);
 }
@@ -104,12 +118,20 @@ function humanSize(bytes: number): string {
 export default function Page() {
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
-  const [title, setTitle] = useState("TOP 5 MOMENTOS");
+  const [title, setTitle] = useState("Ranking funny moments");
   const [subtitle, setSubtitle] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  // Espejo local de lo que dice el servidor, para pintar el tick sin esperar la consulta.
+  const [prep, setPrep] = useState<Record<number, ClipStatus>>({});
+  // Sube cuando algo cambia fuera del sondeo (subida, unión, montaje) para reactivarlo.
+  const [pollNonce, setPollNonce] = useState(0);
+  const jobPromise = useRef<Promise<string> | null>(null);
+  const pickTokens = useRef<Record<number, number>>({});
+  const uploadsInFlight = useRef<Set<number>>(new Set());
   const [preset, setPreset] = useState<Preset | null>(null);
   const [presetError, setPresetError] = useState<string | null>(null);
   const [renderUrl, setRenderUrl] = useState<string | null>(null);
@@ -257,16 +279,91 @@ export default function Page() {
     setSlots((current) => current.map((slot) => (slot.position === position ? { ...slot, ...patch } : slot)));
   }, []);
 
-  // Al elegir el archivo solo se guarda el archivo: el nombre del puesto lo escribe el
-  // operador (el panel no le pone texto solo por el nombre del fichero).
+  // El trabajo se abre la **primera** vez que entra un clip, no al montar. Si dos
+  // puestos se suben a la vez, los dos esperan al mismo trabajo.
+  const ensureJob = useCallback((): Promise<string> => {
+    if (jobPromise.current) return jobPromise.current;
+    const created = (async () => {
+      const response = await fetch("/api/jobs", { method: "POST" });
+      const payload = (await response.json()) as { id?: string; error?: string };
+      if (!response.ok || !payload?.id) {
+        throw new Error(payload?.error ?? "No se pudo abrir el trabajo en el servidor.");
+      }
+      setJobId(payload.id);
+      return payload.id;
+    })();
+    jobPromise.current = created;
+    created.catch(() => {
+      jobPromise.current = null;
+    });
+    return created;
+  }, []);
+
+  // Al elegir el archivo se sube y se prepara **enseguida**: el trabajo pesado ocurre
+  // mientras el operador sigue con los otros puestos o escribe los nombres. El tick es
+  // la señal de que ese clip ya está en el formato final (no un «subido» sin más).
   const onPick = useCallback(
     (position: number, file: File | null) => {
       setSlot(position, { file });
+      const token = (pickTokens.current[position] ?? 0) + 1;
+      pickTokens.current[position] = token;
+      if (!file) {
+        setPrep((current) => {
+          const next = { ...current };
+          delete next[position];
+          return next;
+        });
+        return;
+      }
+
+      uploadsInFlight.current.add(position);
+      setError(null);
+      setPrep((current) => ({
+        ...current,
+        [position]: { state: "uploading", error: null, durationS: null, percent: 0 },
+      }));
+
+      void (async () => {
+        try {
+          const id = await ensureJob();
+          if (pickTokens.current[position] !== token) return;
+          const extension = `.${(file.name.split(".").pop() ?? "mp4").toLowerCase()}`;
+          const uploaded = await fetch(
+            `/api/jobs/${id}/clips/${position}?ext=${encodeURIComponent(extension)}&items=${positions}`,
+            { method: "PUT", body: file },
+          );
+          if (!uploaded.ok) throw new Error((await uploaded.json())?.error ?? "No se pudo subir el clip.");
+          if (pickTokens.current[position] !== token) return;
+
+          const started = await fetch(`/api/jobs/${id}/clips/${position}/prepare`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ positions }),
+          });
+          if (!started.ok) throw new Error((await started.json())?.error ?? "No se pudo preparar el clip.");
+        } catch (failure) {
+          if (pickTokens.current[position] !== token) return;
+          setPrep((current) => ({
+            ...current,
+            [position]: {
+              state: "failed",
+              error: failure instanceof Error ? failure.message : "No se pudo preparar el clip.",
+              durationS: null,
+            },
+          }));
+        } finally {
+          uploadsInFlight.current.delete(position);
+          setPollNonce((value) => value + 1);
+        }
+      })();
     },
-    [setSlot],
+    [ensureJob, positions, setSlot],
   );
 
-  const problems = problemList(slots, title, subtitle);
+  // Todos los puestos con su tick: es lo que dispara la unión y lo que habilita «Montar».
+  const allReady = slots.length > 0 && slots.every((slot) => prep[slot.position]?.state === "ready");
+
+  const problems = problemList(slots, title, subtitle, prep);
 
   const patchStyle = useCallback((patch: StylePatch) => {
     setStyle((current) =>
@@ -354,68 +451,80 @@ export default function Page() {
     [slots, title, subtitle, positions],
   );
 
+  // Sonda del trabajo: se reactiva con cada subida, unión o montaje y se para sola
+  // cuando ya no hay nada en marcha (no deja un sondeo eterno de fondo).
+  useEffect(() => {
+    if (!jobId) return;
+    let alive = true;
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+        if (!alive) return;
+        if (response.ok) {
+          const next = (await response.json()) as Job;
+          if (!alive) return;
+          setJob(next);
+          setPrep((current) => {
+            const merged = { ...current };
+            for (const [key, status] of Object.entries(next.clips ?? {})) {
+              const position = Number(key);
+              // Una subida local que aún no llegó al servidor no se pisa con el estado viejo.
+              if (uploadsInFlight.current.has(position)) continue;
+              merged[position] = status;
+            }
+            return merged;
+          });
+          const busy =
+            next.state === "running" ||
+            next.join.state === "joining" ||
+            Object.values(next.clips ?? {}).some(
+              (clip) => clip.state === "uploading" || clip.state === "preparing",
+            );
+          if (!busy) return;
+        }
+      } catch {
+        // Se reintenta en el siguiente ciclo.
+      }
+      if (alive) timer = window.setTimeout(load, 1200);
+    };
+    void load();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [jobId, pollNonce]);
+
+  // «Montar» une los clips preparados (si aún no hay unión) y compone la edición encima.
   const montar = useCallback(async () => {
-    const currentProblems = problemList(slots, title, subtitle);
+    const currentProblems = problemList(slots, title, subtitle, prep);
     if (currentProblems.length > 0) {
       setError(currentProblems[0]);
+      return;
+    }
+    if (!jobId) {
+      setError("Añade primero los clips del ranking.");
       return;
     }
     const token = ++runToken.current;
     setBusy(true);
     setError(null);
-    setJob(null);
     try {
-      const created = await fetch("/api/jobs", { method: "POST" }).then((response) => response.json());
-      if (!created?.id) throw new Error(created?.error ?? "No se pudo abrir el trabajo en el servidor.");
-
-      for (const slot of slots) {
-        const extension = `.${(slot.file?.name.split(".").pop() ?? "mp4").toLowerCase()}`;
-        const response = await fetch(
-          `/api/jobs/${created.id}/clips/${slot.position}?ext=${encodeURIComponent(extension)}`,
-          { method: "PUT", body: slot.file },
-        );
-        if (!response.ok) throw new Error((await response.json())?.error ?? "No se pudo subir un clip.");
-      }
-
-      const started = await fetch(`/api/jobs/${created.id}/start`, {
+      const started = await fetch(`/api/jobs/${jobId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(startPayload()),
       });
       if (!started.ok) throw new Error((await started.json())?.error ?? "No se pudo arrancar el montaje.");
-
-      await poll(created.id, token);
+      await poll(jobId, token);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Algo falló. Vuelve a intentarlo.");
     } finally {
       if (runToken.current === token) setBusy(false);
     }
-  }, [slots, title, subtitle, startPayload, poll]);
+  }, [jobId, poll, prep, slots, startPayload, subtitle, title]);
 
-  const reintentar = useCallback(async () => {
-    if (!job) {
-      await montar();
-      return;
-    }
-    const token = ++runToken.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const started = await fetch(`/api/jobs/${job.id}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(startPayload()),
-      });
-      if (!started.ok) throw new Error((await started.json())?.error ?? "No se pudo reintentar.");
-      await poll(job.id, token);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Algo falló al reintentar.");
-    } finally {
-      if (runToken.current === token) setBusy(false);
-    }
-  }, [job, poll, montar, startPayload]);
-
-  const running = busy || job?.state === "running" || job?.state === "uploading";
+  const running = busy || job?.state === "running";
 
   // La barra solo se mueve mientras hay trabajo; el reloj va por dentro para que el
   // tiempo restante baje cada segundo y no solo cuando llega una consulta nueva.
@@ -437,7 +546,6 @@ export default function Page() {
   const eta = etaFromMeasurement ?? (running ? (job?.etaSeconds ?? null) : null);
 
   const ranking = job?.artifacts.find((artifact) => artifact.path === "ranking.mp4");
-  const cover = job?.artifacts.find((artifact) => artifact.path === "cover.jpg");
   const fileUrl = (path: string) => `/api/jobs/${job?.id}/files?path=${encodeURIComponent(path)}`;
 
   // Móvil con el **render exacto** dentro: es el motor el que dibuja el overlay sobre
@@ -481,7 +589,8 @@ export default function Page() {
           <div>
             <h1>openRanks · montar un TOP {positions}</h1>
             <p>
-              Sube los clips, escribe los puestos y el título. La unión y la edición son automáticas.
+              Sube los clips y escribe los puestos y el título. Cada clip se prepara solo al entrar:
+              cuando todos tienen su tick, «Montar» une los clips y añade la edición.
             </p>
           </div>
         </div>
@@ -513,8 +622,8 @@ export default function Page() {
               clips
             </h2>
             <p className="hint">
-              Se detecta el área útil de cada clip y se encaja a 9:16 y 30 fps, con el
-              audio normalizado y relleno negro cuando hace falta.
+              Al elegir un clip se prepara en segundo plano (área útil, 9:16, 30 fps y audio
+              normalizado).
             </p>
             {slots.map((slot) => (
               <div className="slot" key={slot.position}>
@@ -525,12 +634,19 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="fields">
-                  <input
-                    type="file"
-                    accept="video/*"
-                    aria-label={`Archivo del puesto ${slot.position}`}
-                    disabled={running}
-                    onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
+                  <div className="file-field">
+                    <input
+                      type="file"
+                      accept="video/*"
+                      aria-label={`Archivo del puesto ${slot.position}`}
+                      disabled={running}
+                      onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
+                    />
+                    <ClipBadge status={prep[slot.position]} />
+                  </div>
+                  <SlotStatus
+                    status={prep[slot.position]}
+                    onRetry={slot.file && !running ? () => onPick(slot.position, slot.file) : undefined}
                   />
                   <div>
                     <label className="field" htmlFor={`label-${slot.position}`}>
@@ -542,11 +658,10 @@ export default function Page() {
                       value={slot.label}
                       maxLength={LIMITS.labelChars}
                       placeholder="p. ej. GATO VOLADOR"
-                      disabled={running}
                       onChange={(event) => setSlot(slot.position, { label: event.target.value })}
                     />
                     <div className={`counter ${slot.label.length >= LIMITS.labelChars ? "over" : ""}`}>
-                      {slot.label.length}/{LIMITS.labelChars} caracteres · máximo {LIMITS.labelWords} palabras
+                      {slot.label.length}/{LIMITS.labelChars} caracteres
                     </div>
                   </div>
                 </div>
@@ -591,10 +706,6 @@ export default function Page() {
             <div className={`counter ${textLength(subtitle.trim()) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {textLength(subtitle.trim())}/{LIMITS.titleLayerChars} caracteres
             </div>
-            <p className="hint">
-              Si lo dejas vacío no se dibuja. Cuando lo escribes, va siempre debajo del título y el
-              tamaño de sus letras se ajusta aparte en la plantilla.
-            </p>
             <p className="hint" style={{ marginTop: 12 }}>
               Toca una palabra para cambiar su color: blanco → <strong>amarillo</strong> → <strong>azul</strong>. En
               el texto se marca con <code>*amarillo*</code> y <code>_azul_</code>.
@@ -621,21 +732,26 @@ export default function Page() {
 
           <section className="card">
             <h2>Montar el ranking</h2>
-            <p className="hint">
-              El montaje es siempre automático y <strong>en corte seco</strong>: los clips se pegan uno tras otro, en
-              orden, sin transiciones. El estilo lo fija la plantilla.
-            </p>
 
             <div className="actions">
-              <button className="primary" onClick={montar} disabled={running || problems.length > 0}>
+              <button
+                className="primary"
+                onClick={montar}
+                disabled={running || problems.length > 0 || !allReady}
+              >
                 {running ? "Montando…" : "Montar el ranking"}
               </button>
               {job?.state === "failed" ? (
-                <button className="secondary" onClick={reintentar} disabled={running}>
+                <button className="secondary" onClick={montar} disabled={running}>
                   Volver a intentarlo
                 </button>
               ) : null}
             </div>
+            {job && !allReady ? (
+              <p className="hint">
+                Cada puesto se prepara solo al subir su clip: el tick indica que ese vídeo ya está listo.
+              </p>
+            ) : null}
             {problems.length > 0 && !error ? <p className="hint">{problems[0]}</p> : null}
             {error ? (
               <div className="alert error" role="alert">
@@ -705,31 +821,20 @@ export default function Page() {
                   <p className="hint">
                     {job.state === "done"
                       ? "El montaje terminó, pero no hay vídeo que mostrar."
-                      : "El vídeo aparecerá aquí en cuanto esté montado."}
+                      : allReady
+                        ? "Los clips están listos: pulsa Montar para unirlos y añadir la edición."
+                        : "El vídeo aparecerá aquí en cuanto esté montado."}
                   </p>
                 )}
 
-                {cover ? (
-                  <>
-                    <p className="hint" style={{ marginTop: 16 }}>
-                      Portada
-                    </p>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img className="cover" src={fileUrl(cover.path)} alt="Portada del ranking" />
-                  </>
-                ) : null}
-
-                {job.artifacts.length > 0 ? (
-                  <ul className="downloads">
-                    {job.artifacts.map((artifact) => (
-                      <li key={artifact.path}>
-                        <a href={fileUrl(artifact.path)} download>
-                          {artifact.label}
-                        </a>
-                        <span className="size">{humanSize(artifact.bytes)}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {ranking ? (
+                  <div className="actions">
+                    {/* Lo único que se entrega es el ranking final: ni unión, ni spec,
+                        ni manifiesto, ni portada. */}
+                    <a className="button-link" href={fileUrl(ranking.path)} download>
+                      Descargar el ranking ({humanSize(ranking.bytes)})
+                    </a>
+                  </div>
                 ) : null}
 
                 {job.logTail ? (
@@ -740,7 +845,9 @@ export default function Page() {
                 ) : null}
               </>
             ) : (
-              <p className="hint">Aún no has montado nada. Cuando lo hagas, el vídeo se verá aquí mismo.</p>
+              <p className="hint">
+                Sube los clips: cada uno se prepara al entrar y aquí verás el ranking en cuanto lo montes.
+              </p>
             )}
           </section>
         </div>
@@ -813,13 +920,6 @@ export default function Page() {
                       range={preset?.ranges?.subtitleSize ?? ([24, 140] as [number, number])}
                       onChange={(value) => patchStyle({ subtitle: { size: value } })}
                     />
-
-                    <p className="hint">
-                      El subtítulo es opcional y va siempre debajo del título. Si el texto no cabe
-                      sobre la escalera, el motor sube el bloque y reduce el tamaño solo. La altura
-                      del título recorre solo el hueco libre: con un título de dos líneas el margen
-                      es pequeño.
-                    </p>
 
                     <RangeControl
                       id="ladder-size"
@@ -954,12 +1054,61 @@ function RangeControl({
   );
 }
 
+/**
+ * Estado del puesto en el extremo derecho del selector de archivo (esquina del puesto):
+ * spinner mientras sube o se prepara, y tick cuando ese clip ya está listo.
+ */
+function ClipBadge({ status }: { status?: ClipStatus }) {
+  if (!status || status.state === "failed") return null;
+  if (status.state === "ready") {
+    return (
+      <span className="file-badge ready" role="status">
+        <span className="tick" aria-hidden="true">
+          ✓
+        </span>
+        Clip listo
+      </span>
+    );
+  }
+  return (
+    <span className="file-badge busy" role="status">
+      <span className="spinner" aria-hidden="true" />
+      {status.state === "uploading" ? "Subiendo…" : "Preparando…"}
+    </span>
+  );
+}
+
+/** Error del puesto, debajo del selector: qué pasó y botón para reintentar. */
+function SlotStatus({ status, onRetry }: { status?: ClipStatus; onRetry?: () => void }) {
+  if (!status || status.state !== "failed") return null;
+
+  return (
+    <div className="slot-status failed" role="alert">
+      <span>{status.error ?? "No se pudo preparar el clip."}</span>
+      {onRetry ? (
+        <button className="secondary small" type="button" onClick={onRetry}>
+          Reintentar
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /** Reúne los problemas del formulario con el mismo límite que valida el motor (RPD §9.5). */
-function problemList(slots: Slot[], title: string, subtitle: string): string[] {
+function problemList(
+  slots: Slot[],
+  title: string,
+  subtitle: string,
+  prep: Record<number, ClipStatus>,
+): string[] {
   const list: string[] = [];
-  const pending = slots.filter((slot) => !slot.file);
-  if (pending.length === 1) list.push(`Falta el clip del puesto ${pending[0].position}.`);
-  else if (pending.length > 1) list.push(`Faltan ${pending.length} clips: puestos ${pending.map((slot) => slot.position).join(", ")}.`);
+  const pending = slots.filter((slot) => prep[slot.position]?.state !== "ready");
+  if (pending.length === 1)
+    list.push(`El clip del puesto ${pending[0].position} todavía no está listo.`);
+  else if (pending.length > 1)
+    list.push(
+      `Faltan ${pending.length} clips por preparar: puestos ${pending.map((slot) => slot.position).join(", ")}.`,
+    );
   list.push(...titleErrors(title));
   list.push(...subtitleErrors(subtitle));
   for (const slot of slots) list.push(...labelErrors(slot.position, slot.label));

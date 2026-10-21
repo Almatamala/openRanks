@@ -8,7 +8,6 @@ import { visibleLength } from "./title";
 export const LIMITS = {
   titleLayerChars: 40,
   labelChars: 24,
-  labelWords: 4,
 } as const;
 
 /**
@@ -57,6 +56,40 @@ export function textLength(text: string): number {
   return Array.from(text).length;
 }
 
+/**
+ * Cuerpo de texto que manda el panel (montar o unir): mismo saneado y las mismas
+ * comprobaciones en los dos sitios, para que un texto que el formulario acepta no
+ * llegue al motor como error.
+ */
+export interface TextRequest {
+  title: string;
+  subtitle: string;
+  positions: number;
+  labels: Record<string, string>;
+  problems: string[];
+}
+
+export function parseTextRequest(body: {
+  title?: unknown;
+  subtitle?: unknown;
+  labels?: unknown;
+  positions?: unknown;
+}): TextRequest {
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  // Opcional: un subtítulo vacío es válido y el vídeo sale sin él.
+  const subtitle = typeof body.subtitle === "string" ? body.subtitle.trim() : "";
+  const positions = clampPositions(body.positions);
+  const rawLabels = (body.labels ?? {}) as Record<string, unknown>;
+  const labels: Record<string, string> = {};
+  const problems = [...titleErrors(title), ...subtitleErrors(subtitle)];
+  for (const position of positionsFor(positions)) {
+    const label = typeof rawLabels[String(position)] === "string" ? String(rawLabels[String(position)]).trim() : "";
+    labels[String(position)] = label;
+    problems.push(...labelErrors(position, label));
+  }
+  return { title, subtitle, positions, labels, problems };
+}
+
 export function labelErrors(position: number, label: string): string[] {
   const errors: string[] = [];
   const text = label.trim();
@@ -64,10 +97,9 @@ export function labelErrors(position: number, label: string): string[] {
     errors.push(`El puesto #${position} necesita un nombre.`);
     return errors;
   }
+  // Sin tope de palabras: solo manda el ancho del rótulo (caracteres).
   const length = textLength(text);
   if (length > LIMITS.labelChars)
     errors.push(`El nombre del #${position} tiene ${length} caracteres; el máximo es ${LIMITS.labelChars}.`);
-  if (text.split(/\s+/).length > LIMITS.labelWords)
-    errors.push(`El nombre del #${position} tiene más de ${LIMITS.labelWords} palabras.`);
   return errors;
 }

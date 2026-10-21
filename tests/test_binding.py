@@ -67,11 +67,11 @@ def test_label_over_char_limit_is_rejected():
         validate_binding(Binding(title="TOP 5 GATOS", items=tuple(items)), Config(), check_paths=False)
 
 
-def test_label_over_word_limit_is_rejected():
+def test_a_label_with_many_words_is_accepted_if_it_fits_in_characters():
+    # El rótulo se mide por ancho (caracteres), no por número de palabras.
     items = list(_items())
-    items[0] = ClipItem(position=1, path=items[0].path, label="UNO DOS TRES CUATRO CINCO")
-    with pytest.raises(BindingError, match="palabras"):
-        validate_binding(Binding(title="TOP 5 GATOS", items=tuple(items)), Config(), check_paths=False)
+    items[0] = ClipItem(position=1, path=items[0].path, label="A B C D E F G")
+    validate_binding(Binding(title="TOP 5 GATOS", items=tuple(items)), Config(), check_paths=False)
 
 
 def test_empty_label_is_rejected():

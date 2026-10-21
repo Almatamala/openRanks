@@ -13,9 +13,13 @@ puestos.
 
 | Artefacto | Qué es |
 | --- | --- |
-| `clips/05-<nombre>.mp4` … `clips/01-<nombre>.mp4` | Un clip normalizado y descargable por puesto, numerado por **posición del ranking** |
+| `prepared/NN.mp4` | Un clip normalizado por puesto, numerado por **posición del ranking**: es la pieza que deja el **tick** en el panel |
 | `union.mp4` | Todos en **un solo vídeo vertical**, en orden de reproducción `#5 → #1` |
 | `manifest.json` | Fuentes, hashes, plan, formato, loudness medida y versiones |
+
+Estas tres piezas son **internas**: el operador solo se lleva el `ranking.mp4`. La unión
+no se publica, los clips preparados no se descargan y el manifiesto sirve para trazabilidad
+(qué entró, con qué ajustes y qué salió).
 
 Formato de salida: **1080x1920, 30 fps, yuv420p, audio a −14 LUFS (pico −1 dBTP)**,
 y el unido dentro de la banda objetivo (30–58 s).
@@ -32,9 +36,10 @@ recorta**. `band`, `contain` y `cover` siguen disponibles como elección explíc
 
 | Artefacto | Qué es |
 | --- | --- |
-| `ranking.mp4` | El short terminado, con la edición encima |
-| `cover.jpg` | Portada (fotograma con el título y la escalera completa) |
-| `spec.json` | Las props exactas del render, reproducibles |
+| `ranking.mp4` | El short terminado, con la edición encima: **el único archivo que se entrega** |
+| `spec.json` | Las props exactas del render (interno, para trazabilidad y para la vista previa) |
+
+No se genera portada: el entregable del panel es el vídeo final, y nada más.
 
 Lo que dibuja: **título** con el número en su propio color y a mayor tamaño, y
 **palabras en otro color** a elección (`*amarillo*` / `_azul_` en el propio texto). El
@@ -63,10 +68,20 @@ overlay** —`openranks render`— sin volver a montar el vídeo.
 
 `web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los clips
 (de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título, un subtítulo
-opcional y los nombres de los puestos, lanzar el montaje en corte seco y **ver el resultado en el panel**
-(9:16 *inline*, portada y descargas). Muestra la fase en lenguaje humano («Preparando el clip #4 (2 de 5)»,
-«Uniendo los cinco clips en vertical»), valida el texto antes de gastar un montaje y
-no enseña rutas, ids internos ni JSON (§RF-9).
+opcional y los nombres de los puestos, y **ver el resultado en el panel** (9:16 *inline*
+y una sola descarga: el ranking final). Muestra la fase en lenguaje humano («Preparando el
+clip #4», «Añadiendo la edición»), valida el texto antes de gastar un render y no enseña
+rutas, ids internos ni JSON (§RF-9).
+
+**El trabajo pesado ocurre al subir, no al montar.** Al elegir el archivo de un puesto se
+sube y se **prepara en segundo plano** (área útil, 1080x1920, 30 fps, audio a −14 LUFS);
+cuando termina aparece un **tick** en ese puesto. Cada preparación es su propio proceso,
+así que el operador puede seguir subiendo los demás puestos o escribiendo nombres sin
+esperar. **«Montar» une primero** los clips preparados (copia de streams, sin recodificar)
+y **después compone la edición** encima, de modo que no se generan uniones que un cambio
+de orden o un clip nuevo dejarían inservibles; si la unión ya existe, solo rehace la
+edición. Si un clip se reemplaza, su tick y la unión se invalidan y se rehacen al volver
+a montar.
 
 **Barra de progreso con tiempo restante.** El motor publica el avance en **porcentaje
 medido** (`openranks/core/progress.py`) y el panel lo convierte en una barra y en un
@@ -302,14 +317,14 @@ El binding es lo único que se escribe a mano:
 `position: 1` es el mejor clip: cierra el vídeo. Las rutas se resuelven **relativas al
 JSON**, así que el binding es portable. El **subtítulo** es opcional: si falta o está
 vacío, el vídeo sale sin él. Los límites de texto del RPD §9.5 (40 caracteres de
-título, 40 en el subtítulo, 24 caracteres / 4 palabras por nombre) se validan al entrar:
-si el texto no cabe, falla el *input*, nunca el render.
+título, 40 en el subtítulo y 24 por nombre; los nombres no tienen tope de palabras) se
+validan al entrar: si el texto no cabe, falla el *input*, nunca el render.
 
 ### Opciones útiles
 
 | Flag | Para qué |
 | --- | --- |
-| `--edit` | Encadena L2: añade `ranking.mp4` + `cover.jpg` + `spec.json` |
+| `--edit` | Encadena L2: añade `ranking.mp4` + `spec.json` |
 | `--items 7` | Puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo) |
 | `--italic` / `--no-italic` | Letras cursivas en el overlay (`openranks render` y `openranks preview`) |
 | `--fit auto\|band\|contain\|cover` | `auto` (defecto) detecta el área útil y recorta el fondo borroso; `band` **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**; `contain` lo encaja entero sin recortar; `cover` recorta para llenar los 1080x1920 |
@@ -341,19 +356,20 @@ python -m pytest -q
 - **Núcleo puro** (`test_binding.py`, `test_plan.py`, `test_ffmpeg_args.py`,
   `test_media.py`, `test_manifest.py`, `test_config.py`, `test_specs.py`,
   `test_overlay_args.py`, `test_progress.py`, `test_preset.py`, `test_framing.py`,
-  `test_framing_args.py`): sin FFmpeg, sin red. Cubre el orden `#5 → #1`, la duración real
+  `test_framing_args.py`, `test_staged.py`): sin FFmpeg, sin red. Cubre el orden `#5 → #1`, la duración real
   del **corte seco** (la suma exacta de los tramos), el cold open, los límites de texto,
   los rankings de 5 a 10 puestos, el encaje del título (renglones y tamaño), las ventanas
   de cada badge/rótulo (nítido y atenuado), el color de cada puesto, la cursiva, el script
   ASS, los `argv` de FFmpeg, el encuadre (clasificación, área útil, confianza y recorte par),
   la monotonía del porcentaje y el listado del preset.
 - **Integración** (`test_assemble_e2e.py`, `test_overlay_e2e.py`, `test_framing_e2e.py`,
-  marcados `integration`): FFmpeg de verdad sobre clips sintéticos. Comprueba el criterio de
-  salida de L1, el encuadre de un clip sobre fondo borroso (y su normalización con el crop),
-  la rotación, y en L2 que `ranking.mp4` es 1080x1920/30 fps/yuv420p con audio, que la
-  portada y el spec se escriben **y que el overlay dibuja de verdad** (comparación de píxeles
-  contra la unión). Se **saltan** si no hay FFmpeg. La suite está comprobada con los **dos**
-  FFmpeg que puede usar el panel: el 8.0.1 del venv y el 6.1.1 que trae npm.
+  `test_staged_e2e.py`, marcados `integration`): FFmpeg de verdad sobre clips sintéticos.
+  Comprueba el criterio de salida de L1, el encuadre de un clip sobre fondo borroso (y su
+  normalización con el crop), la rotación, el flujo por etapas (`prepare` por puesto →
+  `join` → `render`, con la unión intacta al montar) y, en L2, que `ranking.mp4` es
+  1080x1920/30 fps/yuv420p con audio **y que el overlay dibuja de verdad** (comparación de
+  píxeles contra la unión). Se **saltan** si no hay FFmpeg. La suite está comprobada con los
+  **dos** FFmpeg que puede usar el panel: el 8.0.1 del venv y el 6.1.1 que trae npm.
 
 CI (`.github/workflows/ci.yml`) instala FFmpeg y las fuentes del overlay
 (`fonts-dejavu-core`, `fonts-urw-base35`), corre la suite completa y compila el panel
@@ -378,9 +394,11 @@ openranks/
   core/          # stdlib puro: config, binding, media, ffmpeg, framing, plan, runner, manifest, specs, overlay, progress
   assemble.py    # orquestación de L1: medir → encuadrar → normalizar → unir → verificar → manifiesto
   framing.py     # análisis de encuadre con FFmpeg: muestreo, refino, JSON
-  overlay.py     # orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + cover + spec
-  cli.py         # openranks assemble | render | preview | preset | probe | fit
-web/             # panel Next.js (App Router): subir, montar, ver y descargar
+  prepare.py     # prepara **un** clip al subirlo: deja prepared/NN.mp4 (el tick del panel)
+  join.py        # une los clips ya preparados en union.mp4, sin recodificar
+  overlay.py     # orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + spec
+  cli.py         # openranks assemble | prepare | join | render | preview | preset | probe | fit
+web/             # panel Next.js (App Router): subir, preparar, montar, ver y descargar
 scripts/         # clips sintéticos para probar a mano
 tests/           # núcleo puro + integración real
 docs/rpd/        # RPD: qué es el producto y por qué
