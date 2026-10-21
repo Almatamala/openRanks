@@ -15,7 +15,7 @@ interface StartBody {
 }
 
 /**
- * Valida el texto **antes** de gastar un montaje (§9.5, RF-7.4): si el título o
+ * Valida el texto **antes** de gastar un montaje (RPD §9.5, RF-7.4): si el título o
  * un nombre no cabe, el error es del formulario, no del render.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

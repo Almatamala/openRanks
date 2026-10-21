@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# El panel es Next.js, pero el montaje lo hace el motor en Python (§7.5). La imagen
+# El panel es Next.js, pero el montaje lo hace el motor en Python (RPD §7.5). La imagen
 # lleva las dos cosas — Node, Python y FFmpeg — para que no haga falta instalar nada
 # en el host: se levanta y funciona.
 FROM node:22-bookworm-slim

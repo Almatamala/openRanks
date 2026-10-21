@@ -1,5 +1,5 @@
 /**
- * Límites del **texto editable** (plan §9.5). Son un espejo de la validación de
+ * Límites del **texto editable** (RPD §9.5). Son un espejo de la validación de
  * `openranks/core/config.py` y `core/binding.py`: si el panel acepta algo que el
  * motor rechaza, el error llegaría al render en vez de al formulario.
  */
@@ -7,7 +7,6 @@ import { visibleLength } from "./title";
 
 export const LIMITS = {
   titleLayerChars: 40,
-  titleLayersMax: 3,
   labelChars: 24,
   labelWords: 4,
 } as const;

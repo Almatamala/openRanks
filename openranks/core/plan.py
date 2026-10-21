@@ -1,13 +1,13 @@
 """Plan de ensamblado: qué clip va dónde y cuánto dura la unión.
 
-Función pura y testeable sin FFmpeg (§7.6). El montaje es **siempre de corte seco**:
+Función pura y testeable sin FFmpeg (§7.6 del RPD). El montaje es **siempre de corte seco**:
 los tramos se pegan uno tras otro sin solape, así que la duración total es la suma
 exacta de los tramos y la unión se hace por copia de streams (sin recodificar).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .binding import Binding, slugify
@@ -144,7 +144,6 @@ def build_plan(
         title=binding.title,
         segments=tuple(segments),
         cold_open_s=cold_open_s,
-        warnings=(),  # se rellena abajo con los avisos de duración
         subtitle=binding.subtitle,
     )
 
@@ -165,10 +164,4 @@ def build_plan(
     if errors:
         raise PlanError("; ".join(errors))
 
-    return AssemblyPlan(
-        title=plan.title,
-        segments=plan.segments,
-        cold_open_s=plan.cold_open_s,
-        warnings=tuple(warnings),
-        subtitle=plan.subtitle,
-    )
+    return replace(plan, warnings=tuple(warnings))

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "openRanks — L1: 5 clips listos y su unión en un solo vídeo vertical"
 readme = "README.md"
 requires-python = ">=3.11"
-# Núcleo deliberadamente stdlib: sin numpy, sin wrappers de ffmpeg (el plan §7.6 pide
+# Núcleo deliberadamente stdlib: sin numpy, sin wrappers de ffmpeg (el RPD §7.6 pide
 # que la lógica de decisión se testee sin FFmpeg, sin torch y sin red).
 dependencies = []
 

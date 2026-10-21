@@ -1,7 +1,7 @@
 """Binding: la parte *editable* del render (ADR-8).
 
 Solo texto entra desde fuera: el **título del vídeo**, su **subtítulo opcional** y el
-**nombre de cada puesto**. Este módulo lo valida contra los límites de §9.5 antes de
+**nombre de cada puesto**. Este módulo lo valida contra los límites del RPD §9.5 antes de
 tocar FFmpeg, porque si el texto no cabe, el error es del input y no del render.
 """
 
@@ -35,7 +35,6 @@ class Binding:
 
     title: str
     items: tuple[ClipItem, ...]
-    title_layers: tuple[str, ...] = ()
     # Opcional: si viene vacío no se dibuja. Va siempre debajo del título (§9.2).
     subtitle: str = ""
 
@@ -52,15 +51,15 @@ class Binding:
                 return item
         raise BindingError("#1 no está en el binding")
 
-    @property
-    def layers(self) -> tuple[str, ...]:
-        return self.title_layers or (self.title,)
 
-    def by_position(self, position: int) -> ClipItem | None:
-        for item in self.items:
-            if item.position == position:
-                return item
-        return None
+def visible_length(text: str) -> int:
+    """Caracteres que se dibujan: las marcas de color (`*`/`_`) no cuentan.
+
+    Espeja `visibleLength` del panel (`web/lib/title.ts`): si el panel acepta el texto,
+    el motor también. Si no fuera así, el formulario dejaría pasar algo que el render
+    rechaza y el operador vería el error en el peor momento.
+    """
+    return len(text.replace("*", "").replace("_", ""))
 
 
 def slugify(text: str, *, fallback: str = "clip", max_len: int = 32) -> str:
@@ -78,19 +77,15 @@ def validate_binding(binding: Binding, config: Config | None = None, *, check_pa
     cfg = config or Config()
     errors: list[str] = []
 
-    if not binding.title.strip():
+    title = binding.title.strip()
+    if not title:
         errors.append("el título del vídeo está vacío")
-
-    for index, layer in enumerate(binding.layers):
-        if not layer.strip():
-            errors.append(f"la capa de título {index + 1} está vacía")
-        elif len(layer) > cfg.title_layer_chars:
+    else:
+        length = visible_length(title)
+        if length > cfg.title_layer_chars:
             errors.append(
-                f"la capa de título {index + 1} tiene {len(layer)} caracteres; el máximo es {cfg.title_layer_chars}"
+                f"el título tiene {length} caracteres; el máximo es {cfg.title_layer_chars}"
             )
-
-    if len(binding.layers) > cfg.title_layers_max:
-        errors.append(f"hay {len(binding.layers)} capas de título; el máximo es {cfg.title_layers_max}")
 
     subtitle = binding.subtitle.strip()
     if subtitle and len(subtitle) > cfg.title_layer_chars:
@@ -161,15 +156,7 @@ def load_binding(path: str | Path, config: Config | None = None) -> Binding:
 
     title = str(payload.get("title", ""))
     subtitle = str(payload.get("subtitle", ""))
-    raw_layers = payload.get("title_layers") or []
-    if not isinstance(raw_layers, list):
-        raise BindingError("title_layers debe ser una lista de textos")
 
-    binding = Binding(
-        title=title,
-        items=tuple(items),
-        title_layers=tuple(str(layer) for layer in raw_layers),
-        subtitle=subtitle,
-    )
+    binding = Binding(title=title, items=tuple(items), subtitle=subtitle)
     validate_binding(binding, config)
     return binding

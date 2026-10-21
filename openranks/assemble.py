@@ -25,7 +25,7 @@ from .core.media import MediaInfo, probe, validate_normalized, validate_ready_cl
 from .framing import analyze
 from .core.plan import AssemblyPlan, build_plan
 from .core.progress import SPAN_FULL, Progress, ProgressCallback
-from .core.runner import run, tail_lines, version_of
+from .core.runner import run, stderr_warnings, version_of
 from .overlay import OverlayResult, render as render_overlay
 
 Logger = Callable[[str], None]
@@ -177,7 +177,9 @@ def assemble(
         where = "el adelanto del #1" if segment.is_cold_open else f"el clip #{segment.position}"
         track.normalizing(index, len(plan.segments), f"Preparando {where} ({index + 1} de {len(plan.segments)})")
         destination = (work_dir if segment.is_cold_open else clips_dir) / segment.output_name
-        info = probe(ffprobe_bin, segment.source)
+        # El clip ya se midió al validar la entrada: no hace falta otro `ffprobe` por
+        # tramo. El cold open usa el medio del `#1`, que es de donde sale.
+        info = infos[binding.best.position] if segment.is_cold_open else infos[segment.position]
         measured = None
         if info.has_audio:
             say(f"  #{segment.position}: midiendo loudness")
@@ -211,14 +213,15 @@ def assemble(
                 duration_s=segment.duration_s,
             )
         )
-        collected.extend(_tool_warnings(completed.stderr, where=f"#{segment.position}"))
-        check = validate_normalized(probe(ffprobe_bin, destination), cfg)
+        collected.extend(stderr_warnings(completed.stderr, where=f"#{segment.position}"))
+        destination_info = probe(ffprobe_bin, destination)
+        check = validate_normalized(destination_info, cfg)
         if not check.ok:
             raise AssemblyError(f"el clip normalizado #{segment.position} no cumple el formato", check.errors)
         collected.extend(f"#{segment.position}: {warning}" for warning in check.warnings)
         normalized.append(destination)
         if not segment.is_cold_open:
-            outputs.append(_output_entry(ffprobe_bin, destination, kind="clip"))
+            outputs.append(_output_entry(destination, destination_info, kind="clip"))
 
     # 4) Unión de corte seco: los tramos ya comparten formato exacto, así que se pegan
     # por copia de streams, sin recodificar.
@@ -228,7 +231,7 @@ def assemble(
     list_file = work_dir / "concat.txt"
     list_file.write_text(ff.concat_list_text(normalized), encoding="utf-8")
     completed = run(ff.concat_copy_argv(ffmpeg_bin, list_file, union))
-    collected.extend(_tool_warnings(completed.stderr, where="unión"))
+    collected.extend(stderr_warnings(completed.stderr, where="unión"))
 
     # 5) Verificar la unión contra el criterio de salida.
     union_info = probe(ffprobe_bin, union)
@@ -239,7 +242,7 @@ def assemble(
     collected.extend(_output_warnings(info=union_info, plan=plan, config=cfg))
     for warning in collected:
         say(f"  aviso: {warning}")
-    outputs.append(_output_entry(ffprobe_bin, union, kind="union"))
+    outputs.append(_output_entry(union, union_info, kind="union"))
 
     loudness = _measure_loudness(ffmpeg_bin, union, cfg) or {}
 
@@ -290,38 +293,13 @@ def assemble(
     )
 
 
-def _tool_warnings(stderr: str | None, *, where: str) -> list[str]:
-    """Lo que FFmpeg avisó y no impidió el trabajo no se tira: se registra.
-
-    Hay un aviso **esperado** en la unión por copia: el grid de tramas AAC de cada
-    segmento no encadena exacto y FFmpeg reetiqueta el DTS él solo (+1 tick). Se marca
-    como benigno en vez de repetirlo tres veces, pero se reporta igual.
-    """
-    text = stderr or ""
-    lines = [line for line in text.splitlines() if line.strip()]
-    if not lines:
-        return []
-    benign = [line for line in lines if "Non-monotonic DTS" in line]
-    other = [line for line in lines if "Non-monotonic DTS" not in line]
-    warnings: list[str] = []
-    if benign:
-        warnings.append(
-            f"{where}: {len(benign)} avisos benignos de ffmpeg (DTS no monótono al unir AAC por copia; "
-            "ffmpeg lo reetiqueta y la unión queda monótona)"
-        )
-    if other:
-        warnings.append(f"{where}: ffmpeg avisó -> {tail_lines(chr(10).join(other), 3)}")
-    return warnings
-
-
 def _measure_loudness(ffmpeg_bin: str, path: Path, cfg: Config) -> dict | None:
     """Primera pasada de ``loudnorm``: mide y no escribe salida."""
     completed = run(ff.measure_loudness_argv(ffmpeg_bin, path, cfg), check=False)
     return ff.parse_loudnorm_json(completed.stderr or "")
 
 
-def _output_entry(ffprobe_bin: str, path: Path, *, kind: str) -> dict:
-    info = probe(ffprobe_bin, path)
+def _output_entry(path: Path, info: MediaInfo, *, kind: str) -> dict:
     return {
         "kind": kind,
         "file": path.name,

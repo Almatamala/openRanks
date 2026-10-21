@@ -6,8 +6,8 @@ import { NextResponse } from "next/server";
 import { PROJECT_ROOT, resolveEngine } from "@/lib/paths";
 import {
   clearPreset,
+  engineEnv,
   FONT_CHOICES,
-  PRESET_PATH,
   PRESET_RANGES,
   readPreset,
   sanitizePreset,
@@ -34,7 +34,7 @@ async function loadPreset() {
       timeout: 30_000,
       maxBuffer: 4 * 1024 * 1024,
       // El listado tiene que reflejar el preset guardado, que es el que usa el render.
-      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", OPENRANKS_PRESET_FILE: PRESET_PATH },
+      env: engineEnv(),
     },
   );
   cached = JSON.parse(stdout) as Record<string, unknown>;

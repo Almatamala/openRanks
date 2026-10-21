@@ -1,148 +1,24 @@
-# openRanks — RPD y plan de ejecución
+# openRanks — RPD (requisitos del producto)
 
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — servicio de generación y publicación de shorts de ranking a partir de vídeo largo |
 | **Estado** | **L1, L2 y el panel están construidos y verificados**; L3 (extractora) y L4 (integración y publicación) son lo pendiente |
-| **Fecha** | 16-oct-2026 (documento vigente, reescrito en presente) |
-| **Alcance** | RPD (qué y por qué) + plan de ejecución (cómo, en qué orden, con qué criterios de salida) |
+| **Fecha** | 21-oct-2026 |
+| **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado, verificación) vive en `docs/plan/openRanks-plan.md` |
+| **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
 | **Decisiones vigentes** | (1) **servicio nuevo**, con código de OpenShorts como referencia; (2) **interfaz única y cómoda** (ADR-9); (3) **estilo bloqueado y render automático** (ADR-8); (4) **montaje siempre de corte seco** (ADR-10); (5) **encuadre automático** por detección del área útil (ADR-11) |
 | **Repo de referencia** | **OpenShorts** (repositorio vecino, no este): de él se copia/adapta código con licencia **MIT**, con cabecera de origen y NOTICE. Su directorio `cloud/` es licencia comercial y **no se copia** nunca |
-| **Archivo único** | Este documento vive junto al código que describe, y sustituye a los borradores anteriores |
 
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
 
-Este documento describe **lo que existe hoy** y lo que falta por capas. No conserva las
-propuestas ya descartadas: por qué se eligieron las alternativas vigentes está en los ADR
-(§15), y lo descartado se justifica ahí mismo en su fila.
+Este documento describe **lo que el producto es y lo que falta por capas**. El **cómo se
+construye, en qué orden y cómo se verifica** está en el plan. No conserva las propuestas ya
+descartadas: por qué se eligieron las alternativas vigentes está en los ADR (§15), y lo
+descartado se justifica ahí mismo en su fila.
 
 ---
-
-## Orden de prioridades del producto
-
-**Decisión del operador (13-oct-2026): se construye de atrás hacia delante, empezando por el
-vídeo terminado.** El orden sigue vigente: `L1 → L2 → L3 → L4`.
-
-| Prio | Capa | Qué entrega | Estado |
-| --- | --- | --- | --- |
-| **1** | **L1 · Ensamblador** | Los clips ya listos (normalizados, 9:16, 30 fps, audio a −14 LUFS) **y su unión en un solo vídeo vertical en corte seco** | **Hecho** |
-| **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, escalera de rangos, rótulo por puesto, medallas del podio, atenuado de lo que no tiene el turno. **Render automático y estilo bloqueado** | **Hecho** |
-| **3** | **L3 · Extractora** | Los clips obtenidos solos desde un vídeo largo: segmentación, screening, scoring y selección — *el riesgo técnico real* | Pendiente |
-| **4** | **L4 · Integrador** | Orquestación de punta a punta, publicación y operación | Pendiente (el panel ya cubre L1/L2) |
-
-**Contrato entre capas.** Cada capa consume la salida de la anterior como **archivos +
-manifiesto**, nunca como llamadas acopladas. L1 produce `clips/*.mp4` + `union.mp4` +
-`manifest.json`; L2 produce `ranking.mp4` + `cover.jpg` + `spec.json`; L3 producirá **los
-mismos `clips/*.mp4`** que el operador aporta a mano hoy. Consecuencia: **L2 y L3 no se
-conocen entre sí** y L4 solo orquesta.
-
----
-
-## Estado de implementación (16-oct-2026)
-
-Lo que está construido y verificado, con la pieza donde vive:
-
-| Pieza | Dónde | Qué hace |
-| --- | --- | --- |
-| Configuración y contrato de entrada | `openranks/core/config.py`, `core/binding.py` | Formato de salida, bandas de duración, límites del texto, ranking de 5 a 10 puestos |
-| Medición del material | `openranks/core/media.py` | `ffprobe`, contrato del clip de entrada y del archivo normalizado |
-| Comandos de FFmpeg | `openranks/core/ffmpeg.py` | Normalización al marco vertical con recorte opcional, `loudnorm` en dos pasadas, unión por copia de streams |
-| Encuadre del clip | `openranks/core/framing.py`, `openranks/framing.py` | Clasificación vertical/horizontal, detección del área nítida, refino a resolución completa, confianza y fallback sin recorte |
-| Plan del montaje | `openranks/core/plan.py` | Orden `#5 → #1`, cold open opcional, duración real (suma exacta) |
-| Overlay (spec y ASS) | `openranks/core/specs.py`, `core/overlay.py` | Ventanas de tiempo, encaje del título, escalera, rótulos y el script ASS |
-| Progreso | `openranks/core/progress.py` | Porcentaje medido, fase con nombre humano y ETA honesto en el panel |
-| Orquestación L1 / L2 | `openranks/assemble.py`, `openranks/overlay.py` | Montar, verificar y editar, con manifiesto en cada paso |
-| CLI | `openranks/cli.py` | `assemble`, `render`, `preview`, `preset`, `probe`, `fit` |
-| Panel | `web/` (Next.js) | Flujo completo sin terminal: subir, escribir, montar, ver, descargar |
-| Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
-| Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
-
-**La interfaz es el punto de entrada único** (RF-9): no hay paso que exija terminal, `curl`
-ni un editor externo. `GET /api/engine` responde «¿por qué no me monta?» sin abrir una
-consola, y el panel no enseña rutas, ids internos ni JSON crudo.
-
-### La regla dura del producto (ADR-8)
-
-Del short terminado, **lo único editable es el texto**: el **título del vídeo**, su
-**subtítulo opcional** y el **nombre de cada puesto**. Todo lo demás —layout, posiciones, tipografía, colores,
-animaciones, duración y encuadre— vive en el **preset bloqueado** y no se toca por vídeo.
-El **render es siempre automático**: no hay editor, ni timeline, ni exportación a mano.
-
-Tres consecuencias que el código ya respeta:
-
-1. La revisión se limita a **aprobar / rechazar / sustituir un clip / editar los textos**
-   (título, subtítulo opcional y nombres de los puestos).
-2. El texto es input libre de una persona, así que el renderer lo encaja solo (§9.5),
-   con las mismas reglas al entrar (`core/binding.py`).
-3. Cambiar un texto **no** recompone el vídeo: `openranks render` re-renderiza **solo la
-   capa de overlay** sobre el `union.mp4` ya montado (segundos, no minutos).
-
-### El montaje es siempre de corte seco (ADR-10)
-
-Los clips se pegan uno tras otro, **sin transiciones ni zoom de entrada**. La unión se hace
-por **copia de streams**, sin recodificar: es la ruta más rápida y la única que no gasta una
-generación de compresión. Consecuencias:
-
-1. La duración del ranking es la **suma exacta** de sus tramos: no hay solapes que descontar.
-2. El CLI ya no expone `--transition-seconds` / `--transition` / `--zoom`, y el motor ya no
-   construye `xfade`.
-3. El panel no ofrece ajustes de montaje: monta con el preset y con el corte seco, y nada más.
-
-### Cómo se ve el estado del trabajo en el panel
-
-Cada trabajo publica su **fase con nombre humano** («Normalizando el clip #4 (2 de 5)»,
-«Uniendo los 5 clips en vertical») y el **porcentaje medido** que emite el motor por stderr
-(`openranks/core/progress.py`). El panel lo convierte en barra y en **tiempo restante** por
-regla de tres sobre el tiempo ya empleado: no hay temporizador inventado.
-
-### La plantilla de la edición
-
-El panel enseña el preset **valor por valor**, con el archivo donde se cambia, y deja
-ajustar y **guardar** una parte:
-
-| Qué | Clave | Editable en el panel |
-| --- | --- | --- |
-| Fuente del overlay | `font` | Sí (lista blanca de familias) |
-| Cursiva de todo el texto | `italic` | Sí |
-| Tamaño del título | `title.size` | Sí |
-| Altura del título (solo el hueco real sobre la escalera) | `title.y` | Sí |
-| Tamaño del subtítulo (opcional, debajo del título) | `subtitle.size` | Sí |
-| Tamaño del número de cada puesto | `rank_ladder.size` | Sí |
-| Posición horizontal de la escalera | `rank_ladder.x` | Sí |
-| Altura del `#1` y del `#5` | `rank_ladder.y_top` / `y_bottom` | Sí |
-| Colores, contornos, fundidos, medallas, rótulo | — | No: son de fábrica |
-
-**El preset guardado persiste entre sesiones.** Se escribe en el directorio de trabajos
-(`web/.jobs/preset.json` en local, `/data/jobs/preset.json` dentro del contenedor, que es un
-volumen), se conserva **el último**, y el panel se lo pasa al motor por
-`OPENRANKS_PRESET_FILE` **tanto en la vista previa como en el montaje**, así que lo que se ve
-en el render de la plantilla es exactamente lo que llevará el vídeo. Al vivir en el volumen,
-sobrevive a un reinicio del panel: la próxima sesión arranca con la plantilla guardada.
-**Restablecer** vuelve a los valores de fábrica. Solo se aceptan las claves editables: un
-archivo manipulado no puede colar otros ajustes.
-
-### Fragmentos que interesa recordar
-
-- El **overlay es ASS, no `drawtext`** (§9.3): libass resuelve la fuente por nombre (sin
-  escapar rutas en la cadena de filtros) y permite cambiar el color del número dentro de una
-  misma línea.
-- El **audio de L2 se copia**: L1 ya lo normalizó y no se pierde esa medición.
-- **Metadatos limpios**: `-map_metadata -1` en todo lo que se escribe, y el manifiesto guarda
-  nombres de archivo y hashes, nunca rutas del host (regla de repositorio público).
-
----
-
-## Cómo está organizado este documento
-
-- **§1–§17**: RPD y plan de ejecución — requisitos, diseño, modelo de datos, render, legal,
-  capas L0–L4, verificación, riesgos, decisiones registradas, preguntas abiertas y anexos.
-
-Las referencias `§n` apuntan siempre a este documento.
-
----
-
-# Parte I — RPD y plan de ejecución
 
 ## 1. Resumen ejecutivo
 
@@ -215,8 +91,8 @@ Anatomía del short objetivo, según lo que **dicen** los dos vídeos de referen
 
 ```
 ┌──────────────────────────────┐  1080 x 1920, 30 fps, 30-58 s
-│ ╔══ TÍTULO (2 capas) ════════╗│  y = 96..240 — "TOP 5 GATOS 😹": dos capas para
-│ ║ TOP 5 GATOS 😹              ║│  dar color propio al número ("5") más grande
+│ ╔══ TÍTULO (2 capas) ════════╗│  y = 96..240 — "TOP 5 GATOS 😹": el número va en
+│ ║ TOP 5 GATOS 😹              ║│  su propio color y a mayor tamaño
 │ ╚═════════════════════════════╝│
 │ [5] ─────────────────────────│  ESCALERA DE RANGOS: x=176,
 │ [4]   [ RÓTULO DEL CLIP ]    │  #5 abajo … #1 arriba (no un solo badge),
@@ -233,9 +109,9 @@ Reglas de composición (cada regla, respaldada por lo que indican los tutoriales
   tutoriales se consigue con un **cold open** (un adelanto del `#1` al principio): si se
   activa, el clip `#1` abre ~2 s **sin rótulo de posición** y luego cierra el vídeo completo.
 - **Duración**: clips de 5–10 s + rótulos ⇒ **30–58 s** de vídeo unido.
-- **Números de rango**: cinco capas de texto, una por posición, repartidas en vertical
-  (**#5 abajo, #1 arriba**). Colores por posición: **#3 bronce, #2 plata, #1 oro**; **del 4 en
-  adelante el número va en blanco** (el azul competía con el rótulo y se leía peor).
+- **Números de rango**: una casilla por posición, repartidas en vertical (**#5 abajo, #1
+  arriba**). Colores por posición: **#3 bronce, #2 plata, #1 oro**; **del 4 en adelante el
+  número va en blanco** (el azul competía con el rótulo y se leía peor).
 - **Rótulo por clip**: un título corto por clip, diseñado para **provocar comentarios**. Entra
   con su clip, **se queda hasta el final** (los textos se acumulan, no se sustituyen) y **se
   atenúa y difumina cuando su puesto cede el turno**, igual que su casilla.
@@ -630,7 +506,8 @@ openranks/
 web/              panel Next.js (App Router): API de trabajos, preset, vista previa y la UI
 scripts/          clips sintéticos para probar a mano
 tests/            núcleo puro (sin FFmpeg) + integración real
-docs/rpd/         este documento
+docs/rpd/         este documento (requisitos)
+docs/plan/        el plan de ejecución y la verificación
 ```
 
 `core/` es **stdlib puro**: toda la lógica de decisión (plan, specs, encaje del título, preset y
@@ -661,17 +538,18 @@ volumes: {jobs: {}}
 
 Notas de operación: la imagen incluye `ffmpeg`/`ffprobe` y las familias tipográficas que libass
 resuelve **por nombre**; los binarios de FFmpeg de npm se borran en la misma capa (dentro del
-contenedor manda el de apt). Cuando lleguen L3/L4 se añaden `postgres`, `minio`, `worker` y el
-servicio de publicación, con el dimensionado por CPU y por rate limit de Gemini, no por VRAM.
+contenedor manda el de apt). El panel fija `OPENRANKS_PRESET_FILE` en el directorio de trabajos.
+Cuando lleguen L3/L4 se añaden `postgres`, `minio`, `worker` y el servicio de publicación, con
+el dimensionado por CPU y por rate limit de Gemini, no por VRAM.
 
 ---
 
 ## 8. Modelo de datos
 
 **Hoy** el estado de un trabajo vive en disco, dentro del directorio de trabajos: `status.json`
-(estado, fase, avance y resultado), `binding.json` (título y puestos), `input/` (los clips
-subidos), `render/` (clips normalizados, `union.mp4`, `ranking.mp4`, `cover.jpg`, `spec.json`,
-`manifest.json`) y `log.txt`.
+(estado, fase, avance y resultado), `binding.json` (título, subtítulo opcional y puestos),
+`input/` (los clips subidos), `render/` (clips normalizados, `union.mp4`, `ranking.mp4`,
+`cover.jpg`, `spec.json`, `manifest.json`) y `log.txt`.
 
 **Con L3/L4** entra Postgres con el esquema mínimo siguiente:
 
@@ -741,17 +619,24 @@ puesto en `openranks/core/specs.py` (`RANK_COLORS`). Lo que hay hoy:
 | --- | --- |
 | Fuente | `font` (por defecto `Arial`; en el contenedor manda `OPENRANKS_FONT`). Familias ofrecidas: `DejaVu Sans`, `Liberation Sans`, `DejaVu Serif`, `URW Gothic` (sans-serif **geométrica**) y `Symbola` (símbolos y medallas) |
 | Cursiva | `italic`: itálica en todo el texto del overlay |
-| Título | Tamaño (`title.size`) y **altura** (`title.y`) ajustables; el motor publica en el spec el recorrido real (`y_min`/`y_max`) y el panel limita el deslizador a él; el tope se amplía **20 px** por debajo del hueco de la escalera (`TITLE_CAP_EXTRA`), así que el título se puede bajar un poco más que antes. Base blanco con contorno negro y el **número** en acento y mayor (§3). El operador marca **palabras** con `*amarillo*` y `_azul_`; las marcas no se dibujan |
+| Título | Tamaño (`title.size`) y **altura** (`title.y`) ajustables; el motor publica en el spec el recorrido real (`y_min`/`y_max`) y el panel limita el deslizador a él; el tope se amplía **20 px** por debajo del hueco de la escalera (`TITLE_CAP_EXTRA`), así que el título se puede bajar un poco más sin invadir la escalera. Base blanco con contorno negro y el **número** en acento y mayor (§3). El operador marca **palabras** con `*amarillo*` y `_azul_`; las marcas no se dibujan |
 | Subtítulo | Opcional (`subtitle` en el binding): va **siempre debajo del título**, con su propio tamaño (`subtitle.size`), y no se dibuja si el texto está vacío. Título y subtítulo se encajan juntos: el bloque sube y reduce el tamaño antes que invadir la escalera |
-| Escalera | Cinco casillas fijas (o tantas como puestos); **🥇🥈🥉** en el podio (fuente monocroma `medal_font`) y el número en el resto; color por puesto (`RANK_COLORS`) |
+| Escalera | Una casilla por puesto (**de 5 a 10**); **🥇🥈🥉** en el podio (fuente monocroma `medal_font`) y el número en el resto; color por puesto (`RANK_COLORS`) |
 | Turno | La casilla **activa** se ve nítida durante su clip; las demás **se atenúan y difuminan** (`dim_alpha`, `dim_blur`) |
-| Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx = 53 px`, un 60 % menos que los 132 px originales); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
+| Rótulo | Va **al lado de su propia casilla** (misma altura, `clip_label.dx = 85 px`); entra con su clip, se queda acumulado y se atenúa cuando su puesto cede el turno |
 | Encaje del clip | `auto` por defecto (`OPENRANKS_FIT`): detecta el área útil y rellena con negro; `band`, `contain` y `cover` son elecciones explícitas |
 | Preset editable | Una **parte** se ajusta y guarda desde el panel: `font`, `italic`, `title.{size,y}`, `subtitle.size`, `rank_ladder.{size,x,y_top,y_bottom}` (`EDITABLE_SECTIONS` en `core/overlay.py`) |
 
 **Sin CTA de cierre.** El estándar no dibuja ningún texto de «sígueme» al final: el vídeo
 termina con la escalera completa y el rótulo del `#1`. La franja inferior queda libre para la
 UI de la plataforma (§9.1).
+
+**El preset guardado persiste entre sesiones.** Se escribe en el directorio de trabajos
+(`web/.jobs/preset.json` en local, `/data/jobs/preset.json` dentro del contenedor, que es un
+volumen), se conserva **el último**, y el panel se lo pasa al motor por
+`OPENRANKS_PRESET_FILE` tanto en la vista previa como en el montaje. Solo se aceptan las
+claves editables: un archivo manipulado no puede colar otros ajustes. **Restablecer** vuelve a
+los valores de fábrica.
 
 **Todo ajuste se puede consultar sin leer el código**: `openranks preset` (o
 `openranks preset --json`, que es lo que consume el panel) lista cada valor con **qué es y en
@@ -770,6 +655,8 @@ L1, mediante el mismo motor que hace L1:
 - **Animaciones deterministas**: fundidos (`\fad`) y escalados (`\t`), relativos al tiempo de
   vídeo. El mismo texto + el mismo preset producen **el mismo MP4** en cada corrida.
 - **El audio se copia** (`-c:a copy`): L1 ya lo dejó a −14 LUFS y no se pierde esa medición.
+- **Metadatos limpios**: `-map_metadata -1` en todo lo que se escribe; el manifiesto guarda
+  **nombres de archivo y hashes**, nunca rutas del host (regla de repositorio público).
 - **Vista previa = render real**: `openranks preview` y el panel aplican **el mismo
   `build_ass`** sobre una fuente negra generada por FFmpeg, así que lo que se ve es lo que
   saldrá en el vídeo. El script queda en `<salida>/work/overlay.ass` y se puede leer tal cual.
@@ -792,11 +679,11 @@ deterministas, aplicadas también en la validación de entrada:
 
 | Regla | Valor por defecto |
 | --- | --- |
-| Título del vídeo | ≤ 28 caracteres por capa, 3 capas; envoltura a 2 líneas como máximo |
-| Subtítulo del vídeo | Opcional; ≤ 40 caracteres, 2 líneas como máximo, siempre debajo del título |
-| Nombre de cada puesto | ≤ 4 palabras / 24 caracteres; 2 líneas como máximo |
-| Reducción por encaje | *shrink-to-fit* acotado (hasta 0,8× del tamaño nominal); después, envoltura; después, truncado con elipsis |
-| Zona segura | el texto nunca invade las safe areas de §9.1 ni la banda de la escalera |
+| Título del vídeo | ≤ 40 caracteres; el renderer lo reparte en hasta **3 renglones** |
+| Subtítulo del vídeo | Opcional; ≤ 40 caracteres, 2 renglones como máximo, siempre debajo del título |
+| Nombre de cada puesto | ≤ 4 palabras / 24 caracteres; se dibuja en **una línea** junto a su casilla. El límite de entrada mantiene el rótulo corto: si algún día se amplía, habrá que añadirle el mismo encaje que al título |
+| Reducción por encaje | *shrink-to-fit*: baja el tamaño en pasos del 5 % hasta `TITLE_MIN_SIZE` (40 px) o `SUBTITLE_MIN_SIZE` (28 px); el texto no se trunca |
+| Zona segura | el texto nunca invade las safe areas de §9.1 ni la banda de la escalera; el título dispone de `TITLE_CAP_EXTRA = 20 px` dentro del hueco de la escalera |
 | Prohibido | que un texto largo mueva posiciones, cambie la duración de un clip o altere el timing de los badges |
 
 El spec guarda el texto **de entrada** y el renderer calcula el encaje en cada corrida
@@ -925,128 +812,8 @@ Este producto republica fragmentos de vídeo de terceros; ese es su riesgo princ
 **Puerta de salida L0**: checklist legal firmado por el operador sobre qué fuentes puede usar.
 Sin esto no se publica nada, aunque el pipeline funcione.
 
----
-
-## 12. Plan de ejecución
-
-El orden es el de «Orden de prioridades del producto»: **L1 → L2 → L3 → L4** (ADR-7).
-
-| Capa (prioridad) | Contenido | Estado |
-| --- | --- | --- |
-| **L0** — Esqueleto | repo, contrato de entrada, medición, CI, legal | **Hecho** (el despliegue completo con Postgres/MinIO llega con L4) |
-| **L1** — Clips listos y unión vertical | normalización 9:16 por clip, unión en corte seco, audio a −14 LUFS | **Hecho** |
-| **L2** — Edición del estándar | overlay ASS, escalera, rótulos, cover, spec, preset editable | **Hecho** |
-| **L3** — Extractora | ingesta de YouTube, segmentación, screening, señales, scoring, selección | Pendiente |
-| **L4** — Integrador | orquestación de punta a punta, publicación, trazabilidad, endurecimiento | Pendiente |
-
-### L0 — Esqueleto y terreno firme · **hecho**
-
-| Entregable | Detalle |
-| --- | --- |
-| Repo + forma de correrlo | motor Python (stdlib puro) + panel Next.js; `docker-compose.yml` de un solo servicio con FFmpeg y fuentes dentro |
-| Contrato de entrada | `core/config.py` + `core/binding.py`: formato, bandas, límites de texto, ranking de 5 a 10 |
-| Medición y validación | `core/media.py`: contrato del clip de entrada y del normalizado |
-| CI | workflow que corre `core/` sin FFmpeg y, con FFmpeg + fuentes, la suite completa y el build del panel |
-| Legal | checklist de fuentes (§11) |
-
-### L1 — Entregable 1: clips listos y un solo vídeo vertical · **hecho**
-
-| Entregable | Detalle |
-| --- | --- |
-| Normalización por clip | 1080x1920 / 30 fps / yuv420p; **encuadre automático** con detección del área útil y fallback sin recorte; `band`/`contain`/`cover` siguen disponibles |
-| «Sin recortes pendientes» | el clip final se publica tal cual: bordes limpios, sin barras negras, sin recodificar después |
-| Unión vertical | `core/plan.py`: orden `#5 → #1`, cold open opcional y duración real (suma exacta), **corte seco por copia de streams** |
-| Salida doble | **un archivo descargable por puesto** + **un solo `union.mp4`** con audio a −14 LUFS |
-| **Salida (criterio)** | `ffprobe` valida los archivos (1080x1920, 30 fps, yuv420p, audio presente) y el operador los descarga del panel |
-
-### L2 — Entregable 2: la edición del estándar · **hecho**
-
-| Entregable | Detalle |
-| --- | --- |
-| Plantilla = datos | `Template + Binding → spec.json`; **`Template` bloqueado** y `Binding` con **solo texto** (título + subtítulo opcional + N nombres) |
-| Overlays | escalera de posición con la casilla de turno nítida, rótulo por clip, medallas del podio |
-| Renderer | **ASS + FFmpeg** (`libass`), el mismo motor que hace L1 (§9.3). Sin segundo runtime |
-| Cover + verificaciones | `cover.jpg`, `spec.json`, `manifest.json` y determinismo (mismo spec ⇒ mismo MP4) |
-| Render automático | **sin ningún paso manual de montaje**: dados el preset y los textos, el MP4 sale solo |
-| Cambio de texto | re-render de **solo la capa de overlay** sobre el `union.mp4`, recalculando el encaje de §9.5 |
-| **Salida (criterio)** | sobre el `union.mp4` de L1 sale un `ranking.mp4` publicable; el overlay **dibuja de verdad** (test de píxeles) y el cambio de texto tarda segundos |
-| Pendiente de L2 | **banner con la foto de referencia** (`assets/banners/`) y **música/sfx** con la cama a −14 LUFS: requieren assets propios y van desactivados por defecto |
-
-### L3 — Entregable 3: la extractora · *el riesgo técnico real*
-
-| Entregable | Detalle |
-| --- | --- |
-| Ingesta YouTube | `download_youtube_video`, `plan_download_attempts`, `cap_source_duration`, `yt_clients.py`, proxy de análisis, `MAX_SOURCE_MINUTES` |
-| `core/segmentation.py` | resets, agrupación, banda de duración, cohesión y fusiones (§7.1), con el ablation por señal de §7.1 |
-| Clasificador compilado/único | §7.2, con `force_mode` |
-| Screening + señales | RF-3 y §7.3 + YOLO de sujeto |
-| Scoring Gemini por lotes | esquema pydantic + `prompt_version` + contadores de coste reales (RF-4) |
-| Selección TOP N | RF-5, determinista y testeada |
-| Set de evaluación | 40 vídeos compilados con fronteras etiquetadas, **cosechado de los recortes manuales de L1** |
-| Harness | `python -m tests.eval.segmentation` → precisión, recall, F1 de fronteras, MAE de recuento |
-| **Salida (criterio)** | los mismos clips que en L1 pero obtenidos solos: F1 de fronteras ≥ 0,85, accuracy ≥ 0,9, Spearman ≥ 0,6 y ≤ 0,003 USD/clip |
-
-### L4 — Entregable 4: una sola herramienta · *el cierre del círculo*
-
-| Entregable | Detalle |
-| --- | --- |
-| Orquestador | una entrada (URL o archivo) → L3 → L1 → L2 → render, encima de la cola de `jobs` |
-| Panel único (RF-9) | añade a lo que ya hay: tabla de clips con score y motivo, crear el ranking, sustituir un clip y publicar |
-| Publicación | Upload-Post inmediato y programado, `TIKTOK_POST_MODE`, títulos por plataforma, `publications` |
-| Trazabilidad | `review_decisions`, ledger de coste y manifiesto por render |
-| Endurecimiento | recalibración con los rechazos reales, dedupe entre rankings, runbook, prueba de 50 fuentes/día |
-| **Salida (criterio)** | 20 shorts publicados sin intervención manual salvo la revisión, y **sin salir del panel** |
-
-### 12.1 Backlog priorizado (v2)
-
-1. Ingesta de TikTok y de canales completos con autopilot (portar `cloud/autopilot.py`).
-2. Ajuste fino de bordes de un clip ya cortado (recorte inteligente del inicio lento).
-3. Generación de banners y fotos de referencia con IA + biblioteca por temática.
-4. Voz en off corta («¡mira el #1!») y subtítulos animados.
-5. Recalibración automática del umbral con la analítica real de las publicaciones.
-6. Multi-idioma de textos y A/B de estilos de overlay.
-
----
-
-## 13. Estrategia de verificación
-
-### 13.1 Tests automáticos (CI en cada push)
-
-- **Núcleo puro** (sin FFmpeg, sin red): plan y duración del corte seco, contrato del binding y
-  límites del texto, ranking de 5 a 10 puestos, badges y rótulos (ventana nítida y atenuada),
-  colores por puesto, título en capas y su encaje, script ASS, `argv` de FFmpeg, monotonía del
-  porcentaje y listado del preset. Son `tests/test_{binding,plan,specs,ffmpeg_args,media,
-  manifest,config,overlay_args,progress,preset}.py`.
-- **Integración** (FFmpeg de verdad sobre clips sintéticos, marcados `integration`):
-  `test_assemble_e2e.py` comprueba el criterio de salida de L1 (300 fotogramas y 10,0 s con 5
-  clips de 2 s, sin audio perdido) y `test_overlay_e2e.py` que `ranking.mp4` es 1080x1920/30
-  fps/yuv420p con audio, que se escriben portada y spec **y que el overlay dibuja de verdad**
-  (comparación de píxeles contra la unión). Se saltan si no hay FFmpeg.
-- **Contrato con el panel**: hay tests que leen `web/lib/limits.ts` y `web/lib/preset.ts` para
-  garantizar que el panel no ofrece lo que el motor rechaza (puestos y familias tipográficas).
-- **Pendiente (con L4)**: contrato de publicación con un mock y E2E de navegador.
-
-### 13.2 Evaluación (offline, con datos reales) · *pendiente de L3*
-
-| Set | Tamaño | Métrica de aceptación |
-| --- | --- | --- |
-| Segmentación | 40 vídeos etiquetados | F1 de fronteras ±0,5 s ≥ 0,85; accuracy compilado/único ≥ 0,9 |
-| Screening | 200 clips (100 malos conocidos) | precisión de rechazo ≥ 0,95; recall de malos ≥ 0,8 |
-| Calibración de score | 120 clips con score humano | Spearman ≥ 0,6; acuerdo de top-3 ≥ 60 % |
-| End-to-end | 10 compilados reales | short publicable en ≤ 15 min y ≤ 0,30 USD; 0 clips con watermark ajeno |
-
-Los sets, sus etiquetas y los informes viven en `tests/eval/` y `docs/eval/`, versionados, porque
-cada cambio de pesos o de prompt debe poder compararse contra la medición anterior. Junto con el
-set de segmentación hay que escribir la **guía de etiquetado** («qué es un clip» para el
-etiquetado humano: los tutoriales cuentan un chiste como una unidad, y si se marcan fronteras de
-plano se mide contra la definición equivocada).
-
-### 13.3 Criterios de «hecho»
-
-1. Requisitos del milestone implementados y con criterios de aceptación **medidos**, no supuestos.
-2. Tests nuevos y existentes en verde, CI verde.
-3. Sin secretos ni datos de terceros en el repo, commits o logs.
-4. Documentación actualizada (este RPD, ADR si cambió una decisión, runbook si cambió la operación).
+> El **plan de ejecución (§12)** y la **estrategia de verificación (§13)** están en
+> `docs/plan/openRanks-plan.md`. La numeración se conserva entre ambos documentos.
 
 ---
 
@@ -1124,7 +891,8 @@ plano se mide contra la definición equivocada).
 | `OPENRANKS_WIDTH` / `OPENRANKS_HEIGHT` | `1080` / `1920` | Lienzo de salida |
 | `OPENRANKS_FPS` | `30` | Fotogramas por segundo |
 | `OPENRANKS_FIT` | `auto` | Encuadre del clip (`auto` \| `band` \| `contain` \| `cover`) |
-| `OPENRANKS_CRF` / `OPENRANKS_PRESET` | `19` / `medium` | Calidad y preset de x264 |
+| `OPENRANKS_CRF` / `OPENRANKS_PRESET` | `19` / `medium` | Calidad y preset de x264 (no confundir con el preset visual) |
+| `OPENRANKS_AUDIO_BITRATE` / `OPENRANKS_SAMPLE_RATE` | `192k` / `48000` | Audio de los tramos normalizados |
 | `OPENRANKS_LOUDNESS_LUFS` | `-14.0` | Objetivo de loudness |
 | `OPENRANKS_MIN_CLIP_SECONDS` / `MAX_CLIP_SECONDS` | `1.0` / `30.0` | Banda por clip |
 | `OPENRANKS_MIN_TOTAL_SECONDS` / `MAX_TOTAL_SECONDS` | `30.0` / `58.0` | Banda del vídeo unido |

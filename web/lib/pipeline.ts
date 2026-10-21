@@ -16,7 +16,7 @@ import {
   uploadedPositions,
 } from "./jobs";
 import { PROJECT_ROOT, resolveEngine } from "./paths";
-import { PRESET_PATH } from "./preset";
+import { engineEnv } from "./preset";
 import { parseProgressLine } from "./progress";
 
 /** Procesos en marcha, para que un doble clic no arranque dos ensamblados. */
@@ -112,13 +112,7 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
     cwd: PROJECT_ROOT,
     // El montaje usa el preset guardado (si existe) para no divergir de la vista previa,
     // y el número de puestos de **este** trabajo.
-    env: {
-      ...process.env,
-      PYTHONIOENCODING: "utf-8",
-      PYTHONUTF8: "1",
-      OPENRANKS_PRESET_FILE: PRESET_PATH,
-      OPENRANKS_ITEMS: String(expected),
-    },
+    env: engineEnv({ OPENRANKS_ITEMS: String(expected) }),
     windowsHide: true,
   });
   running.set(id, child);

@@ -3,7 +3,7 @@
 Servicio de generación y publicación de shorts de ranking a partir de vídeo largo.
 Este repositorio implementa, por ahora, el **ensamblador (L1)**, el **editor de la
 plantilla (L2)** y el **panel de operación** que los encadena
-(`docs/rpd/openRanks-plan.md`, §12).
+(`docs/plan/openRanks-plan.md`, §12; el producto y sus reglas, en `docs/rpd/openRanks-rpd.md`).
 
 ## Qué entrega cada capa
 
@@ -218,7 +218,7 @@ vuelve a los valores de fábrica. Solo se aceptan las claves de la tabla
 (`EDITABLE_SECTIONS` más `font` e `italic`): un archivo manipulado no puede colar otros
 ajustes.
 
-Coordenadas sobre un lienzo de **1080x1920** (la zona segura está en §9.1 del plan).
+Coordenadas sobre un lienzo de **1080x1920** (la zona segura está en el RPD §9.1).
 Después de tocar algo: `python -m pytest -q` y, para verlo, `openranks preview` (dibuja
 el overlay sobre **negro** en un PNG, sin clips ni montaje) o `openranks render` sobre
 cualquier `union.mp4` ya montado. El script ASS que sale de ahí queda en
@@ -301,7 +301,7 @@ El binding es lo único que se escribe a mano:
 
 `position: 1` es el mejor clip: cierra el vídeo. Las rutas se resuelven **relativas al
 JSON**, así que el binding es portable. El **subtítulo** es opcional: si falta o está
-vacío, el vídeo sale sin él. Los límites de texto de §9.5 (28 caracteres por capa de
+vacío, el vídeo sale sin él. Los límites de texto del RPD §9.5 (40 caracteres de
 título, 40 en el subtítulo, 24 caracteres / 4 palabras por nombre) se validan al entrar:
 si el texto no cabe, falla el *input*, nunca el render.
 
@@ -383,10 +383,12 @@ openranks/
 web/             # panel Next.js (App Router): subir, montar, ver y descargar
 scripts/         # clips sintéticos para probar a mano
 tests/           # núcleo puro + integración real
+docs/rpd/        # RPD: qué es el producto y por qué
+docs/plan/       # plan: orden de construcción, estado y verificación
 ```
 
 `core/` no importa nada fuera de la stdlib: la lógica de decisión se testea sin FFmpeg
-(§7.6 del plan). Los comandos de FFmpeg se **construyen** en `core/ffmpeg.py` y
+(§7.6 del RPD). Los comandos de FFmpeg se **construyen** en `core/ffmpeg.py` y
 `core/overlay.py`, y se **ejecutan** en `assemble.py` / `overlay.py`.
 
 ## Detalles de implementación que importan
@@ -395,7 +397,7 @@ tests/           # núcleo puro + integración real
   lineal con los valores medidos. Así la unión cae en −14 LUFS sin bombeo.
 - **El overlay es ASS, no `drawtext`**: libass resuelve la fuente por nombre (sin
   escapar rutas en la cadena de filtros) y permite cambiar el color del número dentro
-  de una misma línea (`{\c&H..&}5`). Es el renderer del plan (§9), sin dependencias de
+  de una misma línea (`{\c&H..&}5`). Es el renderer del RPD (§9), sin dependencias de
   Node ni assets: el motor que ya hace L1 dibuja también L2.
 - **El audio de L2 se copia** (`-c:a copy`): L1 ya lo normalizó y no queremos perder
   esa medición ni gastar una generación de AAC.
@@ -419,7 +421,7 @@ tests/           # núcleo puro + integración real
   3.11+ cualquiera y el FFmpeg estático de npm. Si algún día sobran los procesos
   hijos, las alternativas son Docker (una imagen con motor + FFmpeg) o portar el
   motor a TypeScript (son ~3.200 líneas de Python: L1, L2, plan, specs y overlay ASS).
-- Pendiente de L2, ya previsto en el plan: **banner con la foto de referencia**
+- Pendiente de L2, ya previsto en el RPD: **banner con la foto de referencia**
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van
   desactivados, §9.2, y requieren assets propios).
 - **L3** es la extractora (segmentación, screening, scoring, selección) — el riesgo

@@ -1,7 +1,7 @@
 """Construcción de comandos FFmpeg.
 
 Este módulo **no ejecuta nada**: devuelve ``argv`` para que el núcleo de decisiones
-se pueda testear sin FFmpeg instalado (§7.6 del plan).
+se pueda testear sin FFmpeg instalado (§7.6 del RPD).
 """
 
 from __future__ import annotations
@@ -43,6 +43,37 @@ def resolve_binary(explicit: str | None, env_var: str, name: str) -> str:
         f"no se encontró `{name}`. Instálalo en el PATH, define {env_var}, "
         f"o en desarrollo: `pip install static-ffmpeg` y `python -c \"import static_ffmpeg; static_ffmpeg.add_paths()\"`"
     )
+
+
+def base_argv(ffmpeg: str, *, loglevel: str = "warning") -> list[str]:
+    """Arranque común de todos los comandos que escriben un archivo.
+
+    Una sola definición evita que el normalizador, el overlay y la vista previa
+    diverjan en `-hide_banner`, `-nostdin` o el nivel de log.
+    """
+    return [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", loglevel, "-y"]
+
+
+def video_encode_argv(config: Config) -> list[str]:
+    """Parámetros de vídeo compartidos por L1 y L2.
+
+    `-video_track_timescale 30000` es obligatorio en la unión por copia de streams;
+    `-profile:v high` mantiene el mismo contrato en los clips, la unión y el ranking.
+    """
+    return [
+        "-c:v",
+        config.video_codec,
+        "-preset",
+        config.preset,
+        "-crf",
+        str(config.crf),
+        "-pix_fmt",
+        config.pix_fmt,
+        "-profile:v",
+        "high",
+        "-video_track_timescale",
+        "30000",
+    ]
 
 
 def video_filter(config: Config, fit: str = "band", crop: Crop | None = None) -> str:
@@ -166,7 +197,7 @@ def normalize_argv(
     cola de audio, y sin acotar el tramo el contenedor crecía ~100 ms por clip, el
     "fotograma congelado" se colaba en cada corte y la unión no cuadraba con la suma.
     """
-    argv = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
+    argv = base_argv(ffmpeg)
     if limit_s is not None:
         argv += ["-t", f"{limit_s:.3f}"]
     argv += ["-i", str(src)]
@@ -178,20 +209,8 @@ def normalize_argv(
     argv += ["-vf", video_filter(config, fit, crop)]
     if has_audio:
         argv += ["-af", loudnorm_filter(config, measured)]
+    argv += video_encode_argv(config)
     argv += [
-        "-c:v",
-        config.video_codec,
-        "-preset",
-        config.preset,
-        "-crf",
-        str(config.crf),
-        "-pix_fmt",
-        config.pix_fmt,
-        "-profile:v",
-        "high",
-        # Mismo timescale en todos los segmentos: requisito de la unión por copia.
-        "-video_track_timescale",
-        "30000",
         "-c:a",
         config.audio_codec,
         "-b:a",

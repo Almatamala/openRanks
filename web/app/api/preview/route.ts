@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 
 import { clampPositions, positionsFor } from "@/lib/limits";
 import { PROJECT_ROOT, resolveEngine } from "@/lib/paths";
-import { PRESET_PATH, sanitizePreset } from "@/lib/preset";
+import { engineEnv, sanitizePreset } from "@/lib/preset";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,12 +53,7 @@ export async function GET(request: Request) {
   }
   argv.push("--ffmpeg", engine.ffmpeg);
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PYTHONIOENCODING: "utf-8",
-    PYTHONUTF8: "1",
-    OPENRANKS_PRESET_FILE: PRESET_PATH,
-  };
+  const env = engineEnv();
   let tempPreset: string | null = null;
   const styleParam = url.searchParams.get("style");
   if (styleParam) {

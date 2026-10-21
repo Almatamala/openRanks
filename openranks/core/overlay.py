@@ -1,4 +1,4 @@
-"""Render del overlay de L2 (plan §9.2, §9.3).
+"""Render del overlay de L2 (RPD §9.2, §9.3).
 
 Igual que ``core/ffmpeg.py``: este módulo **no ejecuta nada**, devuelve ``argv`` y
 texto para que el núcleo se pueda testear sin FFmpeg.
@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 
 from .config import Config
+from .ffmpeg import base_argv, video_encode_argv
 from .specs import RANK_COLORS
 
 # Familias que el panel ofrece y que la imagen de Docker trae instaladas. La de fábrica
@@ -536,12 +537,7 @@ def overlay_argv(
     esa medición (ni generar otra).
     """
     return [
-        ffmpeg,
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-y",
+        *base_argv(ffmpeg),
         "-i",
         str(src),
         "-vf",
@@ -550,18 +546,7 @@ def overlay_argv(
         "0:v:0",
         "-map",
         "0:a:0",
-        "-c:v",
-        config.video_codec,
-        "-preset",
-        config.preset,
-        "-crf",
-        str(config.crf),
-        "-pix_fmt",
-        config.pix_fmt,
-        "-profile:v",
-        "high",
-        "-video_track_timescale",
-        "30000",
+        *video_encode_argv(config),
         "-c:a",
         "copy",
         "-map_metadata",
@@ -580,18 +565,13 @@ def preview_argv(ffmpeg: str, dst: Path, *, ass_file: Path, at_s: float, config:
     """
     seconds = max(0.05, float(at_s)) + 0.05
     return [
-        ffmpeg,
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-y",
+        *base_argv(ffmpeg),
         "-f",
         "lavfi",
         "-i",
         f"color=c=black:s={config.target_width}x{config.target_height}:r={config.fps}:d={seconds:.3f}",
         "-vf",
-        f"ass={escape_filter_path(ass_file)}",
+        video_chain(ass_file),
         "-ss",
         f"{max(0.0, float(at_s)):.3f}",
         "-frames:v",
@@ -603,12 +583,7 @@ def preview_argv(ffmpeg: str, dst: Path, *, ass_file: Path, at_s: float, config:
 def cover_argv(ffmpeg: str, src: Path, dst: Path, *, at_s: float) -> list[str]:
     """Portada: un fotograma de la unión con la escalera ya completa (§9.4)."""
     return [
-        ffmpeg,
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-y",
+        *base_argv(ffmpeg),
         "-ss",
         f"{max(0.0, at_s):.3f}",
         "-i",

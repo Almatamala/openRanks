@@ -37,12 +37,21 @@ def test_the_panel_offers_the_same_positions_as_the_engine():
     assert f"export const POSITIONS_MAX = {config.items_max};" in source
 
 
-def test_text_limits_match_the_plan_9_5():
+def test_text_limits_match_the_rpd_9_5():
     config = Config()
     assert config.title_layer_chars == 40
-    assert config.title_layers_max == 3
+    assert config.title_lines_max == 3
     assert config.label_chars == 24
     assert config.label_words == 4
+
+
+def test_the_panel_validates_the_same_text_limits_as_the_engine():
+    """Regresión: el formulario no puede aceptar un texto que el binding rechaza."""
+    source = PANEL_LIMITS.read_text(encoding="utf-8")
+    config = Config()
+    assert f"titleLayerChars: {config.title_layer_chars}," in source
+    assert f"labelChars: {config.label_chars}," in source
+    assert f"labelWords: {config.label_words}," in source
 
 
 def test_from_env_overrides_every_knob(monkeypatch):

@@ -23,7 +23,7 @@ from .core.media import probe, validate_normalized
 from .core.manifest import sha256_file, utc_now, write_manifest
 from .core.overlay import build_ass, cover_argv, get_style, overlay_argv, preview_argv
 from .core.progress import SPAN_EDIT_ONLY, Progress, ProgressCallback
-from .core.runner import run, tail_lines
+from .core.runner import run, stderr_warnings
 from .core.specs import SpecError, build_spec, labels_from_segments
 
 Logger = Callable[[str], None]
@@ -237,7 +237,7 @@ def render(
     if ranking.exists():
         ranking.unlink()  # si no, ffmpeg puede mezclar la salida anterior
     completed = run(overlay_argv(ffmpeg_bin, union, ranking, ass_file=ass_file, config=cfg))
-    warnings = _tool_warnings(completed.stderr, where="overlay")
+    warnings = stderr_warnings(completed.stderr, where="overlay")
 
     info = probe(ffprobe_bin, ranking)
     check = validate_normalized(info, cfg)
@@ -290,10 +290,3 @@ def render(
         spec=spec,
         extra_warnings=tuple(warnings),
     )
-
-
-def _tool_warnings(stderr: str | None, *, where: str) -> list[str]:
-    text = (stderr or "").strip()
-    if not text:
-        return []
-    return [f"{where}: ffmpeg avisó -> {tail_lines(text, 3)}"]

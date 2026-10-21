@@ -320,7 +320,7 @@ export default function Page() {
   }, [cargarPlantilla]);
 
   // Hay cambios en pantalla que el montaje todavía no usaría: se avisa.
-  const dirty = style !== null && savedStyle !== null && styleKey(style) !== styleKey(savedStyle);
+  const dirty = savedStyle !== null && style !== null && styleKey(style) !== styleKey(savedStyle);
 
   // El deslizador de altura solo recorre el hueco donde el motor mueve el título.
   const titleYBounds: [number, number] = titleYRange ?? preset?.ranges?.titleY ?? [96, 900];
@@ -355,8 +355,9 @@ export default function Page() {
   );
 
   const montar = useCallback(async () => {
-    if (problemList(slots, title, subtitle).length > 0) {
-      setError(problemList(slots, title, subtitle)[0]);
+    const currentProblems = problemList(slots, title, subtitle);
+    if (currentProblems.length > 0) {
+      setError(currentProblems[0]);
       return;
     }
     const token = ++runToken.current;
@@ -480,7 +481,7 @@ export default function Page() {
           <div>
             <h1>openRanks · montar un TOP {positions}</h1>
             <p>
-              Sube los clips, escribe los top y el titulo. El montaje union y edición es automático.
+              Sube los clips, escribe los puestos y el título. La unión y la edición son automáticas.
             </p>
           </div>
         </div>
@@ -646,7 +647,6 @@ export default function Page() {
         <div>
           <section className="card">
             <h2>Plantilla de renderizado</h2>
-            <p></p>
             {previewPanel}
             <div className="actions">
               <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
@@ -954,7 +954,7 @@ function RangeControl({
   );
 }
 
-/** Reúne los problemas del formulario con el mismo límite que valida el motor (§9.5). */
+/** Reúne los problemas del formulario con el mismo límite que valida el motor (RPD §9.5). */
 function problemList(slots: Slot[], title: string, subtitle: string): string[] {
   const list: string[] = [];
   const pending = slots.filter((slot) => !slot.file);

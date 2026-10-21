@@ -1,4 +1,4 @@
-"""Contrato de entrada: posiciones, textos (§9.5) y orden de reproducción."""
+"""Contrato de entrada: posiciones, textos (RPD §9.5) y orden de reproducción."""
 
 from __future__ import annotations
 
@@ -81,10 +81,9 @@ def test_empty_label_is_rejected():
         validate_binding(Binding(title="TOP 5 GATOS", items=tuple(items)), Config(), check_paths=False)
 
 
-def test_title_layer_over_limit_is_rejected():
-    binding = Binding(title="TOP 5 GATOS", items=_items(), title_layers=("X" * 41,))
-    with pytest.raises(BindingError, match="capa de título 1"):
-        validate_binding(binding, Config(), check_paths=False)
+def test_title_over_limit_is_rejected():
+    with pytest.raises(BindingError, match="título"):
+        validate_binding(Binding(title="X" * 41, items=_items()), Config(), check_paths=False)
 
 
 def test_the_subtitle_is_optional_but_has_the_same_length_limit_as_a_title_layer():
@@ -93,10 +92,10 @@ def test_the_subtitle_is_optional_but_has_the_same_length_limit_as_a_title_layer
         validate_binding(Binding(title="TOP 5 GATOS", items=_items(), subtitle="X" * 41), Config(), check_paths=False)
 
 
-def test_too_many_title_layers_are_rejected():
-    binding = Binding(title="TOP 5 GATOS", items=_items(), title_layers=("TOP", "5", "GATOS", "EXTRA"))
-    with pytest.raises(BindingError, match="capas de título"):
-        validate_binding(binding, Config(), check_paths=False)
+def test_title_length_ignores_the_colour_marks():
+    # El panel cuenta 40 visibles aunque haya 42 caracteres con las marcas; el motor
+    # tiene que aceptar exactamente lo mismo.
+    validate_binding(Binding(title="*" + "X" * 40 + "*", items=_items()), Config(), check_paths=False)
 
 
 def test_missing_file_is_reported(tmp_path):

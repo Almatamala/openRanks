@@ -8,11 +8,12 @@ generación de vídeo) mucho menos.
 
 El porcentaje es lo único que necesita el panel para calcular el tiempo restante
 estimado, así que la estimación sale de datos reales y no de un temporizador
-inventado. Módulo **puro** (§7.6): no ejecuta nada ni toca FFmpeg.
+inventado. Módulo **puro** (§7.6 del RPD): no ejecuta nada ni toca FFmpeg.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Callable
 
@@ -125,7 +126,6 @@ def parse_event(line: str, *, prefix: str = PROGRESS_PREFIX) -> dict | None:
     """
     if not line.startswith(prefix):
         return None
-    import json
 
     try:
         payload = json.loads(line[len(prefix) :])

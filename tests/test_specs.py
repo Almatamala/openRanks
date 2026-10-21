@@ -343,7 +343,7 @@ def test_the_title_is_fitted_to_the_space_it_has():
     )
     title = spec["title"]
     assert title["size"] < 220
-    assert 1 < len(title["lines"]) <= Config().title_layers_max
+    assert 1 < len(title["lines"]) <= Config().title_lines_max
     # Las palabras no se pierden ni se reordenan al repartirlas.
     words = [word["text"] for line in title["lines"] for word in line]
     assert words == "TOP 8 MOMENTOS LOCOS DE GATOS".split()

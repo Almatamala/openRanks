@@ -1,6 +1,6 @@
-"""Especificación del overlay de L2 (plan §9.2–9.4).
+"""Especificación del overlay de L2 (RPD §9.2–9.4).
 
-Función pura y testeable sin FFmpeg (§7.6). El montaje es **siempre de corte seco**,
+Función pura y testeable sin FFmpeg (§7.6 del RPD). El montaje es **siempre de corte seco**,
 así que la ventana temporal de cada badge y de cada rótulo es la suma acumulada de
 los tramos anteriores: el reparto del tiempo tiene que cuadrar con la unión o el
 último badge se desincroniza del vídeo.
@@ -39,6 +39,9 @@ ACCENT_BLUE = "#3B82F6"
 SAFE_TOP = 96  # zona segura: por encima de esto hay UI de la plataforma
 TITLE_SIDE_MARGIN = 96  # zona segura: `x > 960` es botonera; simétrico a la izquierda
 TITLE_BOTTOM_GAP = 24  # aire entre el título y la primera casilla de la escalera
+# El título puede entrar hasta 20 px en ese aire sin tocar la escalera: el hueco real
+# del ajuste de altura llega hasta `y_top - TITLE_BOTTOM_GAP + TITLE_CAP_EXTRA`.
+TITLE_CAP_EXTRA = 20
 TITLE_LINE_HEIGHT = 1.16  # interlineado, en múltiplos del tamaño de la fuente
 TITLE_MIN_SIZE = 40  # por debajo de esto el título no se lee
 # Subtítulo: opcional, **siempre debajo del título**, con su propio tamaño (§9.2).
@@ -261,6 +264,11 @@ def fit_title(
     }
 
 
+def _block_height(line_height: float, lines: int) -> float:
+    """Alto de un bloque de ``lines`` renglones (al menos uno, aunque venga vacío)."""
+    return line_height * max(1, int(lines))
+
+
 def title_anchor_y(*, lines: int, line_height: float, y: float, bottom_limit: float) -> float:
     """Altura del **centro** del bloque de título, sin salirse de la zona segura.
 
@@ -268,7 +276,7 @@ def title_anchor_y(*, lines: int, line_height: float, y: float, bottom_limit: fl
     un tamaño grande) se saldría por arriba o chocaría con la escalera, se desliza hasta
     caber. El tamaño ya viene reducido por ``fit_title``, así que siempre hay hueco.
     """
-    block = max(line_height, line_height * max(1, lines))
+    block = _block_height(line_height, lines)
     top = min(max(y - line_height / 2, SAFE_TOP), max(SAFE_TOP, bottom_limit - block))
     return round(top + block / 2, 3)
 
@@ -280,7 +288,7 @@ def title_y_bounds(*, lines: int, line_height: float, bottom_limit: float) -> tu
     escalera por abajo, así que un título de varias líneas (o muy grande) deja poco
     margen. El panel usa este recorrido para que el deslizador no tenga tramos muertos.
     """
-    block = max(line_height, line_height * max(1, lines))
+    block = _block_height(line_height, lines)
     low = SAFE_TOP + line_height / 2
     high = max(low, bottom_limit - block + line_height / 2)
     return round(low, 3), round(high, 3)
@@ -292,7 +300,7 @@ def subtitle_anchor_y(*, lines: int, line_height: float, top: float, bottom_limi
     El subtítulo no tiene posición propia en el preset (siempre va debajo del título);
     solo se desliza hacia arriba si su bloque no cupiera antes de la escalera.
     """
-    block = max(line_height, line_height * max(1, lines))
+    block = _block_height(line_height, lines)
     start = min(max(top, SAFE_TOP), max(SAFE_TOP, bottom_limit - block))
     return round(start + block / 2, 3)
 
@@ -413,7 +421,10 @@ def build_spec(
             blue_color=title_style.get("accent_blue", ACCENT_BLUE),
         )
     )
-    bottom_limit = float(ladder["y_top"]) - TITLE_BOTTOM_GAP 
+    bottom_limit = float(ladder["y_top"]) - TITLE_BOTTOM_GAP
+    # El título puede bajar un poco más que el hueco teórico (pero nunca hasta la
+    # escalera); el subtítulo, no: se queda dentro del hueco libre.
+    title_bottom_limit_full = bottom_limit + TITLE_CAP_EXTRA
     subtitle_text = subtitle.strip()
     safe_width = max(1.0, config.target_width - 2 * TITLE_SIDE_MARGIN)
     subtitle_layers = [{"text": subtitle_text, "color": subtitle_style["color"]}] if subtitle_text else []
@@ -430,15 +441,15 @@ def build_spec(
             max_height=max(1.0, bottom_limit),
             min_size=SUBTITLE_MIN_SIZE,
         )
-        subtitle_reserve = (
-            draft_subtitle["line_height"] * max(1, len(draft_subtitle["lines"])) + SUBTITLE_GAP
-        )
-    title_bottom_limit = max(SAFE_TOP, bottom_limit - subtitle_reserve)
+        subtitle_reserve = _block_height(
+            draft_subtitle["line_height"], len(draft_subtitle["lines"])
+        ) + SUBTITLE_GAP
+    title_bottom_limit = max(SAFE_TOP, title_bottom_limit_full - subtitle_reserve)
     fitted = fit_title(
         title_layers_list,
         size=float(title_style["size"]),
         max_width=safe_width,
-        max_lines=config.title_layers_max,
+        max_lines=config.title_lines_max,
         max_height=max(1.0, title_bottom_limit - SAFE_TOP),
     )
     title_anchor = title_anchor_y(
@@ -447,7 +458,7 @@ def build_spec(
         y=float(title_style["y"]),
         bottom_limit=title_bottom_limit,
     )
-    title_block = max(fitted["line_height"], fitted["line_height"] * max(1, len(fitted["lines"])))
+    title_block = _block_height(fitted["line_height"], len(fitted["lines"]))
     title_y_min, title_y_max = title_y_bounds(
         lines=len(fitted["lines"]),
         line_height=fitted["line_height"],

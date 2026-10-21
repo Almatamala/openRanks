@@ -1,4 +1,4 @@
-"""Configuración de L1, toda por entorno con prefijo ``OPENRANKS_`` (§17.1 del plan)."""
+"""Configuración de L1, toda por entorno con prefijo ``OPENRANKS_`` (§17.1 del RPD)."""
 
 from __future__ import annotations
 
@@ -69,7 +69,9 @@ class Config:
 
     # Límites del texto editable (§9.5). Si el texto no cabe, el que falla es el input.
     title_layer_chars: int = 40
-    title_layers_max: int = 3
+    # Renglones en los que `fit_title` puede repartir el título (no "capas" de texto:
+    # el título es una sola cadena con marcas de color).
+    title_lines_max: int = 3
     label_words: int = 4
     label_chars: int = 24
 

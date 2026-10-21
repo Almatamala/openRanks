@@ -32,6 +32,34 @@ def tail_lines(text: str, limit: int = 20) -> str:
     return "\n".join(lines[-limit:])
 
 
+# Avisos de FFmpeg que no rompen el resultado. La unión por copia de streams reetiqueta
+# el DTS del AAC (+1 tick) y no queremos repetir esa línea por cada tramo.
+BENIGN_FFMPEG_MARKERS: tuple[str, ...] = ("Non-monotonic DTS",)
+
+
+def stderr_warnings(stderr: str | None, *, where: str) -> list[str]:
+    """Convierte el stderr de FFmpeg en avisos para el manifiesto y el panel.
+
+    Los avisos conocidos y benignos se resumen en una línea; el resto se conserva con
+    su cola. Es el mismo criterio para L1 y L2, así que un mensaje no cambia de forma
+    según la capa que lo produjo.
+    """
+    lines = [line for line in (stderr or "").splitlines() if line.strip()]
+    if not lines:
+        return []
+    benign = [line for line in lines if any(marker in line for marker in BENIGN_FFMPEG_MARKERS)]
+    other = [line for line in lines if not any(marker in line for marker in BENIGN_FFMPEG_MARKERS)]
+    warnings: list[str] = []
+    if benign:
+        warnings.append(
+            f"{where}: {len(benign)} avisos benignos de ffmpeg (DTS no monótono al unir AAC "
+            "por copia; ffmpeg lo reetiqueta y la unión queda monótona)"
+        )
+    if other:
+        warnings.append(f"{where}: ffmpeg avisó -> {tail_lines(chr(10).join(other), 3)}")
+    return warnings
+
+
 def run(
     argv: list[str] | tuple[str, ...],
     *,

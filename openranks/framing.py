@@ -28,7 +28,10 @@ from .core.framing import (
     GrayFrame,
     analyze_frames,
     decision_without_analysis,
+    even_floor,
     needs_analysis,
+    normalise,
+    p95,
     refine_edge,
 )
 from .core.media import MediaInfo
@@ -47,24 +50,6 @@ class AnalysisError(FramingError):
 
 def _even(value: int) -> int:
     return max(2, int(round(float(value) / 2.0)) * 2)
-
-
-def _even_floor(value: int) -> int:
-    return max(0, value - (value % 2))
-
-
-def _p95(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, int(round(0.95 * (len(ordered) - 1)))))
-    return float(ordered[index])
-
-
-def _normalise(values: list[float], scale: float) -> list[float]:
-    if scale <= 0:
-        return [0.0] * len(values)
-    return [float(value) / scale for value in values]
 
 
 def visible_size(info: MediaInfo) -> tuple[int, int]:
@@ -198,7 +183,7 @@ def _strip_column_scores(frames: list[GrayFrame], x0: int, x1: int) -> list[floa
                 local[x - x0] += abs(pixels[base + x + 1] - pixels[base + x - 1])
         local[0] = local[1]
         local[-1] = local[-2]
-        per_frame.append(_normalise(local, _p95(local)))
+        per_frame.append(normalise(local, p95(local)))
     return [median([frame[x] for frame in per_frame]) for x in range(x1 - x0)]
 
 
@@ -219,7 +204,7 @@ def _strip_row_scores(frames: list[GrayFrame], y0: int, y1: int, x0: int, x1: in
                 local[y - y0] += abs(pixels[base + x + width] - pixels[base + x - width])
         local[0] = local[1]
         local[-1] = local[-2]
-        per_frame.append(_normalise(local, _p95(local)))
+        per_frame.append(normalise(local, p95(local)))
     return [median([frame[y] for frame in per_frame]) for y in range(y1 - y0)]
 
 
@@ -271,12 +256,12 @@ def refine_crop(crop: Crop, frames: list[GrayFrame], visible: tuple[int, int]) -
     if right - left < 16 or bottom - top < 16:
         return crop, warnings
 
-    left, top = _even_floor(left), _even_floor(top)
+    left, top = even_floor(left), even_floor(top)
     new_width, new_height = _even(right - left), _even(bottom - top)
     if left + new_width > width:
-        left = _even_floor(width - new_width)
+        left = even_floor(width - new_width)
     if top + new_height > height:
-        top = _even_floor(height - new_height)
+        top = even_floor(height - new_height)
     if left < 0 or top < 0 or new_width <= 0 or new_height <= 0:
         return crop, warnings
 

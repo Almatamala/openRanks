@@ -1,6 +1,6 @@
 """Decisión de encuadre de L1: ¿el clip ya es vertical o hay que aislar el área útil?
 
-Función pura y testeable sin FFmpeg (§7.6). El análisis real de fotogramas vive en
+Función pura y testeable sin FFmpeg (§7.6 del RPD). El análisis real de fotogramas vive en
 ``openranks/framing.py``; aquí solo se decide, a partir de fotogramas en gris ya
 extraídos, qué recorte hay que aplicar.
 
@@ -124,7 +124,8 @@ def _median(values: Sequence[float]) -> float:
     return float(median(values)) if values else 0.0
 
 
-def _p95(values: Sequence[float]) -> float:
+def p95(values: Sequence[float]) -> float:
+    """Percentil 95 (interpolación por índice), usado para normalizar la nitidez."""
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -132,7 +133,8 @@ def _p95(values: Sequence[float]) -> float:
     return float(ordered[index])
 
 
-def _normalise(values: Sequence[float], scale: float) -> list[float]:
+def normalise(values: Sequence[float], scale: float) -> list[float]:
+    """Divide por ``scale``; sin escala, devuelve ceros en vez de dividir por cero."""
     if scale <= 0:
         return [0.0] * len(values)
     return [float(value) / scale for value in values]
@@ -152,12 +154,9 @@ def _smooth(values: Sequence[float], window: int) -> list[float]:
     return smoothed
 
 
-def _even(value: int) -> int:
-    return int(value) - (int(value) % 2)
-
-
-def _even_floor(value: int) -> int:
-    return max(0, value - (value % 2))
+def even_floor(value: int) -> int:
+    """Redondea hacia abajo al par inmediato, nunca por debajo de cero."""
+    return max(0, int(value) - (int(value) % 2))
 
 
 def classify_size(visible_size: tuple[int, int], target: tuple[int, int] = (1080, 1920)) -> tuple[str, str, str]:
@@ -247,7 +246,7 @@ def _column_scores(frames: Sequence[GrayFrame]) -> list[float]:
         # Los bordes heredan del vecino: no hay gradiente fuera del cuadro.
         scores[0] = scores[1]
         scores[-1] = scores[-2]
-        per_frame.append(_normalise(scores, _p95(scores)))
+        per_frame.append(normalise(scores, p95(scores)))
     return [_median([frame_scores[x] for frame_scores in per_frame]) for x in range(width)]
 
 
@@ -270,7 +269,7 @@ def _temporal_column_scores(frames: Sequence[GrayFrame]) -> list[float]:
                 scores[x] += abs(previous.pixels[index] - current.pixels[index])
         scores[0] = scores[1]
         scores[-1] = scores[-2]
-        per_pair.append(_normalise(scores, _p95(scores)))
+        per_pair.append(normalise(scores, p95(scores)))
     return [_median([pair[x] for pair in per_pair]) for x in range(width)]
 
 
@@ -292,7 +291,7 @@ def _row_scores(frames: Sequence[GrayFrame], x0: int, x1: int) -> list[float]:
                 )
         scores[0] = scores[1]
         scores[-1] = scores[-2]
-        per_frame.append(_normalise(scores, _p95(scores)))
+        per_frame.append(normalise(scores, p95(scores)))
     return [_median([frame_scores[y] for frame_scores in per_frame]) for y in range(height)]
 
 
@@ -419,14 +418,14 @@ def _crop_from_run(
     if end - start < 8:
         return None
 
-    start = _even_floor(start)
-    size = _even(end - start)
+    start = even_floor(start)
+    size = even_floor(end - start)
     if size <= 0:
         return None
 
     limit = source_size[0] if axis == "x" else source_size[1]
     if start + size > limit:
-        start = _even_floor(limit - size)
+        start = even_floor(limit - size)
     if start < 0:
         return None
     if size < limit * MIN_USEFUL_RATIO or size > limit * MAX_USEFUL_RATIO:

@@ -1,6 +1,6 @@
 """Manifiesto del render: trazabilidad sin filtrar rutas del host.
 
-Regla de repositorio público (plan §17.1 y CLAUDE.md del repo de referencia): el
+Regla de repositorio público (RPD §17.1 y CLAUDE.md del repo de referencia): el
 manifiesto guarda **nombres** de archivo y hashes, nunca rutas absolutas.
 """
 

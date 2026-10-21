@@ -21,6 +21,23 @@ export interface EditablePreset {
 export const PRESET_PATH = path.join(JOBS_DIR, "preset.json");
 
 /**
+ * Entorno común de los procesos del motor que leen o dibujan el preset.
+ *
+ * El panel, la vista previa y el montaje tienen que resolver **la misma** plantilla;
+ * centralizar el entorno evita que uno de los tres se olvide de `OPENRANKS_PRESET_FILE`
+ * o deja de forzar UTF-8 en Windows.
+ */
+export function engineEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1",
+    OPENRANKS_PRESET_FILE: PRESET_PATH,
+    ...overrides,
+  } as NodeJS.ProcessEnv;
+}
+
+/**
  * Familias que la imagen de Docker trae instaladas (más Symbola para las medallas).
  * `URW Gothic` es la **sans-serif geométrica**. Tiene que ser la misma lista que
  * `FONT_FAMILIES` en `openranks/core/overlay.py`: hay un test que lo comprueba.
