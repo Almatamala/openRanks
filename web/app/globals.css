@@ -120,15 +120,47 @@ header.top p {
 }
 
 .slot {
+  position: relative;
   border: 1px solid var(--border);
   background: var(--panel-2);
   border-radius: 12px;
   padding: 14px;
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: 148px minmax(0, 1fr);
   gap: 14px;
   align-items: center;
   margin-bottom: 10px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Todo el puesto es zona de soltar: el borde y el fondo lo anuncian al arrastrar. */
+.slot.drag-over {
+  border-color: var(--accent);
+  background: rgba(255, 214, 10, 0.07);
+}
+
+.slot-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(13, 15, 20, 0.82);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .slot {
+    grid-template-columns: 108px minmax(0, 1fr);
+  }
 }
 
 .slot .rank {
@@ -142,9 +174,37 @@ header.top p {
   line-height: 1.1;
 }
 
-.slot .rank .when {
+/* Miniatura del clip en el hueco del número, con el puesto en la esquina. */
+.slot-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.slot-thumb video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  object-fit: cover;
+  display: block;
+}
+
+.slot-thumb-number {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--accent);
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.4;
+  z-index: 2;
 }
 
 .slot .fields {
@@ -356,6 +416,40 @@ button:disabled {
   margin-top: 6px;
 }
 
+/* El botón de montar ocupa todo el ancho de su casilla. */
+.actions.montar-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.actions.montar-actions button {
+  width: 100%;
+}
+
+/* El móvil con el render y su botón, centrados en la tarjeta. */
+.preview-card .phone {
+  margin-inline: auto;
+}
+
+.preview-card .actions {
+  justify-content: center;
+}
+
+/* Sin borde ni fondo: el botón de montar se apoya directamente sobre la página. */
+.card.montar-card {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/* Los avisos del montaje, centrados y con aire respecto al botón. */
+.montar-card .hint,
+.montar-card .alert.error {
+  text-align: center;
+  margin: 14px 0 0;
+}
+
 .alert {
   border-radius: 10px;
   padding: 12px 14px;
@@ -550,6 +644,18 @@ footer.note {
   gap: 6px;
 }
 
+/* Etiqueta a la izquierda y valor editable a la derecha. */
+.control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.control-head label.field {
+  margin-bottom: 0;
+}
+
 .control.switch {
   display: flex;
   align-items: center;
@@ -562,9 +668,11 @@ footer.note {
   accent-color: var(--accent);
 }
 
-.value-pill {
+/* Valor numérico editable: se clica, se escribe y se ajusta al rango al salir. */
+input.value-pill {
   display: inline-block;
-  min-width: 44px;
+  flex: 0 0 auto;
+  width: 64px;
   text-align: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
@@ -572,8 +680,13 @@ footer.note {
   background: #0b0d12;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 1px 8px;
-  margin-left: 6px;
+  padding: 3px 8px;
+  cursor: text;
+}
+
+input.value-pill:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .drawer-stage {
@@ -582,11 +695,6 @@ footer.note {
   display: grid;
   gap: 10px;
   justify-items: center;
-}
-
-.hint.center {
-  text-align: center;
-  margin: 0;
 }
 
 .hint.ok {
@@ -644,6 +752,24 @@ footer.note {
   justify-content: center;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* Velo con la rueda de carga encima del móvil mientras se dibuja el overlay. */
+.phone-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 11, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.phone-loading .spinner {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
 }
 
 code {

@@ -131,6 +131,8 @@ export default function Page() {
   const [pollNonce, setPollNonce] = useState(0);
   const jobPromise = useRef<Promise<string> | null>(null);
   const pickTokens = useRef<Record<number, number>>({});
+  // Inputs de archivo por puesto: al soltar un clip se refleja su nombre en el selector.
+  const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
   const uploadsInFlight = useRef<Set<number>>(new Set());
   const [preset, setPreset] = useState<Preset | null>(null);
   const [presetError, setPresetError] = useState<string | null>(null);
@@ -143,6 +145,8 @@ export default function Page() {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
+  // Puesto sobre el que se está arrastrando un archivo: resalta toda su casilla.
+  const [dragSlot, setDragSlot] = useState<number | null>(null);
   // Recorrido **real** de la altura del título, calculado por el motor: fuera de él
   // el render no cambia (el título ya está pegado a la zona segura o a la escalera).
   const [titleYRange, setTitleYRange] = useState<[number, number] | null>(null);
@@ -569,16 +573,17 @@ export default function Page() {
         ) : (
           <div className="phone-screen empty">Preparando…</div>
         )}
+        {rendering ? (
+          <div className="phone-loading" role="status" aria-label="Dibujando la vista previa">
+            <span className="spinner" aria-hidden="true" />
+          </div>
+        ) : null}
       </Phone>
       {previewFailed ? (
         <div className="alert error" role="alert">
           No se pudo dibujar el render exacto del motor.
         </div>
       ) : null}
-      <p className="hint center">
-        Los cambios tardan unos segundos en verse
-      </p>
-      {rendering ? <p className="hint center">Dibujando el overlay…</p> : null}
     </>
   );
 
@@ -626,12 +631,52 @@ export default function Page() {
               normalizado).
             </p>
             {slots.map((slot) => (
-              <div className="slot" key={slot.position}>
-                <div className="rank">
-                  <div className="num">#{slot.position}</div>
-                  <div className="when">
-                    {slot.position === positions ? "abre" : slot.position === 1 ? "cierra" : ""}
+              <div
+                className={`slot ${dragSlot === slot.position ? "drag-over" : ""}`}
+                key={slot.position}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  if (!running) setDragSlot(slot.position);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={(event) => {
+                  const next = event.relatedTarget;
+                  if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+                    setDragSlot((current) => (current === slot.position ? null : current));
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragSlot(null);
+                  if (running) return;
+                  const file = event.dataTransfer?.files?.[0];
+                  if (!file) return;
+                  // El selector nativo solo cambia su etiqueta si el archivo entra en su
+                  // lista; reflejarlo aquí evita que siga diciendo «sin archivos seleccionados».
+                  const input = fileInputs.current[slot.position];
+                  if (input) {
+                    try {
+                      const transfer = new DataTransfer();
+                      transfer.items.add(file);
+                      input.files = transfer.files;
+                    } catch {
+                      // Sin soporte para asignar archivos: el clip se sube igual.
+                    }
+                  }
+                  onPick(slot.position, file);
+                }}
+              >
+                {dragSlot === slot.position ? (
+                  <div className="slot-drop-hint" aria-hidden="true">
+                    Suelta el clip en este puesto
                   </div>
+                ) : null}
+                <div className="rank">
+                  {slot.file ? (
+                    <SlotThumb file={slot.file} position={slot.position} />
+                  ) : (
+                    <div className="num">#{slot.position}</div>
+                  )}
                 </div>
                 <div className="fields">
                   <div className="file-field">
@@ -640,6 +685,9 @@ export default function Page() {
                       accept="video/*"
                       aria-label={`Archivo del puesto ${slot.position}`}
                       disabled={running}
+                      ref={(node) => {
+                        fileInputs.current[slot.position] = node;
+                      }}
                       onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
                     />
                     <ClipBadge status={prep[slot.position]} />
@@ -673,10 +721,7 @@ export default function Page() {
             <h2>
               <span className="step">2</span>El título y el subtítulo
             </h2>
-            <p className="hint">
-              El número se pinta solo, con su propio color. Máximo {LIMITS.titleLayerChars} caracteres (las marcas
-              de color no cuentan).
-            </p>
+
             <label className="field" htmlFor="title">
               Título del vídeo
             </label>
@@ -730,10 +775,20 @@ export default function Page() {
             </div>
           </section>
 
-          <section className="card">
-            <h2>Montar el ranking</h2>
-
+        </div>
+        <div>
+          <section className="card preview-card">
+            <h2>Plantilla de renderizado</h2>
+            {previewPanel}
             <div className="actions">
+              <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
+                Ajustar la plantilla
+              </button>
+            </div>
+          </section>
+
+          <section className="card montar-card">
+            <div className="actions montar-actions">
               <button
                 className="primary"
                 onClick={montar}
@@ -747,32 +802,17 @@ export default function Page() {
                 </button>
               ) : null}
             </div>
-            {job && !allReady ? (
-              <p className="hint">
-                Cada puesto se prepara solo al subir su clip: el tick indica que ese vídeo ya está listo.
-              </p>
-            ) : null}
             {problems.length > 0 && !error ? <p className="hint">{problems[0]}</p> : null}
             {error ? (
-              <div className="alert error" role="alert">
+              <div className="alert error " role="alert">
                 {error}
               </div>
             ) : null}
           </section>
-        </div>
-        <div>
-          <section className="card">
-            <h2>Plantilla de renderizado</h2>
-            {previewPanel}
-            <div className="actions">
-              <button className="secondary" type="button" onClick={() => setDrawerOpen(true)}>
-                Ajustar la plantilla
-              </button>
-            </div>
-          </section>
 
           <section className="card" aria-live="polite">
             <h2>Resultado</h2>
+
             {job ? (
               <>
                 <div className="phase">
@@ -850,6 +890,7 @@ export default function Page() {
               </p>
             )}
           </section>
+
         </div>
       </div>
 
@@ -883,9 +924,6 @@ export default function Page() {
                           </option>
                         ))}
                       </select>
-                      {preset?.fontNotes?.[style.font] ? (
-                        <p className="hint">{preset.fontNotes[style.font]}</p>
-                      ) : null}
                     </div>
 
                     <label className="control switch">
@@ -1013,6 +1051,38 @@ function styleKey(value: EditablePreset): string {
   ].join("|");
 }
 
+/**
+ * Miniatura del clip elegido, en el hueco del número del puesto, con ese número
+ * en la esquina superior izquierda. El objeto URL se crea y se libera con el archivo.
+ */
+function SlotThumb({ file, position }: { file: File; position: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+
+  return (
+    <div className="slot-thumb">
+      {url ? (
+        <video
+          src={url}
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={`Miniatura reproducible del clip del puesto ${position}`}
+          onLoadedMetadata={(event) => {
+            event.currentTarget.currentTime = 0.1;
+          }}
+        />
+      ) : null}
+      <span className="slot-thumb-number">#{position}</span>
+    </div>
+  );
+}
+
 /** Móvil: el marco es decorativo, dentro va el render exacto del motor. */
 function Phone({ children }: { children: ReactNode }) {
   return (
@@ -1023,7 +1093,7 @@ function Phone({ children }: { children: ReactNode }) {
   );
 }
 
-/** Deslizador con su valor a la vista. */
+/** Deslizador con su valor a la vista: el número se puede clicar y escribir. */
 function RangeControl({
   id,
   label,
@@ -1037,11 +1107,43 @@ function RangeControl({
   range: [number, number];
   onChange: (value: number) => void;
 }) {
+  // Mientras se escribe manda el borrador; al salir se ajusta al rango del motor.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number.parseInt(draft, 10);
+    const next = Number.isFinite(parsed)
+      ? Math.min(range[1], Math.max(range[0], parsed))
+      : value;
+    setDraft(null);
+    if (next !== value) onChange(next);
+  };
+
   return (
     <div className="control">
-      <label className="field" htmlFor={id}>
-        {label} <span className="value-pill">{value}</span>
-      </label>
+      <div className="control-head">
+        <label className="field" htmlFor={id}>
+          {label}
+        </label>
+        <input
+          className="value-pill"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          value={draft ?? String(value)}
+          aria-label={`Valor de ${label}`}
+          title="Haz clic y escribe un número"
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => setDraft(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+            if (event.key === "Escape") setDraft(null);
+          }}
+        />
+      </div>
       <input
         id={id}
         type="range"
