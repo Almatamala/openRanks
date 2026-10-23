@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
 @dataclass
 class ToolError(RuntimeError):
-    """Un comando externo falló. Guarda el argv y la cola del stderr."""
+    """Un comando externo falló. Guarda el código de salida y la cola del stderr."""
 
     message: str
-    argv: tuple[str, ...] = ()
     returncode: int | None = None
     stderr_tail: str = ""
-    extra: dict = field(default_factory=dict)
 
     def __str__(self) -> str:  # pragma: no cover - solo formato
         parts = [self.message]
@@ -81,18 +79,16 @@ def run(
             check=False,
         )
     except FileNotFoundError as exc:
-        raise ToolError(f"no se encontró el ejecutable: {argv[0]}", argv=tuple(argv)) from exc
+        raise ToolError(f"no se encontró el ejecutable: {argv[0]}") from exc
     except subprocess.TimeoutExpired as exc:
         raise ToolError(
             f"el comando excedió {timeout_s}s",
-            argv=tuple(argv),
             stderr_tail=tail_lines((exc.stderr or "") if isinstance(exc.stderr, str) else ""),
         ) from exc
 
     if check and completed.returncode != 0:
         raise ToolError(
             "el comando externo falló",
-            argv=tuple(argv),
             returncode=completed.returncode,
             stderr_tail=tail_lines(completed.stderr or ""),
         )

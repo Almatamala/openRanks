@@ -6,12 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from openranks.core.config import Config
-from openranks.core.framing import Crop, GrayFrame, decision_without_analysis
+from openranks.core.framing import Crop, GrayFrame
 from openranks.core.media import MediaInfo
 from openranks.framing import (
     analysis_size,
-    decision_payload,
     frame_argv,
     refine_crop,
     sample_window,
@@ -107,39 +105,3 @@ def test_refine_crop_keeps_the_coarse_crop_if_it_is_not_credible():
     refined, warnings = refine_crop(coarse, [frame], (200, 100))
     assert refined == coarse
     assert warnings
-
-
-def test_payload_for_a_cropped_clip_uses_the_engine_normalization():
-    decision = decision_without_analysis(
-        input_size=(1920, 1080),
-        visible_size=(1920, 1080),
-        rotation=0,
-    )
-    # Forzamos una decisión A con crop para comprobar el comando.
-    from dataclasses import replace
-
-    cropped = replace(decision, classification="A", fit="contain", crop=Crop(w=608, h=1080, x=656, y=0))
-    payload = decision_payload(cropped, source=Path("in.mp4"), info=_info(), config=Config())
-    command = payload["comando_ffmpeg"]
-    assert command is not None
-    assert "crop=608:1080:656:0" in command
-    assert "-c:a aac" in command
-    assert "rotate=0" in command
-    assert "OUT.mp4" in command
-
-
-def test_payload_for_an_exact_vertical_clip_does_not_invent_a_command():
-    decision = decision_without_analysis(
-        input_size=(1080, 1920),
-        visible_size=(1080, 1920),
-        rotation=0,
-    )
-    payload = decision_payload(
-        decision,
-        source=Path("in.mp4"),
-        info=_info(width=1080, height=1920),
-        config=Config(),
-    )
-    assert payload["clasificacion"] == "B"
-    assert payload["crop"] is None
-    assert payload["comando_ffmpeg"] is None

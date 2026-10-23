@@ -41,14 +41,6 @@ def test_timeline_is_the_running_sum_without_overlap():
     assert total_duration_s(windows) == pytest.approx(35.0)
 
 
-def test_timeline_keeps_the_cold_open_as_position_zero():
-    segments = [{"position": 0, "label": "TEASER", "duration_s": 2.0}, *_segments(7.0)]
-    windows = timeline(segments)
-    assert windows[0].is_cold_open and windows[0].position == 0
-    assert windows[1].from_s == pytest.approx(2.0)
-    assert total_duration_s(windows) == pytest.approx(37.0)
-
-
 def test_incomplete_segment_is_an_error():
     with pytest.raises(SpecError, match="tramo incompleto"):
         timeline([{"position": 5}])
@@ -117,15 +109,11 @@ def test_badge_ladder_spreads_as_many_positions_as_the_ranking_has():
         assert ys == sorted(ys, reverse=True)
 
 
-def _spec(cold_open: bool = False) -> dict:
-    segments = _segments(7.0)
-    if cold_open:
-        segments = [{"position": 0, "label": "TEASER", "duration_s": 2.0}, *segments]
+def _spec() -> dict:
     return build_spec(
         title="TOP 5 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
-        segments=segments,
-        cold_open_s=2.0 if cold_open else 0.0,
+        segments=_segments(7.0),
         style=get_style(),
         config=Config(),
     )
@@ -178,20 +166,6 @@ def test_each_label_arrives_with_its_clip_and_stays():
     assert [item["active_to_s"] for item in labels] == [7.0, 14.0, 21.0, 28.0, 35.0]
 
 
-def test_cold_open_has_no_badge_but_keeps_the_windows_aligned():
-    spec = _spec(cold_open=True)
-    assert all(slot["position"] != 0 for slot in spec["rank_ladder"]["slots"])
-    # La escalera está puesta desde el fotograma 0, pero al 5 le toca cuando acaba el teaser.
-    assert spec["rank_ladder"]["slots"][0]["from_s"] == pytest.approx(0.0)
-    assert spec["rank_ladder"]["slots"][0]["active_from_s"] == pytest.approx(2.0)
-    assert spec["total_duration_s"] == pytest.approx(37.0)
-
-
-def test_the_ranking_ends_without_a_cta():
-    """El cierre no lleva CTA: la edición termina con la escalera y el último rótulo."""
-    assert "cta" not in _spec()
-
-
 def test_editable_surface_is_only_text():
     spec = _spec()
     assert spec["editable_surface"]["fields"] == ["title", "subtitle", "labels"]
@@ -208,7 +182,6 @@ def test_a_ranking_of_ten_positions_builds_ten_slots():
         title="TOP 10 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 11)},
         segments=_segments(5.0, count=10),
-        cold_open_s=0.0,
         style=get_style(),
         config=Config(items=10),
     )
@@ -231,7 +204,6 @@ def test_the_subtitle_is_optional_and_always_below_the_title():
         subtitle="MOMENTOS LOCOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=_segments(7.0),
-        cold_open_s=0.0,
         style=style,
         config=Config(),
     )
@@ -253,7 +225,6 @@ def test_a_long_subtitle_wraps_without_overlapping_the_title():
         subtitle="MOMENTOS ABSOLUTAMENTE LOCOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 11)},
         segments=_segments(5.0, count=10),
-        cold_open_s=0.0,
         style=style,
         config=Config(items=10),
     )
@@ -272,7 +243,6 @@ def test_the_title_height_slider_has_a_real_band_without_dead_zones():
             title="TOP 5 MOMENTOS",
             labels={position: "X" for position in range(1, 6)},
             segments=_segments(7.0),
-            cold_open_s=0.0,
             style=get_style({"title": {"y": y}}),
             config=Config(),
         )
@@ -295,7 +265,6 @@ def test_the_title_height_cap_is_20_px_below_the_ladder_gap():
             title="TOP 5 MOMENTOS",
             labels={position: "X" for position in range(1, 6)},
             segments=_segments(7.0),
-            cold_open_s=0.0,
             style=get_style({"title": {"y": y}}),
             config=Config(),
         )
@@ -317,7 +286,6 @@ def test_the_subtitle_size_is_independent_and_the_title_height_is_adjustable():
         subtitle="MOMENTOS LOCOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=_segments(7.0),
-        cold_open_s=0.0,
         style=style,
         config=Config(),
     )
@@ -337,7 +305,6 @@ def test_the_title_is_fitted_to_the_space_it_has():
         title="TOP 8 MOMENTOS LOCOS DE GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 9)},
         segments=_segments(6.0, count=8),
-        cold_open_s=0.0,
         style=style,
         config=Config(items=8),
     )

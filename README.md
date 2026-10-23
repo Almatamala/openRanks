@@ -1,8 +1,8 @@
 # openRanks
 
-Servicio de generación y publicación de shorts de ranking a partir de vídeo largo.
-Este repositorio implementa, por ahora, el **ensamblador (L1)**, el **editor de la
-plantilla (L2)** y el **panel de operación** que los encadena
+Montaje y edición automática de shorts de ranking a partir de clips ya cortados.
+Este repositorio implementa el **ensamblador (L1)**, el **editor de la plantilla
+(L2)** y el **panel de operación** que los encadena
 (`docs/plan/openRanks-plan.md`, §12; el producto y sus reglas, en `docs/rpd/openRanks-rpd.md`).
 
 ## Qué entrega cada capa
@@ -39,7 +39,7 @@ recorta**. `band`, `contain` y `cover` siguen disponibles como elección explíc
 | `ranking.mp4` | El short terminado, con la edición encima: **el único archivo que se entrega** |
 | `spec.json` | Las props exactas del render (interno, para trazabilidad y para la vista previa) |
 
-No se genera portada: el entregable del panel es el vídeo final, y nada más.
+El entregable del panel es el vídeo final, y nada más.
 
 Lo que dibuja: **título** con el número en su propio color y a mayor tamaño, y
 **palabras en otro color** a elección (`*amarillo*` / `_azul_` en el propio texto). El
@@ -52,7 +52,7 @@ está **nítida** y el resto **atenuadas y difuminadas**, tanto las que aún no 
 como las que ya pasaron. El **rótulo de cada puesto** va **al lado de su propia
 casilla**, **entra con su clip y se queda hasta el final** —los textos se acumulan, no
 se sustituyen—, y **en cuanto su puesto cede el turno se atenúa y se difumina igual que
-su casilla**: solo el del puesto actual queda nítido. **No hay CTA de cierre.** El montaje es
+su casilla**: solo el del puesto actual queda nítido. El montaje es
 **siempre de corte seco**: los clips se pegan uno tras otro, en orden, sin transiciones
 ni solapes, así que el ranking dura exactamente la suma de sus tramos.
 
@@ -121,14 +121,6 @@ Basta con **Node y un Python 3.11+**. El primero que sirva de cada lista gana:
 | Python | `OPENRANKS_PYTHON` → `.venv` del repo → `py -3` / `python` (Windows) o `python3` / `python` (resto) |
 | FFmpeg | `OPENRANKS_FFMPEG` / `OPENRANKS_FFPROBE` → `PATH` (si es 5+) → npm (`ffmpeg-static`) → `static_ffmpeg` del venv |
 
-`GET /api/engine` enseña lo que se ha resuelto y qué falta si falta algo, sin abrir
-una terminal:
-
-```json
-{"ready":true,"python":{"interpreter":"py","version":"3.12","source":"lanzador py"},
- "ffmpeg":"ffmpeg.exe","ffprobe":"ffprobe.exe","ffmpegSource":"npm (ffmpeg-static)","problems":[]}
-```
-
 El resto se configura por entorno:
 
 | Variable | Para qué | Defecto |
@@ -169,8 +161,8 @@ no crece ~110 MB. Variables que usa dentro del contenedor:
 | `OPENRANKS_FIT` | `auto` | El encaje por defecto, el mismo que en local |
 | `OPENRANKS_PRESET_FILE` | lo fija el panel en `/data/jobs/preset.json` | La **última plantilla guardada**; al vivir en el volumen, sobrevive a un reinicio |
 
-> Los servicios `postgres`, `minio`, `worker` y `renderer` que dibuja el plan (§7.7)
-> son de **L4** y todavía no existen en el código; el compose levanta lo que hoy hay.
+> El compose levanta lo que hoy hay: L1 + L2 con su panel. No hay servicios de extracción
+> ni publicación.
 
 ## Cómo se ajusta la plantilla
 
@@ -253,12 +245,13 @@ casilla puede salir en blanco. Para volver a los números basta con dejar
 existir en la máquina que renderiza. La imagen de Docker trae las cinco que ofrece el
 panel, incluida la **geométrica** (`URW Gothic`); en un host sin ella (Windows no la
 trae), elegirla cae en la sans-serif por defecto. Si quieres una tipografía propia
-(por ejemplo Jost, Poppins o Futura), es un archivo: el plan (§9.2) ya reserva
-`assets/fonts/` para eso.
+(por ejemplo Jost, Poppins o Futura), hay que añadir la familia a `FONT_FAMILIES` y
+asegurarse de que la fuente exista en la máquina que renderiza.
 
 ## Instalación (motor)
 
-Requiere **FFmpeg 8+** (`ffmpeg` y `ffprobe`) y Python 3.11+.
+Requiere **FFmpeg 5+** (`ffmpeg` y `ffprobe`; probado con el 6.1.1 de npm y el 8.0.1
+del venv) y Python 3.11+.
 
 ```bash
 python -m venv .venv
@@ -266,7 +259,8 @@ python -m venv .venv
 ```
 
 El venv es **opcional para el panel** (que se apaña con el Python del sistema y el
-FFmpeg de npm) y útil para el CLI y los tests. Si no tienes FFmpeg en la máquina, el
+FFmpeg de npm) y útil para el CLI y los tests. El detalle del arranque, la activación y el
+orden de resolución están en el plan, §12.1. Si no tienes FFmpeg en la máquina, el
 extra de desarrollo trae uno estático **dentro del repo** (no toca el sistema). El
 producto no depende de ese paquete, así que hay que apuntarlo por entorno:
 
@@ -275,8 +269,9 @@ export OPENRANKS_FFMPEG=$(.venv/Scripts/python -c "import static_ffmpeg,shutil; 
 export OPENRANKS_FFPROBE=$(.venv/Scripts/python -c "import static_ffmpeg,shutil; static_ffmpeg.add_paths(); print(shutil.which('ffprobe'))" | tail -1)
 ```
 
-El código resuelve los binarios en este orden: argumento explícito (`--ffmpeg`) →
-`OPENRANKS_FFMPEG` / `OPENRANKS_FFPROBE` → `PATH`.
+El CLI resuelve los binarios en este orden: argumento explícito (`--ffmpeg`) →
+`OPENRANKS_FFMPEG` / `OPENRANKS_FFPROBE` → `PATH` (el panel añade npm y el venv, §12.1
+del plan).
 
 ## Uso (CLI)
 
@@ -285,20 +280,21 @@ El código resuelve los binarios en este orden: argumento explícito (`--ffmpeg`
 python scripts/make_test_clips.py --out demo
 python scripts/make_test_clips.py --out demo10 --positions 10 --seconds 5
 
-# 2) Ensamblado (L1) en corte seco y, con --edit, la edición (L2) en la misma pasada
-python -m openranks assemble --input demo/binding.json --out demo/render --edit
+# 2) Preparar cada clip al entrar (repite por puesto: 1 a 5)
+python -m openranks prepare --input demo/clips/clip-1.mp4 --out demo/render --position 1 --items 5
 
-# 2b) Rehacer solo la edición (L2) cambiando textos: segundos, no minutos
+# 2b) Unir los clips ya preparados en vertical (corte seco, sin recodificar)
+python -m openranks join --out demo/render --items 5
+
+# 2c) Componer la edición (L2) y cambiar textos: segundos, no minutos
 python -m openranks render --dir demo/render --title "TOP 5 GATOS" --label 1=CIERRE
 
-# 2c) Ver la plantilla sobre fondo negro, sin montar nada (un PNG)
+# 2d) Ver la plantilla sobre fondo negro, sin montar nada (un PNG)
 python -m openranks preview --out preview.png --title "TOP *5* _GATOS_" --subtitle "MOMENTOS LOCOS" --label 1=CIERRE
-
-# 3) Inspección de cualquier archivo (informativa; no juzga)
-python -m openranks probe demo/render/ranking.mp4
 ```
 
-El binding es lo único que se escribe a mano:
+El binding (lo genera el script de prueba) es opcional: `openranks render --input` toma de
+él el título, el subtítulo y los nombres de los puestos.
 
 ```json
 {
@@ -324,28 +320,13 @@ validan al entrar: si el texto no cabe, falla el *input*, nunca el render.
 
 | Flag | Para qué |
 | --- | --- |
-| `--edit` | Encadena L2: añade `ranking.mp4` + `spec.json` |
 | `--items 7` | Puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo) |
 | `--italic` / `--no-italic` | Letras cursivas en el overlay (`openranks render` y `openranks preview`) |
 | `--fit auto\|band\|contain\|cover` | `auto` (defecto) detecta el área útil y recorta el fondo borroso; `band` **agranda** el clip hasta llenar una banda central de 1184 px (62 % del alto) recortando **solo los laterales**; `contain` lo encaja entero sin recortar; `cover` recorta para llenar los 1080x1920 |
-| `--cold-open-seconds 2` | Adelanto del `#1` al principio (gancho). Solo por CLI: el panel monta sin él |
 | `--progress` | Emite el avance en porcentaje real por `stderr` (lo consume el panel) |
 | `--json` | Salida legible por máquina |
 
 Códigos de salida: `0` ok · `1` fallo de ensamblado/render · `2` entrada inválida.
-
-### Ver el encuadre detectado
-
-```bash
-python -m openranks fit clip.mp4
-```
-
-Imprime **solo JSON** con `clasificacion` (`A`/`B`), `motivo`, `resolucion_entrada`,
-`resolucion_visible`, `rotacion`, `crop`, `encaje`, `confianza`, `senales`,
-`comando_ffmpeg` y `advertencias`. Es el mismo análisis que usa el montaje, así que sirve
-para responder «¿por qué recortó ahí?» sin abrir el código. El comando es el `normalize_argv`
-real de L1 (incluye `crop`, 30 fps, `yuv420p`, AAC y `rotate=0`), no el ejemplo simplificado
-con `-c:a copy`, que rompería la unión por copia de streams.
 
 ## Cómo se verifica
 
@@ -353,17 +334,17 @@ con `-c:a copy`, que rompería la unión por copia de streams.
 python -m pytest -q
 ```
 
-- **Núcleo puro** (`test_binding.py`, `test_plan.py`, `test_ffmpeg_args.py`,
+- **Núcleo puro** (`test_binding.py`, `test_ffmpeg_args.py`,
   `test_media.py`, `test_manifest.py`, `test_config.py`, `test_specs.py`,
   `test_overlay_args.py`, `test_progress.py`, `test_preset.py`, `test_framing.py`,
   `test_framing_args.py`, `test_staged.py`): sin FFmpeg, sin red. Cubre el orden `#5 → #1`, la duración real
-  del **corte seco** (la suma exacta de los tramos), el cold open, los límites de texto,
+  del **corte seco** (la suma exacta de los tramos), los límites de texto,
   los rankings de 5 a 10 puestos, el encaje del título (renglones y tamaño), las ventanas
   de cada badge/rótulo (nítido y atenuado), el color de cada puesto, la cursiva, el script
   ASS, los `argv` de FFmpeg, el encuadre (clasificación, área útil, confianza y recorte par),
   la monotonía del porcentaje y el listado del preset.
-- **Integración** (`test_assemble_e2e.py`, `test_overlay_e2e.py`, `test_framing_e2e.py`,
-  `test_staged_e2e.py`, marcados `integration`): FFmpeg de verdad sobre clips sintéticos.
+- **Integración** (`test_overlay_e2e.py`, `test_framing_e2e.py`, `test_staged_e2e.py`,
+  marcados `integration`): FFmpeg de verdad sobre clips sintéticos.
   Comprueba el criterio de salida de L1, el encuadre de un clip sobre fondo borroso (y su
   normalización con el crop), la rotación, el flujo por etapas (`prepare` por puesto →
   `join` → `render`, con la unión intacta al montar) y, en L2, que `ranking.mp4` es
@@ -392,12 +373,11 @@ el audio (se copia), así que la medición se mantiene.
 ```
 openranks/
   core/          # stdlib puro: config, binding, media, ffmpeg, framing, plan, runner, manifest, specs, overlay, progress
-  assemble.py    # orquestación de L1: medir → encuadrar → normalizar → unir → verificar → manifiesto
-  framing.py     # análisis de encuadre con FFmpeg: muestreo, refino, JSON
+  framing.py     # análisis de encuadre con FFmpeg: muestreo y refino
   prepare.py     # prepara **un** clip al subirlo: deja prepared/NN.mp4 (el tick del panel)
   join.py        # une los clips ya preparados en union.mp4, sin recodificar
   overlay.py     # orquestación de L2: union.mp4 + manifiesto → ranking.mp4 + spec
-  cli.py         # openranks assemble | prepare | join | render | preview | preset | probe | fit
+  cli.py         # openranks prepare | join | render | preview | preset
 web/             # panel Next.js (App Router): subir, preparar, montar, ver y descargar
 scripts/         # clips sintéticos para probar a mano
 tests/           # núcleo puro + integración real
@@ -407,7 +387,7 @@ docs/plan/       # plan: orden de construcción, estado y verificación
 
 `core/` no importa nada fuera de la stdlib: la lógica de decisión se testea sin FFmpeg
 (§7.6 del RPD). Los comandos de FFmpeg se **construyen** en `core/ffmpeg.py` y
-`core/overlay.py`, y se **ejecutan** en `assemble.py` / `overlay.py`.
+`core/overlay.py`, y se **ejecutan** en `prepare.py`, `join.py` / `overlay.py`.
 
 ## Detalles de implementación que importan
 
@@ -442,10 +422,6 @@ docs/plan/       # plan: orden de construcción, estado y verificación
 - Pendiente de L2, ya previsto en el RPD: **banner con la foto de referencia**
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van
   desactivados, §9.2, y requieren assets propios).
-- **L3** es la extractora (segmentación, screening, scoring, selección) — el riesgo
-  técnico real, con spike temprano.
-- **L4** cierra la orquestación de punta a punta: cola, publicación y analítica.
-
-No se ha copiado código del repositorio de referencia en estas capas: L1 y L2 están
-escritas desde cero. Cuando se reuse código MIT (escenas, reframe, `yt_clients`), cada
-archivo llevará su cabecera de origen y el NOTICE correspondiente.
+- **L3 (extracción automática) y L4 (publicación) no forman parte del alcance actual**.
+  No hay código, tablas ni endpoints de esas capas; si se retoman, se documentan primero
+  en el RPD y el plan.

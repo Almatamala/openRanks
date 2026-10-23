@@ -133,20 +133,6 @@ def test_normalize_bounds_the_output_duration():
     assert "-shortest" not in argv
 
 
-def test_normalize_with_a_limit_bounds_input_and_output():
-    argv = ff.normalize_argv(
-        "ffmpeg",
-        Path("mudo.mp4"),
-        Path("out.mp4"),
-        config=CONFIG,
-        has_audio=False,
-        limit_s=1.5,
-        duration_s=1.5,
-    )
-    assert argv.index("-t") < argv.index("-i")  # recorte barato en la entrada
-    assert argv.count("-t") == 2  # y cota de la salida (el silencio inyectado es infinito)
-
-
 def test_loudnorm_single_pass_has_no_linear_flag():
     assert "linear=true" not in ff.loudnorm_filter(CONFIG)
     assert "I=-14.0" in ff.loudnorm_filter(CONFIG)

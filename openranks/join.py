@@ -26,7 +26,7 @@ from .core.media import MediaInfo, probe, validate_normalized
 from .core.plan import AssemblyPlan, PlanError, PreparedInput, plan_from_prepared
 from .core.progress import SPAN_JOIN, Progress, ProgressCallback
 from .core.runner import run, stderr_warnings, version_of
-from .prepare import PreparedClip, PrepareError, prepared_file, read_metadata
+from .prepare import PrepareError, prepared_file, read_metadata
 
 Logger = Callable[[str], None]
 
@@ -46,8 +46,6 @@ class StagedInput:
 
     position: int
     path: Path
-    label: str
-    duration_s: float
     source_entry: dict
     output_entry: dict
     warnings: tuple[str, ...] = ()
@@ -55,7 +53,6 @@ class StagedInput:
 
 @dataclass
 class JoinResult:
-    out_dir: Path
     union: Path
     manifest_path: Path
     plan: AssemblyPlan
@@ -122,22 +119,6 @@ def _output_warnings(*, info: MediaInfo, plan: AssemblyPlan, config: Config) -> 
     return tuple(warnings)
 
 
-def staged_from_prepared(clip: PreparedClip) -> StagedInput:
-    """Traduce un clip preparado al tramo que consume la unión."""
-    manifest = clip.to_manifest()
-    source = manifest["source"]
-    normalized = manifest["clip"]
-    return StagedInput(
-        position=clip.position,
-        path=clip.output,
-        label="",
-        duration_s=clip.duration_s,
-        source_entry=source,
-        output_entry={**normalized, "kind": "clip", "file": clip.output.name},
-        warnings=clip.warnings,
-    )
-
-
 def join_clips(
     plan: AssemblyPlan,
     staged: Sequence[StagedInput],
@@ -146,14 +127,13 @@ def join_clips(
     config: Config,
     ffmpeg: str,
     ffprobe: str,
-    source_entries: Sequence[dict] | None = None,
     track: Progress | None = None,
     log: Logger | None = None,
 ) -> JoinResult:
     """Pega los tramos por copia de streams y escribe el manifiesto de L1.
 
-    ``plan.segments`` da el orden (#5 → #1, con el cold open primero si existe) y
-    ``staged`` aporta los archivos ya normalizados.
+    ``plan.segments`` da el orden (#5 → #1) y ``staged`` aporta los archivos ya
+    normalizados.
     """
     say = log or _noop
     tracker = track or Progress()
@@ -202,7 +182,7 @@ def join_clips(
 
     payload = build_manifest(
         plan=plan,
-        sources=list(source_entries) if source_entries is not None else [entry.source_entry for entry in staged],
+        sources=[entry.source_entry for entry in staged],
         outputs=outputs,
         ffmpeg_version=version_of(ffmpeg),
         tool_version=TOOL_VERSION,
@@ -216,7 +196,6 @@ def join_clips(
     manifest_path = write_manifest(out_dir / "manifest.json", payload)
 
     return JoinResult(
-        out_dir=out_dir,
         union=union,
         manifest_path=manifest_path,
         plan=plan,
@@ -281,8 +260,6 @@ def join(
             StagedInput(
                 position=position,
                 path=path,
-                label=label,
-                duration_s=float(source.get("duration_s") or 0.0),
                 source_entry=source,
                 output_entry={**clip, "kind": "clip", "file": f"prepared/{clip.get('file', path.name)}"},
                 warnings=tuple(payload.get("warnings") or ()),

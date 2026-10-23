@@ -298,11 +298,6 @@ input[type="text"]:focus {
   color: var(--muted);
 }
 
-.slot-status .size {
-  color: var(--muted);
-  font-weight: 400;
-}
-
 .slot .tick {
   display: inline-flex;
   align-items: center;
@@ -356,21 +351,6 @@ a.button-link {
 a.button-link:hover {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-  align-items: center;
-}
-
-.options label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--text);
-  font-size: 15px;
 }
 
 select {

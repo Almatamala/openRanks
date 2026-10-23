@@ -6,7 +6,6 @@ del núcleo (sin FFmpeg, sin red) corre en cualquier sitio.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -23,9 +22,6 @@ CLIP_SPECS = (
     ("clip-4.mp4", (640, 360), 550),
     ("clip-5.mp4", (480, 480), 660),
 )
-
-DEFAULT_LABELS = ("GATO VOLADOR", "PERRO CAOS", "SORPRESA", "ROBO", "TERNERA")
-
 
 def _resolve(name: str, env_var: str) -> str | None:
     explicit = os.environ.get(env_var)
@@ -94,20 +90,3 @@ def make_clip(ffmpeg_bin, tmp_path):
 def synthetic_clips(make_clip, tmp_path) -> list[Path]:
     """Cinco clips: horizontal, vertical, cuadrado sin audio, ancho y grande."""
     return [make_clip(name, size=size, freq=freq) for name, size, freq in CLIP_SPECS]
-
-
-@pytest.fixture()
-def write_binding(tmp_path):
-    """Escribe un binding JSON y devuelve su ruta."""
-
-    def _write(clips: list[Path], *, title: str = "TOP 5 PRUEBAS", labels=None, filename: str = "binding.json") -> Path:
-        entries = []
-        for index, clip in enumerate(clips, start=1):
-            label = (labels or DEFAULT_LABELS)[index - 1]
-            entries.append({"position": index, "path": str(clip), "label": label})
-        payload = {"title": title, "items": entries}
-        path = tmp_path / filename
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        return path
-
-    return _write

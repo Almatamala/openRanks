@@ -163,29 +163,6 @@ def test_refine_edge_finds_the_rising_and_falling_steps():
     assert refine_edge(scores, 7, rising=False, radius=2) == 7
 
 
-def test_the_json_contract_keeps_the_requested_fields():
-    decision = _analyze()
-    payload = decision.to_json(command="ffmpeg -i IN OUT.mp4")
-    assert {
-        "clasificacion",
-        "motivo",
-        "resolucion_entrada",
-        "resolucion_visible",
-        "rotacion",
-        "crop",
-        "encaje",
-        "confianza",
-        "senales",
-        "comando_ffmpeg",
-        "advertencias",
-    } <= set(payload)
-    assert payload["resolucion_entrada"] == "1920x1080"
-    assert payload["crop"]["w"] == decision.crop.w
-    assert 0.0 <= payload["confianza"] <= 1.0
-    # El manifiesto no lleva el comando del host.
-    assert "comando_ffmpeg" not in decision.to_manifest()
-
-
 def test_a_fallback_is_conservative_and_warns():
     decision = fallback_decision(
         input_size=(1920, 1080),

@@ -1,6 +1,6 @@
-"""Interfaz de línea de comandos de L1.
+"""Interfaz de línea de comandos del motor.
 
-    python -m openranks assemble --input binding.json --out out/run1
+    python -m openranks prepare --input clip.mp4 --out out/run1 --position 1
 """
 
 from __future__ import annotations
@@ -9,10 +9,8 @@ import argparse
 import json
 import sys
 from dataclasses import replace
-from pathlib import Path
 
 from . import TOOL_VERSION
-from .assemble import AssemblyError, assemble
 from .core.binding import BindingError, load_binding
 from .core.config import Config
 from .core.ffmpeg import ToolNotFound
@@ -36,37 +34,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"openranks {TOOL_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    assembly = subparsers.add_parser(
-        "assemble", help="normaliza los clips del ranking (5 a 10) y los une en vertical con corte seco"
-    )
-    assembly.add_argument("--input", required=True, help="binding JSON: {title, items:[{position,path,label}]}")
-    assembly.add_argument("--out", required=True, help="directorio de salida (clips/, union.mp4, manifest.json)")
-    assembly.add_argument(
-        "--items",
-        type=int,
-        choices=range(MIN_POSITIONS, MAX_POSITIONS + 1),
-        default=None,
-        help="puestos del ranking, de 5 a 10 (por defecto 5; el panel lo fija por trabajo)",
-    )
-    assembly.add_argument(
-        "--fit",
-        choices=("auto", "band", "contain", "cover"),
-        default=None,
-        help="auto (por defecto) detecta el área útil y recorta el fondo borroso; band agranda hasta la banda "
-        "central de 1184 px y recorta laterales; contain lo encaja entero sin recortar; cover recorta para llenar todo el marco",
-    )
-    assembly.add_argument("--cold-open-seconds", type=float, default=0.0, help="adelanto del #1 al principio; 0 = desactivado (por defecto)")
-    assembly.add_argument("--edit", action="store_true", help="encadena L2: añade la edición del estándar (ranking.mp4)")
-    assembly.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
-    assembly.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
-    assembly.add_argument(
-        "--progress",
-        action="store_true",
-        help="emite el avance en porcentaje real por stderr (lo consume el panel para la barra y el tiempo restante)",
-    )
-    assembly.add_argument("--json", action="store_true", help="salida legible por máquina")
-    assembly.add_argument("--quiet", action="store_true", help="sin progreso")
 
     prepare_cmd = subparsers.add_parser(
         "prepare",
@@ -196,24 +163,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="enseña los ajustes de la plantilla de la edición (L2) y dónde se cambian",
     )
     preset.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
-
-    probe = subparsers.add_parser("probe", help="inspecciona archivos con ffprobe")
-    probe.add_argument("files", nargs="+")
-    probe.add_argument("--ffprobe", default=None)
-    probe.add_argument("--json", action="store_true")
-    probe.add_argument(
-        "--check",
-        action="store_true",
-        help="aplica el contrato de clip de entrada (duración máxima, lado corto, ...) y devuelve 2 si falla",
-    )
-
-    fit = subparsers.add_parser(
-        "fit",
-        help="analiza el encuadre de un clip y devuelve el crop y la confianza en JSON",
-    )
-    fit.add_argument("file", help="clip de entrada a analizar")
-    fit.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
-    fit.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
     return parser
 
 
@@ -250,21 +199,14 @@ def _configure_output() -> None:
 def main(argv: list[str] | None = None) -> int:
     _configure_output()
     args = _build_parser().parse_args(argv)
-    if args.command == "probe":
-        return _run_probe(args)
-    if args.command == "fit":
-        return _run_fit(args)
-    if args.command == "render":
-        return _run_render(args)
-    if args.command == "prepare":
-        return _run_prepare(args)
-    if args.command == "join":
-        return _run_join(args)
-    if args.command == "preset":
-        return _run_preset(args)
-    if args.command == "preview":
-        return _run_preview(args)
-    return _run_assemble(args)
+    handlers = {
+        "render": _run_render,
+        "prepare": _run_prepare,
+        "join": _run_join,
+        "preset": _run_preset,
+        "preview": _run_preview,
+    }
+    return handlers[args.command](args)
 
 
 def _run_preset(args: argparse.Namespace) -> int:
@@ -372,53 +314,6 @@ def _run_preview(args: argparse.Namespace) -> int:
                 ensure_ascii=False,
             )
         )
-    else:
-        print(result.summary())
-    return EXIT_OK
-
-
-def _run_assemble(args: argparse.Namespace) -> int:
-    config = _config_with_items(Config.from_env(), args.items)
-    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
-    try:
-        binding = load_binding(args.input, config)
-        result = assemble(
-            binding,
-            args.out,
-            config=config,
-            ffmpeg=args.ffmpeg,
-            ffprobe=args.ffprobe,
-            fit=args.fit,
-            cold_open_s=args.cold_open_seconds,
-            edit=args.edit,
-            log=say,
-            progress=_progress_sink() if args.progress else None,
-        )
-    except (BindingError, PlanError) as exc:
-        print(f"entrada inválida: {exc}", file=sys.stderr)
-        return EXIT_BAD_INPUT
-    except (AssemblyError, ToolError, ToolNotFound) as exc:
-        print(f"fallo el ensamblado: {exc}", file=sys.stderr)
-        return EXIT_FAILED
-
-    if args.json:
-        payload = {
-            "out_dir": str(result.out_dir),
-            "clips": [str(path) for path in result.clips],
-            "union": str(result.union),
-            "manifest": str(result.manifest_path),
-            "total_duration_s": result.total_measured_s,
-            "loudness_lufs": result.loudness.get("input_i"),
-            "warnings": list(result.warnings),
-        }
-        if result.overlay is not None:
-            payload.update(
-                {
-                    "ranking": str(result.overlay.ranking),
-                    "spec": str(result.overlay.spec_path),
-                }
-            )
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
         print(result.summary())
     return EXIT_OK
@@ -601,91 +496,6 @@ def _run_join(args: argparse.Namespace) -> int:
     else:
         print(result.summary())
     return EXIT_OK
-
-
-def _run_fit(args: argparse.Namespace) -> int:
-    """Analiza el encuadre de un clip. La salida es **solo** el JSON pedido."""
-    from .core import ffmpeg as ff
-    from .core.framing import FramingError, needs_analysis
-    from .core.media import probe
-    from .framing import analyze, decision_payload
-
-    config = Config.from_env()
-    path = Path(args.file)
-    try:
-        ffprobe_bin = ff.resolve_binary(args.ffprobe, "OPENRANKS_FFPROBE", "ffprobe")
-        info = probe(ffprobe_bin, path)
-    except (RuntimeError, ToolNotFound) as exc:
-        print(f"no se pudo leer {path.name}: {exc}", file=sys.stderr)
-        return EXIT_FAILED
-
-    width, height = info.visible_size
-    if not width or not height or not info.video_codec:
-        print(f"{path.name} no tiene una pista de vídeo con resolución legible", file=sys.stderr)
-        return EXIT_BAD_INPUT
-
-    ffmpeg_bin = ""
-    try:
-        if needs_analysis((width, height), config.total):
-            ffmpeg_bin = ff.resolve_binary(args.ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")
-        decision = analyze(ffmpeg_bin, path, info, config=config)
-        payload = decision_payload(decision, source=path, info=info, config=config)
-    except (FramingError, OSError) as exc:
-        print(f"no se pudo analizar el encuadre: {exc}", file=sys.stderr)
-        return EXIT_FAILED
-    except ToolNotFound as exc:
-        print(str(exc), file=sys.stderr)
-        return EXIT_FAILED
-
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-    return EXIT_OK
-
-
-def _run_probe(args: argparse.Namespace) -> int:
-    """Inspección informativa.
-
-    Por defecto **no** juzga: un ``union.mp4`` de 35 s es una salida legítima y no un
-    "clip de entrada" demasiado largo. Con ``--check`` sí aplica el contrato de entrada.
-    """
-    from .core import ffmpeg as ff
-    from .core.media import Check, probe, validate_ready_clip
-
-    config = Config.from_env()
-    try:
-        ffprobe_bin = ff.resolve_binary(args.ffprobe, "OPENRANKS_FFPROBE", "ffprobe")
-    except ToolNotFound as exc:
-        print(str(exc), file=sys.stderr)
-        return EXIT_FAILED
-
-    payload = []
-    failed = False
-    for raw in args.files:
-        path = Path(raw)
-        try:
-            info = probe(ffprobe_bin, path)
-        except RuntimeError as exc:
-            print(f"no se pudo leer {path.name}: {exc}", file=sys.stderr)
-            return EXIT_FAILED
-        check = validate_ready_clip(info, config) if args.check else Check()
-        failed = failed or not check.ok
-        payload.append(
-            {
-                **info.to_source_entry(position=0, sha256=""),
-                "path": str(path),
-                "checks": {"errors": list(check.errors), "warnings": list(check.warnings)},
-            }
-        )
-
-    if args.json:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-    else:
-        for entry in payload:
-            print(f"{entry['path']}: {entry['width']}x{entry['height']} {entry['duration_s']}s audio={entry['has_audio']}")
-            for problem in entry["checks"]["errors"]:
-                print(f"  error: {problem}")
-            for warning in entry["checks"]["warnings"]:
-                print(f"  aviso: {warning}")
-    return EXIT_BAD_INPUT if failed else EXIT_OK
 
 
 if __name__ == "__main__":  # pragma: no cover

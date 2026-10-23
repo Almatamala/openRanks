@@ -30,7 +30,7 @@ const MIN_FFMPEG_MAJOR = 5;
 export interface PythonRuntime {
   command: string;
   args: string[];
-  /** De dónde salió, para el diagnóstico (`/api/engine`). */
+  /** De dónde salió, para el diagnóstico. */
   source: string;
   /** `3.12`, tal como lo reporta el propio intérprete. */
   version: string;

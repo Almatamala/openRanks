@@ -16,7 +16,7 @@ import {
 import { formatDuration } from "@/lib/progress";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
 
-type Artifact = { path: string; label: string; kind: "video" | "image" | "json"; bytes: number };
+type Artifact = { path: string; bytes: number };
 
 type ProgressEvent = { percent: number; phase: string; label: string; step?: number; total?: number };
 
@@ -26,7 +26,6 @@ type ClipState = "uploading" | "preparing" | "ready" | "failed";
 type ClipStatus = {
   state: ClipState;
   error: string | null;
-  durationS?: number | null;
   percent?: number;
 };
 
@@ -46,7 +45,6 @@ interface Job {
   logTail: string;
   clips: Record<string, ClipStatus>;
   join: { state: JoinState; error: string | null };
-  result: Record<string, unknown> | null;
 }
 
 /** La parte de la plantilla que el panel puede ajustar y guardar. */
@@ -324,7 +322,7 @@ export default function Page() {
       setError(null);
       setPrep((current) => ({
         ...current,
-        [position]: { state: "uploading", error: null, durationS: null, percent: 0 },
+        [position]: { state: "uploading", error: null, percent: 0 },
       }));
 
       void (async () => {
@@ -352,7 +350,6 @@ export default function Page() {
             [position]: {
               state: "failed",
               error: failure instanceof Error ? failure.message : "No se pudo preparar el clip.",
-              durationS: null,
             },
           }));
         } finally {

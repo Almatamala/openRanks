@@ -21,9 +21,6 @@ class Check:
     def ok(self) -> bool:
         return not self.errors
 
-    def merged(self, other: "Check") -> "Check":
-        return Check(errors=self.errors + other.errors, warnings=self.warnings + other.warnings)
-
 
 @dataclass(frozen=True)
 class MediaInfo:

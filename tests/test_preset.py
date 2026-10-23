@@ -119,12 +119,6 @@ def _write_preset(tmp_path, payload) -> str:
     return str(path)
 
 
-def test_the_title_background_option_is_gone_from_the_preset():
-    assert "background" not in DEFAULT_STYLE["title"]
-    assert "background" not in EDITABLE_SECTIONS["title"]
-    assert {row["key"] for row in describe_style()}.isdisjoint({"title.background", "title.bg_pad"})
-
-
 def test_a_saved_preset_wins_over_the_factory_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "OPENRANKS_PRESET_FILE",

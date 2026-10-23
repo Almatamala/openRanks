@@ -187,19 +187,15 @@ def normalize_argv(
     fit: str = "band",
     crop: Crop | None = None,
     measured: dict | None = None,
-    limit_s: float | None = None,
     duration_s: float | None = None,
 ) -> list[str]:
     """Comando que convierte un clip de entrada en un clip "ya listo" de L1.
 
-    ``limit_s`` corta la **entrada** (cold open: los primeros N segundos del #1, sin
-    decodificar el resto). ``duration_s`` acota la **salida**: `loudnorm` y el AAC dejan
-    cola de audio, y sin acotar el tramo el contenedor crecía ~100 ms por clip, el
-    "fotograma congelado" se colaba en cada corte y la unión no cuadraba con la suma.
+    ``duration_s`` acota la **salida**: `loudnorm` y el AAC dejan cola de audio, y sin
+    acotar el tramo el contenedor crecía ~100 ms por clip, el "fotograma congelado" se
+    colaba en cada corte y la unión no cuadraba con la suma.
     """
     argv = base_argv(ffmpeg)
-    if limit_s is not None:
-        argv += ["-t", f"{limit_s:.3f}"]
     argv += ["-i", str(src)]
     if not has_audio:
         # Sin audio no se puede unir por copia: se inyecta silencio del largo del vídeo.
@@ -228,7 +224,7 @@ def normalize_argv(
         "-movflags",
         "+faststart",
     ]
-    if not has_audio and duration_s is None and limit_s is None:
+    if not has_audio and duration_s is None:
         # Sin acotar, el silencio inyectado es infinito: hay que cortarlo en algún sitio.
         argv += ["-shortest"]
     if duration_s is not None:

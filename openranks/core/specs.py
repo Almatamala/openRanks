@@ -56,23 +56,12 @@ class SpecError(ValueError):
 
 @dataclass(frozen=True)
 class ClipWindow:
-    """Ventana temporal de un tramo dentro del vídeo ya unido.
-
-    ``position == 0`` es el cold open: se ve pero no lleva badge de posición.
-    """
+    """Ventana temporal de un tramo dentro del vídeo ya unido."""
 
     position: int
     label: str
     from_s: float
     to_s: float
-
-    @property
-    def duration_s(self) -> float:
-        return self.to_s - self.from_s
-
-    @property
-    def is_cold_open(self) -> bool:
-        return self.position == 0
 
 
 def timeline(segments: Sequence[dict]) -> tuple[ClipWindow, ...]:
@@ -344,7 +333,6 @@ def build_spec(
     subtitle: str = "",
     labels: dict[int, str],
     segments: Sequence[dict],
-    cold_open_s: float,
     style: dict,
     config: Config,
 ) -> dict:
@@ -365,15 +353,13 @@ def build_spec(
     ladder = dict(style["rank_ladder"])
     label_style = style["clip_label"]
 
-    positions = [window.position for window in windows if not window.is_cold_open]
+    positions = [window.position for window in windows]
     ladder["slots"] = max(1, len(positions))
 
     label_dx = float(label_style.get("dx", 132))
     slots: list[dict] = []
     clips: list[dict] = []
     for window in windows:
-        if window.is_cold_open:
-            continue
         text = labels.get(window.position, window.label)
         y = badge_y(window.position, ladder)
         slots.append(
@@ -500,7 +486,6 @@ def build_spec(
         "preset": style.get("theme", "top5-default"),
         "canvas": {"width": config.target_width, "height": config.target_height, "fps": config.fps},
         "total_duration_s": round(total, 3),
-        "cold_open_s": round(cold_open_s, 3),
         "title": {
             "text": title,
             "y": title_style["y"],
@@ -531,7 +516,6 @@ def build_spec(
         "windows": [
             {
                 "position": window.position,
-                "kind": "cold_open" if window.is_cold_open else "ranking",
                 "label": window.label,
                 "from_s": window.from_s,
                 "to_s": window.to_s,

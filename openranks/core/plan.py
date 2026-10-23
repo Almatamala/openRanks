@@ -11,9 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Sequence
 
-from .binding import Binding, slugify
 from .config import Config
-from .media import MediaInfo
 
 
 class PlanError(ValueError):
@@ -22,17 +20,12 @@ class PlanError(ValueError):
 
 @dataclass(frozen=True)
 class SegmentPlan:
-    """Un tramo del vídeo final. ``position == 0`` es el cold open."""
+    """Un tramo del vídeo final."""
 
     position: int
-    source: Path
     label: str
     duration_s: float
     output_name: str
-
-    @property
-    def is_cold_open(self) -> bool:
-        return self.position == 0
 
 
 @dataclass(frozen=True)
@@ -53,36 +46,29 @@ class PreparedInput:
 class AssemblyPlan:
     title: str
     segments: tuple[SegmentPlan, ...]
-    cold_open_s: float
     warnings: tuple[str, ...] = ()
     subtitle: str = ""
 
     @property
     def clip_count(self) -> int:
-        """Puestos del ranking (sin contar el cold open)."""
-        return sum(1 for segment in self.segments if not segment.is_cold_open)
+        """Puestos del ranking."""
+        return len(self.segments)
 
     @property
     def total_duration_s(self) -> float:
         """Duración real: la suma de los tramos (el montaje es de corte seco)."""
         return sum(segment.duration_s for segment in self.segments)
 
-    @property
-    def outputs(self) -> tuple[Path, ...]:
-        return tuple(Path(segment.output_name) for segment in self.segments)
-
     def to_manifest(self) -> dict:
         return {
             "title": self.title,
             "subtitle": self.subtitle,
             "clip_count": self.clip_count,
-            "cold_open_s": self.cold_open_s,
             "total_duration_s": round(self.total_duration_s, 3),
             "warnings": list(self.warnings),
             "segments": [
                 {
                     "position": segment.position,
-                    "kind": "cold_open" if segment.is_cold_open else "ranking",
                     "label": segment.label,
                     "duration_s": round(segment.duration_s, 3),
                     "output": segment.output_name,
@@ -92,83 +78,9 @@ class AssemblyPlan:
         }
 
 
-def output_name_for(position: int, label: str) -> str:
-    """``5`` + ``"GATO VOLADOR"`` → ``05-gato-volador.mp4``."""
-    if position == 0:
-        return "00-cold-open.mp4"
-    return f"{position:02d}-{slugify(label, fallback=f'puesto-{position}')}.mp4"
-
-
 def prepared_name(position: int) -> str:
     """Nombre estable de un clip preparado: ``05.mp4`` (sin el rótulo, que aún no existe)."""
     return f"{position:02d}.mp4"
-
-
-def build_plan(
-    binding: Binding,
-    infos: dict[int, MediaInfo],
-    *,
-    config: Config | None = None,
-    cold_open_s: float = 0.0,
-) -> AssemblyPlan:
-    """Construye el plan de ensamblado a partir del binding y los medios medidos.
-
-    L1 une **siempre** con corte seco (sin solape), lo que permite pegar los tramos
-    por copia de streams sin recodificar el vídeo.
-    """
-    cfg = config or Config()
-    errors: list[str] = []
-    warnings: list[str] = []
-
-    missing = [position for position in range(1, cfg.items + 1) if position not in infos]
-    if missing:
-        raise PlanError(f"faltan los medios de los puestos: {missing}")
-
-    segments: list[SegmentPlan] = []
-
-    # Cold open: un adelanto del #1 al principio, sin rótulo de posición.
-    if cold_open_s > 0:
-        best = binding.best
-        best_info = infos[best.position]
-        teaser = min(cold_open_s, best_info.usable_duration_s)
-        if teaser < cold_open_s:
-            warnings.append(
-                f"el cold open pedía {cold_open_s}s y el #1 dura {best_info.usable_duration_s:.2f}s: se usan {teaser:.2f}s"
-            )
-        segments.append(
-            SegmentPlan(
-                position=0,
-                source=best.path,
-                label=best.label,
-                duration_s=teaser,
-                output_name=output_name_for(0, best.label),
-            )
-        )
-    elif cold_open_s < 0:
-        errors.append("el cold open no puede ser negativo")
-
-    for item in binding.ordered:
-        info = infos[item.position]
-        segments.append(
-            SegmentPlan(
-                position=item.position,
-                source=item.path,
-                label=item.label,
-                # La duración del vídeo, no la del contenedor: es la que da los fotogramas.
-                duration_s=info.usable_duration_s,
-                output_name=output_name_for(item.position, item.label),
-            )
-        )
-
-    return _finalise(
-        title=binding.title,
-        subtitle=binding.subtitle,
-        segments=segments,
-        cold_open_s=cold_open_s,
-        config=cfg,
-        errors=errors,
-        warnings=warnings,
-    )
 
 
 def plan_from_prepared(
@@ -200,7 +112,6 @@ def plan_from_prepared(
     segments = [
         SegmentPlan(
             position=clip.position,
-            source=clip.path,
             label=clip.label,
             duration_s=clip.duration_s,
             output_name=prepared_name(clip.position),
@@ -212,7 +123,6 @@ def plan_from_prepared(
         title=title,
         subtitle=subtitle,
         segments=segments,
-        cold_open_s=0.0,
         config=cfg,
         errors=errors,
         warnings=warnings,
@@ -224,7 +134,6 @@ def _finalise(
     title: str,
     subtitle: str,
     segments: Sequence[SegmentPlan],
-    cold_open_s: float,
     config: Config,
     errors: list[str],
     warnings: list[str],
@@ -233,7 +142,6 @@ def _finalise(
     plan = AssemblyPlan(
         title=title,
         segments=tuple(segments),
-        cold_open_s=cold_open_s,
         subtitle=subtitle,
     )
 

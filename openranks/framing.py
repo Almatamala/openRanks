@@ -1,20 +1,18 @@
 """Análisis del encuadre de un clip de entrada con FFmpeg.
 
 El núcleo puro (``openranks/core/framing.py``) decide a partir de fotogramas en
-gris; este módulo los extrae, afina los bordes a resolución completa y arma el JSON
-que consume el panel/CLI. No ejecuta el montaje: el ensamblador usa la geometría
-resultante y construye su propio ``argv`` con ``normalize_argv``.
+gris; este módulo los extrae y afina los bordes a resolución completa. No ejecuta el
+montaje: el preparador usa la geometría resultante y construye su propio ``argv`` con
+``normalize_argv``.
 """
 
 from __future__ import annotations
 
-import shlex
 import subprocess
 from dataclasses import replace
 from pathlib import Path
 from statistics import median
 
-from .core import ffmpeg as ff
 from .core.config import Config
 from .core.framing import (
     CENTER_TOLERANCE,
@@ -372,27 +370,3 @@ def analyze(
 
     refined, warnings = refine_crop(decision.crop, full_frames, visible)
     return _with_crop(decision, refined, warnings, target=cfg.total)
-
-
-def decision_payload(
-    decision: FramingDecision,
-    *,
-    source: Path,
-    info: MediaInfo,
-    config: Config | None = None,
-) -> dict:
-    """Payload JSON del comando ``fit``, con el comando de normalización de L1."""
-    cfg = config or Config.from_env()
-    command = None
-    if decision.fit != "sin_cambios":
-        argv = ff.normalize_argv(
-            "ffmpeg",
-            source,
-            Path("OUT.mp4"),
-            config=cfg,
-            has_audio=info.has_audio,
-            fit=decision.fit,
-            crop=decision.crop,
-        )
-        command = shlex.join(argv)
-    return decision.to_json(command=command)

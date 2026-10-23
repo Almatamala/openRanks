@@ -95,10 +95,9 @@ class FramingDecision:
     warnings: tuple[str, ...] = ()
     signals: dict = field(default_factory=dict)
 
-    def to_json(self, *, command: str | None = None) -> dict:
-        """Contrato de salida del comando ``openranks fit``."""
+    def to_manifest(self) -> dict:
+        """Lo que se guarda en el manifiesto: sin rutas ni comandos del host."""
         return {
-            "version": 1,
             "clasificacion": self.classification,
             "motivo": self.reason,
             "resolucion_entrada": f"{self.input_size[0]}x{self.input_size[1]}",
@@ -108,16 +107,8 @@ class FramingDecision:
             "encaje": self.fit,
             "confianza": round(float(self.confidence), 3),
             "senales": dict(self.signals),
-            "comando_ffmpeg": command,
             "advertencias": list(self.warnings),
         }
-
-    def to_manifest(self) -> dict:
-        """Lo que se guarda en el manifiesto: sin rutas ni comando de host."""
-        payload = self.to_json()
-        payload.pop("comando_ffmpeg", None)
-        payload.pop("version", None)
-        return payload
 
 
 def _median(values: Sequence[float]) -> float:

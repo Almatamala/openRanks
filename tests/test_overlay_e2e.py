@@ -14,11 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from openranks.assemble import assemble
-from openranks.core.binding import load_binding
 from openranks.core.config import Config
-from openranks.core.media import probe
+from openranks.join import join
 from openranks.overlay import OverlayError, preview, render
+from openranks.prepare import prepare_clip, prepared_file, write_metadata
 
 pytestmark = pytest.mark.integration
 
@@ -57,41 +56,22 @@ def _region(ffmpeg_bin: str, video: Path, *, at_s: float, crop: str, out: Path) 
 
 
 @pytest.fixture()
-def l1_out(ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path) -> Path:
+def l1_out(ffmpeg_bin, ffprobe_bin, synthetic_clips, tmp_path) -> Path:
     """Una salida de L1 ya hecha (union.mp4 + manifest.json)."""
-    binding = load_binding(write_binding(synthetic_clips), _fast())
+    config = _fast()
     out = tmp_path / "out"
-    assemble(binding, out, config=_fast(), ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin)
+    for position, source in zip(range(1, 6), synthetic_clips):
+        clip = prepare_clip(
+            source,
+            prepared_file(out, position),
+            position=position,
+            config=config,
+            ffmpeg=ffmpeg_bin,
+            ffprobe=ffprobe_bin,
+        )
+        write_metadata(out, clip)
+    join(out, title="TOP 5 PRUEBAS", positions=5, config=config, ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin)
     return out
-
-
-def test_assemble_with_edit_produces_the_ranking_without_a_cover(
-    ffmpeg_bin, ffprobe_bin, synthetic_clips, write_binding, tmp_path
-):
-    binding = load_binding(write_binding(synthetic_clips, title="TOP 5 GATOS"), _fast())
-    result = assemble(binding, tmp_path / "out", config=_fast(), ffmpeg=ffmpeg_bin, ffprobe=ffprobe_bin, edit=True)
-
-    assert result.overlay is not None
-    ranking = result.overlay.ranking
-    assert ranking.is_file() and result.overlay.spec_path.is_file()
-    # El único entregable es el ranking final: ni portada ni fotogramas sueltos.
-    assert not (tmp_path / "out" / "cover.jpg").exists()
-
-    info = probe(ffprobe_bin, ranking)
-    assert (info.width, info.height) == (1080, 1920)
-    assert info.fps == pytest.approx(30, abs=0.05)
-    assert info.pix_fmt == "yuv420p"
-    assert info.has_audio
-    # El overlay no cambia la duración: 5 clips de 2 s = 10 s.
-    assert info.duration_s == pytest.approx(10.0, abs=0.15)
-
-    # El manifiesto gana el bloque de L2 y el spec dice que solo el texto es editable.
-    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["render"]["layer"] == "L2"
-    assert manifest["render"]["ranking"]["file"] == "ranking.mp4"
-    spec = json.loads(result.overlay.spec_path.read_text(encoding="utf-8"))
-    assert spec["editable_surface"]["fields"] == ["title", "subtitle", "labels"]
-    assert spec["title"]["text"] == "TOP 5 GATOS"
 
 
 def test_the_overlay_actually_draws_text(ffmpeg_bin, l1_out, tmp_path):

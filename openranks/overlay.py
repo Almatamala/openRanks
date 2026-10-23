@@ -44,7 +44,6 @@ class OverlayResult:
     ranking: Path
     spec_path: Path
     spec: dict
-    render_ms: int | None = None
     extra_warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -123,7 +122,6 @@ def preview(
             subtitle=subtitle,
             labels=final_labels,
             segments=segments,
-            cold_open_s=0.0,
             style=style,
             config=cfg,
         )
@@ -194,7 +192,6 @@ def render(
     loaded = _load_plan(out_dir)
     plan = loaded["plan"]
     segments = plan["segments"]
-    cold_open_s = float(plan.get("cold_open_s") or 0.0)
 
     # `get_style` ya resuelve `OPENRANKS_FONT`; aquí solo manda un `--font` explícito.
     style = get_style(style_overrides)
@@ -215,7 +212,6 @@ def render(
             subtitle=final_subtitle,
             labels=final_labels,
             segments=segments,
-            cold_open_s=cold_open_s,
             style=style,
             config=cfg,
         )

@@ -2,18 +2,9 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from openranks.core.progress import (
-    PHASES,
-    PROGRESS_PREFIX,
-    SPAN_EDIT_ONLY,
-    SPAN_FULL,
-    Progress,
-    parse_event,
-)
+from openranks.core.progress import PHASES, SPAN_EDIT_ONLY, SPAN_FULL, Progress
 
 
 def _collect() -> tuple[list, Progress]:
@@ -82,22 +73,3 @@ def test_to_json_only_carries_what_the_panel_needs():
     event = Progress().normalizing(2, 5, "clip 3")
     payload = event.to_json()
     assert payload == {"percent": 31.0, "phase": "normalizing", "label": "clip 3", "step": 2, "total": 5}
-
-
-def test_parse_event_reads_a_prefixed_line():
-    line = PROGRESS_PREFIX + json.dumps({"percent": 19.6, "phase": "normalizing", "label": "clip 2"})
-    assert parse_event(line) == {"percent": 19.6, "phase": "normalizing", "label": "clip 2"}
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "el comando externo falló",  # stderr de FFmpeg
-        PROGRESS_PREFIX + "{no soy json",
-        PROGRESS_PREFIX + json.dumps({"phase": "normalizing"}),  # sin porcentaje
-        PROGRESS_PREFIX + json.dumps([1, 2, 3]),  # no es un objeto
-        "",
-    ],
-)
-def test_parse_event_ignores_everything_that_is_not_a_progress_line(line):
-    assert parse_event(line) is None

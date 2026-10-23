@@ -8,8 +8,6 @@ tocar FFmpeg, porque si el texto no cabe, el error es del input y no del render.
 from __future__ import annotations
 
 import json
-import re
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,19 +36,6 @@ class Binding:
     # Opcional: si viene vacío no se dibuja. Va siempre debajo del título (§9.2).
     subtitle: str = ""
 
-    @property
-    def ordered(self) -> tuple[ClipItem, ...]:
-        """Los puestos en orden de reproducción: ``#5`` primero, ``#1`` al final."""
-        return tuple(sorted(self.items, key=lambda item: item.position, reverse=True))
-
-    @property
-    def best(self) -> ClipItem:
-        """El ``#1`` (el que cierra el vídeo y alimenta el cold open)."""
-        for item in self.items:
-            if item.position == 1:
-                return item
-        raise BindingError("#1 no está en el binding")
-
 
 def visible_length(text: str) -> int:
     """Caracteres que se dibujan: las marcas de color (`*`/`_`) no cuentan.
@@ -60,16 +45,6 @@ def visible_length(text: str) -> int:
     rechaza y el operador vería el error en el peor momento.
     """
     return len(text.replace("*", "").replace("_", ""))
-
-
-def slugify(text: str, *, fallback: str = "clip", max_len: int = 32) -> str:
-    """Nombre de archivo legible y seguro a partir del rótulo del puesto."""
-    normalized = unicodedata.normalize("NFKD", text)
-    ascii_text = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    ascii_text = ascii_text.lower()
-    ascii_text = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
-    ascii_text = re.sub(r"-{2,}", "-", ascii_text)[:max_len].strip("-")
-    return ascii_text or fallback
 
 
 def validate_binding(binding: Binding, config: Config | None = None, *, check_paths: bool = True) -> None:

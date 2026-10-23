@@ -13,7 +13,6 @@ inventado. Módulo **puro** (§7.6 del RPD): no ejecuta nada ni toca FFmpeg.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Callable
 
@@ -94,7 +93,6 @@ class Progress:
     def __init__(self, emit: ProgressCallback | None = None, *, span: dict[str, tuple[float, float]] | None = None) -> None:
         self._emit: ProgressCallback = emit or (lambda _event: None)
         self._span = span or SPAN_FULL
-        self.last: ProgressEvent | None = None
 
     def _send(self, phase: str, label: str, fraction: float, *, step: int | None = None, total: int | None = None) -> ProgressEvent:
         if phase not in self._span:
@@ -108,7 +106,6 @@ class Progress:
             step=step,
             total=total,
         )
-        self.last = event
         self._emit(event)
         return event
 
@@ -131,21 +128,3 @@ class Progress:
 
     def finishing(self, label: str = "Cerrando el montaje") -> ProgressEvent:
         return self._send("finishing", label, 1.0)
-
-
-def parse_event(line: str, *, prefix: str = PROGRESS_PREFIX) -> dict | None:
-    """Extrae el evento de una línea del motor. Devuelve ``None`` si no lo es.
-
-    Vive aquí, y no en el panel, para que el formato de la línea tenga una sola
-    definición (y se pueda testear sin Node).
-    """
-    if not line.startswith(prefix):
-        return None
-
-    try:
-        payload = json.loads(line[len(prefix) :])
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict) or "percent" not in payload:
-        return None
-    return payload

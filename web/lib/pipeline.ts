@@ -47,7 +47,7 @@ function friendlyError(stderr: string, code: number | null): string {
   const last = lines[lines.length - 1];
   if (last)
     return last.replace(
-      /^(entrada inválida|fallo el ensamblado|fallo el render|fallo la preparación|fallo la unión):\s*/i,
+      /^(entrada inválida|fallo el render|fallo la preparación|fallo la unión):\s*/i,
       "",
     );
   if (code === 2) return "Algún dato de entrada no es válido. Revisa el título, el subtítulo y los nombres de los puestos.";
@@ -59,12 +59,8 @@ function friendlyError(stderr: string, code: number | null): string {
  * Los chunks no respetan los saltos de línea, así que se guarda el resto pendiente.
  */
 function collectOutput(child: ChildProcess, id: string, onProgress?: (event: ProgressEvent) => void) {
-  let stdout = "";
   let stderr = "";
   let pending = "";
-  child.stdout?.on("data", (chunk: Buffer) => {
-    stdout += chunk.toString("utf-8");
-  });
   child.stderr?.on("data", (chunk: Buffer) => {
     pending += chunk.toString("utf-8");
     const lines = pending.split(/\r?\n/);
@@ -82,7 +78,7 @@ function collectOutput(child: ChildProcess, id: string, onProgress?: (event: Pro
       }
     }
   });
-  return { stdout: () => stdout, stderr: () => stderr };
+  return { stderr: () => stderr };
 }
 
 /** Quita las piezas que ya no valen cuando entra un clip nuevo (unión, edición, spec). */
@@ -102,18 +98,6 @@ function dropPrepared(id: string, position: number): void {
 
 export function isRunning(id: string): boolean {
   return rendering.has(id);
-}
-
-export function isPreparing(id: string, position?: number): boolean {
-  if (position === undefined) {
-    for (const key of preparing.keys()) if (key.startsWith(`${id}:`)) return true;
-    return false;
-  }
-  return preparing.has(`${id}:${position}`);
-}
-
-export function isJoining(id: string): boolean {
-  return joining.has(id);
 }
 
 /**
@@ -151,12 +135,10 @@ export async function prepareClip(id: string, position: number, positions?: numb
     progressDetail: null,
     error: null,
     startedAt: null,
-    finishedAt: null,
-    result: null,
     request: { ...status.request, positions: count },
     join: { state: "idle", error: null },
   });
-  patchClip(id, position, { state: "preparing", error: null, durationS: null, percent: 0 });
+  patchClip(id, position, { state: "preparing", error: null, percent: 0 });
   dropStaleRender(id);
   dropPrepared(id, position);
 
@@ -174,7 +156,6 @@ export async function prepareClip(id: string, position: number, positions?: numb
     "--items",
     String(count),
     "--progress",
-    "--json",
     "--quiet",
   ];
   if (ffmpeg) argv.push("--ffmpeg", ffmpeg);
@@ -217,22 +198,15 @@ export async function prepareClip(id: string, position: number, positions?: numb
     const current = readStatus(id);
     if (!current) return;
     if (code === 0) {
-      let durationS: number | null = null;
-      try {
-        const payload = JSON.parse(output.stdout().trim()) as { duration_s?: unknown };
-        durationS = typeof payload.duration_s === "number" ? payload.duration_s : null;
-      } catch {
-        durationS = null;
-      }
       appendLog(id, `puesto #${position} listo\n`);
-      patchClip(id, position, { state: "ready", error: null, durationS, percent: 100 });
+      patchClip(id, position, { state: "ready", error: null, percent: 100 });
       const next = readStatus(id);
       if (next && next.join.state === "failed") patchJoin(id, { state: "idle", error: null });
       return;
     }
     const message = friendlyError(output.stderr(), code);
     appendLog(id, `puesto #${position}: ${message}\n`);
-    patchClip(id, position, { state: "failed", error: message, durationS: null });
+    patchClip(id, position, { state: "failed", error: message });
   });
 
   const next = readStatus(id);
@@ -276,7 +250,6 @@ export async function joinJob(id: string, request: JobRequest): Promise<JobStatu
     "--subtitle",
     request.subtitle,
     "--progress",
-    "--json",
     "--quiet",
   ];
   for (const [position, label] of Object.entries(request.labels)) {
@@ -329,7 +302,6 @@ function failJob(id: string, message: string): void {
       phase: "Se paró",
       progress: 100,
       error: message,
-      finishedAt: new Date().toISOString(),
     });
   } catch {
     // El trabajo pudo desaparecer mientras corría.
@@ -383,7 +355,6 @@ function launchRender(
     // render valida el binding contra el ranking de este trabajo.
     // El avance medido va por stderr: el panel lo convierte en barra y tiempo restante.
     "--progress",
-    "--json",
     "--quiet",
   ];
   if (ffmpeg) argv.push("--ffmpeg", ffmpeg);
@@ -416,26 +387,19 @@ function launchRender(
 
   child.on("error", (error) => {
     rendering.delete(id);
-    failJob(id, `No se pudo arrancar el motor (${error.message}). Revisa el diagnóstico en /api/engine.`);
+    failJob(id, `No se pudo arrancar el motor (${error.message}). Revisa que Python y FFmpeg estén disponibles.`);
   });
 
   child.on("close", (code) => {
     rendering.delete(id);
-    const finishedAt = new Date().toISOString();
     if (code === 0) {
-      let result: Record<string, unknown> | null = null;
-      try {
-        result = JSON.parse(output.stdout().trim()) as Record<string, unknown>;
-      } catch {
-        result = null;
-      }
       appendLog(id, "listo\n");
-      patchStatus(id, { state: "done", phase: "Listo", progress: 100, error: null, finishedAt, result });
+      patchStatus(id, { state: "done", phase: "Listo", progress: 100, error: null });
       return;
     }
     const message = friendlyError(output.stderr(), code);
     appendLog(id, `${message}\n`);
-    patchStatus(id, { state: "failed", phase: "Se paró", progress: 100, error: message, finishedAt });
+    patchStatus(id, { state: "failed", phase: "Se paró", progress: 100, error: message });
   });
 }
 

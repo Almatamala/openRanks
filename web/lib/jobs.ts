@@ -16,8 +16,6 @@ export type ClipState = "uploading" | "preparing" | "ready" | "failed";
 export interface ClipStatus {
   state: ClipState;
   error: string | null;
-  /** Duración lista para el plan (segundos), cuando el clip ya está preparado. */
-  durationS: number | null;
   /** Avance de la preparación de **ese** clip (0-100), si el motor lo publica. */
   percent?: number;
 }
@@ -43,10 +41,8 @@ export interface JobRequest {
 }
 
 export interface Artifact {
-  /** Ruta relativa dentro del render, en POSIX (`clips/05-x.mp4`). */
+  /** Ruta relativa dentro del render, en POSIX (`ranking.mp4`). */
   path: string;
-  label: string;
-  kind: "video" | "image" | "json";
   bytes: number;
 }
 
@@ -59,16 +55,12 @@ export interface JobStatus {
   /** Último avance publicado por el motor (porcentaje real), si lo hay. */
   progressDetail: ProgressEvent | null;
   error: string | null;
-  createdAt: string;
   startedAt: string | null;
-  finishedAt: string | null;
   request: Partial<JobRequest>;
-  uploaded: number[];
   /** Se incrementa con cada clip nuevo: una unión vieja no puede darse por buena. */
   revision: number;
   clips: Record<string, ClipStatus>;
   join: JoinStatus;
-  result: Record<string, unknown> | null;
 }
 
 /** Puestos por defecto si un trabajo no dice cuántos (los antiguos siguen valiendo). */
@@ -112,15 +104,11 @@ export function createJob(): JobStatus {
     progress: 0,
     progressDetail: null,
     error: null,
-    createdAt: new Date().toISOString(),
     startedAt: null,
-    finishedAt: null,
     request: {},
-    uploaded: [],
     revision: 0,
     clips: {},
     join: { state: "idle", error: null },
-    result: null,
   };
   writeStatus(id, status);
   return status;
@@ -151,7 +139,7 @@ export function patchStatus(id: string, patch: Partial<JobStatus>): JobStatus {
 export function patchClip(id: string, position: number, patch: Partial<ClipStatus>): JobStatus {
   const current = readStatus(id);
   if (!current) throw new Error(`no existe el trabajo ${id}`);
-  const previous = current.clips[String(position)] ?? { state: "uploading" as const, error: null, durationS: null };
+  const previous = current.clips[String(position)] ?? { state: "uploading" as const, error: null };
   return patchStatus(id, {
     clips: { ...current.clips, [String(position)]: { ...previous, ...patch } },
   });
@@ -243,7 +231,7 @@ export function inferPhase(id: string, status: JobStatus): { phase: string; prog
   if (ready > 0) return { phase: `Preparados ${ready} de ${count}`, progress: Math.round((ready / Math.max(1, count)) * 60) };
   if (existsSync(path.join(render, "ranking.mp4"))) return { phase: "Cerrando el render", progress: 96 };
   if (existsSync(path.join(render, "union.mp4"))) return { phase: "Añadiendo la edición", progress: 82 };
-  if (status.uploaded.length < count) return { phase: "Subiendo los clips", progress: 2 };
+  if (Object.keys(status.clips).length < count) return { phase: "Subiendo los clips", progress: 2 };
   return { phase: "Preparando la entrada", progress: 4 };
 }
 
@@ -257,7 +245,7 @@ export function listArtifacts(id: string): Artifact[] {
   if (!existsSync(ranking)) return [];
   const stat = statSync(ranking);
   if (!stat.isFile()) return [];
-  return [{ path: "ranking.mp4", label: "Ranking final", kind: "video", bytes: stat.size }];
+  return [{ path: "ranking.mp4", bytes: stat.size }];
 }
 
 /** Comprueba que un artefacto pedido por la API es uno de los que la lista ofrece. */

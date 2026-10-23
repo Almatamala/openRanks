@@ -116,8 +116,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"\nbinding: {binding_path}")
     print(
-        f"prueba:  python -m openranks assemble --input {binding_path} --out {out / 'render'} "
-        f"--items {args.positions}"
+        f"prueba:  python -m openranks prepare --input {clips_dir / 'clip-1.mp4'} "
+        f"--out {out / 'render'} --position 1 --items {args.positions}"
+    )
+    print(
+        "         (repite con cada clip y su puesto) y luego: "
+        f"python -m openranks join --out {out / 'render'} --items {args.positions}"
     )
     return 0
 

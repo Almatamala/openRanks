@@ -3,9 +3,8 @@
 #
 #   docker compose up --build      →  http://localhost:3000
 #
-# Nota: los servicios `postgres`, `minio`, `worker` y `renderer` que dibuja el RPD
-# (§7.7) son de **L4** y todavía no existen en el código. Este compose levanta lo que
-# hoy hay: L1 + L2 con su panel. Cuando lleguen esas piezas, se añaden aquí.
+# Este compose levanta lo que hoy hay: L1 + L2 con su panel. La extracción
+# automática y la publicación quedan fuera del alcance actual.
 name: openranks
 
 services:

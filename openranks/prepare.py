@@ -13,7 +13,7 @@ medido, para que la unión no tenga que volver a sondear ni a analizar el encuad
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -49,7 +49,6 @@ class PreparedClip:
     normalized: MediaInfo
     decision: FramingDecision | None = None
     warnings: tuple[str, ...] = ()
-    loudness: dict = field(default_factory=dict)
 
     @property
     def duration_s(self) -> float:
@@ -99,7 +98,6 @@ def prepare_clip(
     ffmpeg: str | None = None,
     ffprobe: str | None = None,
     fit: str | None = None,
-    limit_s: float | None = None,
     info: MediaInfo | None = None,
     decision: FramingDecision | None = None,
     log: Logger | None = None,
@@ -109,8 +107,6 @@ def prepare_clip(
     ``info`` y ``decision`` permiten reaprovechar la medición y el análisis de encuadre
     que ya hizo el llamador (el ensamblador completo los necesita antes de planificar),
     y así no se paga dos veces el ``ffprobe`` ni el muestreo de FFmpeg.
-
-    ``limit_s`` recorta la entrada (cold open). Sin él, el clip entra completo.
     """
     say = log or _noop
     cfg = config or Config.from_env()
@@ -170,7 +166,7 @@ def prepare_clip(
         say(f"  #{position}: midiendo loudness")
         measured = _measure_loudness(ffmpeg_bin, source, cfg)
 
-    duration_s = info.usable_duration_s if limit_s is None else float(limit_s)
+    duration_s = info.usable_duration_s
     say(f"  #{position}: normalizando -> {destination.name}")
     completed = run(
         ff.normalize_argv(
@@ -182,7 +178,6 @@ def prepare_clip(
             fit=segment_fit,
             crop=crop,
             measured=measured,
-            limit_s=limit_s,
             duration_s=duration_s,
         )
     )
@@ -205,7 +200,6 @@ def prepare_clip(
         normalized=normalized,
         decision=decision,
         warnings=tuple(warnings),
-        loudness=measured or {},
     )
 
 

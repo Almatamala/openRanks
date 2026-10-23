@@ -7,32 +7,17 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from openranks.core.binding import Binding, ClipItem
 from openranks.core.config import Config
 from openranks.core.manifest import build_manifest, sha256_file, utc_now, write_manifest
-from openranks.core.media import MediaInfo
-from openranks.core.plan import build_plan
+from openranks.core.plan import PreparedInput, plan_from_prepared
 
 
 def _plan():
-    items = tuple(ClipItem(position=index, path=Path(f"{index}.mp4"), label=f"PUESTO {index}") for index in range(1, 6))
-    infos = {
-        position: MediaInfo(
-            path=Path(f"{position}.mp4"),
-            duration_s=6.0,
-            width=1920,
-            height=1080,
-            fps=30.0,
-            video_codec="h264",
-            pix_fmt="yuv420p",
-            audio_codec="aac",
-            sample_rate=48000,
-            channels=2,
-            size_bytes=100,
-        )
+    clips = [
+        PreparedInput(position=position, path=Path(f"{position:02d}.mp4"), label=f"PUESTO {position}", duration_s=6.0)
         for position in range(1, 6)
-    }
-    return build_plan(Binding(title="TOP 5 GATOS", items=items), infos, config=Config())
+    ]
+    return plan_from_prepared(clips, title="TOP 5 GATOS", config=Config())
 
 
 def test_sha256_matches_hashlib(tmp_path):

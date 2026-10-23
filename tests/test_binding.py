@@ -1,4 +1,4 @@
-"""Contrato de entrada: posiciones, textos (RPD §9.5) y orden de reproducción."""
+"""Contrato de entrada: posiciones y textos (RPD §9.5)."""
 
 from __future__ import annotations
 
@@ -7,31 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from openranks.core.binding import Binding, BindingError, ClipItem, load_binding, slugify, validate_binding
+from openranks.core.binding import Binding, BindingError, ClipItem, load_binding, validate_binding
 from openranks.core.config import Config
 
 
 def _items(count: int = 5) -> tuple[ClipItem, ...]:
     return tuple(ClipItem(position=index, path=Path(f"clip-{index}.mp4"), label=f"PUESTO {index}") for index in range(1, count + 1))
-
-
-def _binding(**overrides) -> Binding:
-    payload = {"title": "TOP 5 GATOS", "items": _items()}
-    payload.update(overrides)
-    return Binding(**payload)
-
-
-def test_ordered_goes_from_last_position_to_first():
-    binding = _binding()
-    assert [item.position for item in binding.ordered] == [5, 4, 3, 2, 1]
-
-
-def test_best_is_position_one():
-    assert _binding().best.position == 1
-
-
-def test_valid_binding_passes_without_path_checks():
-    validate_binding(_binding(), Config(), check_paths=False)
 
 
 def test_duplicate_positions_are_rejected():
@@ -49,7 +30,6 @@ def test_a_ranking_of_up_to_ten_positions_is_valid():
     for count in (5, 7, 10):
         binding = Binding(title=f"TOP {count} GATOS", items=_items(count))
         validate_binding(binding, Config(items=count), check_paths=False)
-        assert [item.position for item in binding.ordered] == list(range(count, 0, -1))
 
 
 def test_a_ranking_outside_the_format_is_rejected():
@@ -130,11 +110,3 @@ def test_invalid_json_is_reported(tmp_path):
     broken.write_text("{no soy json", encoding="utf-8")
     with pytest.raises(BindingError, match="JSON válido"):
         load_binding(broken, Config())
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [("GATO VOLADOR!!", "gato-volador"), ("Canción de cuna", "cancion-de-cuna"), ("   ", "clip"), ("¡¡¡CAOS!!!", "caos")],
-)
-def test_slugify(raw, expected):
-    assert slugify(raw) == expected

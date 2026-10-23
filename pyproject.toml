@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openranks"
 version = "0.1.0"
-description = "openRanks — L1: 5 clips listos y su unión en un solo vídeo vertical"
+description = "openRanks — L1 + L2: clips listos, unión vertical y edición del ranking"
 readme = "README.md"
 requires-python = ">=3.11"
 # Núcleo deliberadamente stdlib: sin numpy, sin wrappers de ffmpeg (el RPD §7.6 pide

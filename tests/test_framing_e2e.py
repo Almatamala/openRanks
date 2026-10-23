@@ -5,13 +5,11 @@ Se salta si no hay FFmpeg/ffprobe, como el resto de la suite de integración.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from openranks.cli import main
 from openranks.core import ffmpeg as ff
 from openranks.core.config import Config
 from openranks.core.media import probe
@@ -91,16 +89,6 @@ def test_detects_the_useful_area_and_normalizes_it(ffmpeg_bin, ffprobe_bin, tmp_
     assert (normalized.width, normalized.height) == (180, 320)
     assert normalized.pix_fmt == "yuv420p"
     assert normalized.has_audio
-
-
-def test_the_fit_command_prints_json_and_the_detected_crop(ffmpeg_bin, ffprobe_bin, tmp_path, capsys):
-    source = _make_pillarbox(ffmpeg_bin, tmp_path / "cli-pillarbox.mp4")
-    code = main(["fit", str(source), "--ffmpeg", ffmpeg_bin, "--ffprobe", ffprobe_bin])
-    assert code == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["clasificacion"] == "A"
-    assert payload["crop"]["w"] > 0 and payload["crop"]["x"] > 0
-    assert payload["comando_ffmpeg"] and "crop=" in payload["comando_ffmpeg"]
 
 
 def test_a_vertical_clip_is_not_analyzed_or_cropped(ffmpeg_bin, ffprobe_bin, make_clip):

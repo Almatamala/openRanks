@@ -41,7 +41,6 @@ def _spec() -> dict:
         title="TOP 5 GATOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=segments,
-        cold_open_s=0.0,
         style=_style(),
         config=Config(),
     )
@@ -149,7 +148,6 @@ def test_ass_title_paints_marked_words_in_the_two_accents():
         title="TOP *5* _GATOS_",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=segments,
-        cold_open_s=0.0,
         style=_style(),
         config=Config(),
     )
@@ -165,7 +163,6 @@ def test_ass_escapes_user_text_so_braces_do_not_break_the_overlay():
         title="TOP 5 {GATOS}",
         labels={5: r"CAOS \ TOTAL", 4: "B", 3: "C", 2: "D", 1: "E"},
         segments=segments,
-        cold_open_s=0.0,
         style=_style(),
         config=Config(),
     )
@@ -191,7 +188,6 @@ def test_a_subtitle_is_drawn_below_the_title_with_its_own_size():
         subtitle="LOS MÁS LOCOS",
         labels={position: f"RÓTULO {position}" for position in range(1, 6)},
         segments=[{"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(5, 0, -1)],
-        cold_open_s=0.0,
         style=style,
         config=Config(),
     )
@@ -270,7 +266,6 @@ def _spec_of(count: int, title: str = "TOP 5 GATOS", *, segment_s: float = 7.0) 
         title=title,
         labels={position: f"RÓTULO {position}" for position in range(1, count + 1)},
         segments=segments,
-        cold_open_s=0.0,
         style=_style(),
         config=Config(items=count),
     )
@@ -286,7 +281,6 @@ def test_ass_title_wraps_into_lines_and_shrinks_until_it_fits():
         segments=[
             {"position": position, "label": f"PUESTO {position}", "duration_s": 7.0} for position in range(8, 0, -1)
         ],
-        cold_open_s=0.0,
         style=style,
         config=Config(items=8),
     )

@@ -12,7 +12,6 @@ import {
   patchStatus,
   readStatus,
   renderDir,
-  uploadedPositions,
 } from "@/lib/jobs";
 import { clampPositions, POSITIONS_MAX } from "@/lib/limits";
 
@@ -60,7 +59,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "No se pudo guardar el archivo en el servidor." }, { status: 500 });
   }
 
-  const uploaded = uploadedPositions(id);
   const current = readStatus(id);
   const items = clampPositions(new URL(request.url).searchParams.get("items") ?? current?.request.positions);
 
@@ -76,14 +74,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     progressDetail: null,
     error: null,
     startedAt: null,
-    finishedAt: null,
-    result: null,
     revision: (current?.revision ?? 0) + 1,
     request: { ...current?.request, positions: items },
     join: { state: "idle", error: null },
-    uploaded,
   });
-  patchClip(id, slot, { state: "uploading", error: null, durationS: null, percent: 0 });
+  patchClip(id, slot, { state: "uploading", error: null, percent: 0 });
 
-  return NextResponse.json({ ok: true, uploaded, revision: (current?.revision ?? 0) + 1 });
+  return NextResponse.json({ ok: true, revision: (current?.revision ?? 0) + 1 });
 }

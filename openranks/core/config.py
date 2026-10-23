@@ -59,7 +59,7 @@ class Config:
     true_peak_db: float = -1.0
     loudness_range: float = 11.0
 
-    # Bandas de duración (§RF-2 y criterio de L1).
+    # Bandas de duración (§4.1 del RPD y criterio de L1).
     min_clip_seconds: float = 1.0
     max_clip_seconds: float = 30.0
     min_total_seconds: float = 30.0
