@@ -3,18 +3,18 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **L1, L2 y el panel están construidos y verificados.** El alcance actual está cerrado a estas capas |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) definida y planificada**: requisitos cerrados, código pendiente |
 | **Fecha** | 23-oct-2026 |
 | **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado y verificación) vive en `docs/plan/openRanks-plan.md` |
 | **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
-| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11) |
+| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada** (ADR-16) |
 
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
 
-Este documento describe **lo que el producto hace hoy** y las reglas que lo gobiernan. Las
-capacidades de extracción automática y publicación quedan **fuera del alcance actual**: se
-resumen en §4.2 y no tienen módulos, tablas ni endpoints en el código.
+Este documento describe **lo que el producto hace hoy** y lo que añadirá la **Fase 2**. Lo
+planificado se marca como tal; lo que aún no tiene diseño cerrado está en §16. La extracción
+automática y la publicación siguen **fuera del alcance** (§4.2).
 
 ---
 
@@ -36,6 +36,24 @@ El valor está en estandarizar lo que hoy se hace a mano:
 4. **Panel único** que encadena todo el flujo sin terminal, con progreso real y errores
    accionables.
 
+**Fase 2 — galería y navegación (planificada).** El panel gana un menú lateral persistente con
+**Montar ranking** y **Galería de videos**. La galería guarda los clips originales, les asigna
+una categoría y permite filtrarlos; el operador selecciona entre 5 y 10 y el orden de selección
+fija los puestos (#1 para el primero). **Generar manual** importa los clips al trabajo, los
+prepara y abre el montaje con las casillas ya puestas. En el montaje, el borde izquierdo de
+cada casilla permite reordenar por arrastre. Al terminar, **Borrar videos utilizados** elimina
+de la galería los clips de ese ranking, con confirmación. **Generar automático** queda visible
+y deshabilitado: su algoritmo no forma parte de esta fase.
+
+Objetivos de la Fase 2:
+
+1. **Reutilizar** los clips ya subidos sin volver a buscarlos ni subirlos.
+2. **Reducir el montaje** a seleccionar, ordenar y pulsar «Generar manual».
+3. **Corregir el orden** sin deshacer la selección ni volver a subir nada.
+4. **Limpiar la galería** de lo publicado con una acción explícita y confirmada.
+5. **Dejar preparada** la generación automática sin prometer un comportamiento que aún no
+   existe.
+
 El camino crítico es **CPU-only**: el motor es Python de stdlib pura y FFmpeg/libass. No hay
 ASR, ni modelos locales, ni servicios cloud.
 
@@ -53,6 +71,9 @@ ASR, ni modelos locales, ni servicios cloud.
 - **Corte seco** (ADR-10): sin transiciones, sin *swoosh* y sin zoom de entrada.
 - **Encuadre automático** (ADR-11): el clip vertical no se recorta; el horizontal se recorta
   al área nítida y, si la confianza es baja, se rellena con negro sin recortar.
+- **Galería reutilizable (Fase 2)**: los clips se guardan una vez y se eligen para cada
+  ranking. Al generar se **copian** al trabajo, así que borrar de la galería no rompe un
+  montaje ya hecho ni un ranking ya descargado.
 - **Trazabilidad sin filtrar el host**: los manifiestos guardan nombres de archivo, hashes,
   medidas y versiones, nunca rutas absolutas.
 
@@ -98,7 +119,7 @@ Reglas de composición:
 
 ## 4. Alcance
 
-### 4.1 Dentro del alcance actual
+### 4.1 Dentro del alcance del producto
 
 | # | Capacidad | Estado |
 | --- | --- | --- |
@@ -110,6 +131,12 @@ Reglas de composición:
 | 6 | **Panel único** con progreso por fase, errores accionables y descarga del ranking final | **Hecho** |
 | 7 | Re-render de solo el overlay al cambiar textos | **Hecho** |
 | 8 | **Banner de referencia** y **música/sfx** con la cama a −14 LUFS | Pendiente de L2: requieren assets propios y van desactivados por defecto |
+| 9 | **Galería persistente** de clips con categoría libre y filtro | **Fase 2** (definido, sin código) |
+| 10 | **Navegación lateral** entre «Montar ranking» y «Galería de videos» | **Fase 2** (definido, sin código) |
+| 11 | **Selección ordenada de 5 a 10** clips y **generación manual** del ranking | **Fase 2** (definido, sin código) |
+| 12 | **Reordenación por arrastrar y soltar** desde el borde izquierdo de cada casilla | **Fase 2** (definido, sin código) |
+| 13 | **Borrado de los videos utilizados** tras un render correcto, con confirmación | **Fase 2** (definido, sin código) |
+| 14 | **Generación automática** del ranking a partir de una selección | **Futuro**: botón visible y deshabilitado («próximamente»), sin algoritmo ni endpoint |
 
 ### 4.2 Fuera del alcance actual
 
@@ -117,6 +144,9 @@ Reglas de composición:
   viralidad y selección TOP N. No hay código ni requisitos activos.
 - **L4 — Integración y publicación**: orquestación de punta a punta, cola, almacenamiento,
   publicación en redes, analítica y trazabilidad de coste.
+- **Generación automática (Fase 2 futura)**: ordenar los puestos sin intervención. En esta fase
+  solo existe el botón deshabilitado; no hay criterio de orden, scoring ni endpoint. Se diseña
+  y se documenta antes de implementarlo.
 - **v2+**: descarga de TikTok, voz en off/TTS, autopilot por canal, reescritura de bordes de un
   clip ya cortado, generación de banners por IA, multi-idioma y A/B de estilos.
 
@@ -132,6 +162,8 @@ Reglas de composición:
 
 **Usuario único del MVP: el operador de la cuenta de rankings** (una persona o un equipo
 pequeño que trabaja varios rankings por día). No hay multiusuario ni facturación.
+
+### 5.1 Flujo de la Fase 1 (montaje directo)
 
 Flujo actual, entero dentro del panel:
 
@@ -161,12 +193,71 @@ Historias de usuario:
 - **US-3** *Como operador quiero que el encuadre no me obligue a recortar a mano* → el clip
   horizontal se ajusta al área útil y el vertical se escala sin recortar. *(ADR-11, hecho)*
 
+### 5.2 Flujo de la Fase 2 (extremo a extremo)
+
+1. El operador abre **Galería de videos** desde el menú lateral izquierdo.
+2. Sube los clips originales y les asigna una categoría. La subida **no** normaliza ni prepara
+   el clip: la galería guarda el original.
+3. Filtra por categoría si quiere y **selecciona** los clips en el orden del ranking. El
+   primero seleccionado recibe el **#1** (el mejor, cierra el vídeo), el segundo el #2, etc. Al
+   llegar a **10** no se puede seleccionar ningún clip más; con menos de **5**, «Generar
+   manual» está deshabilitado y la interfaz indica cuántos faltan.
+4. Con **5 a 10** seleccionados, pulsa **Generar manual**. «Generar automático» está visible
+   pero deshabilitado («próximamente»).
+5. Si hay un montaje en curso sin descargar, el panel pide **confirmación antes de reemplazar
+   las casillas**. Si el operador cancela, vuelve a la galería sin cambiar nada.
+6. Al confirmar, el panel **reutiliza el trabajo actual** (o crea uno si no hay), fija sus
+   puestos al tamaño de la selección, **copia** los clips elegidos a su `input/`, los prepara
+   por puesto y navega a **Montar ranking** con las casillas ya puestas, en el orden de
+   selección. Cada casilla muestra su tick cuando su clip está preparado.
+7. En el montaje, el operador puede **reordenar** arrastrando el **borde izquierdo** de una
+   casilla hacia arriba o abajo. Los números de puesto se actualizan y la unión/edición
+   anteriores dejan de valer.
+8. Escribe título, subtítulo y nombres, pulsa **Montar** y revisa el resultado; cuando termina,
+   descarga el `ranking.mp4`.
+9. Junto a **Descargar** aparece **Borrar videos utilizados**. Al pulsarlo se abre una
+   **confirmación**. Si acepta, se eliminan de la galería y del disco los clips usados en ese
+   ranking y se limpian las casillas; el `ranking.mp4` ya generado **no se toca**. Si cancela,
+   no cambia nada.
+
+### 5.3 Historias de usuario de la Fase 2
+
+- **US-4** *Como operador quiero reutilizar clips que ya subí* → la galería los conserva entre
+  sesiones, con su categoría, y puedo filtrarlos sin volver a subirlos. *(RF-11)*
+- **US-5** *Como operador quiero elegir el orden del ranking con un clic* → la selección asigna
+  #1, #2, #3… en orden; el contador y el límite de 10 me dicen si puedo generar. *(RF-12)*
+- **US-6** *Como operador quiero corregir el orden sin volver a elegir los clips* → arrastro el
+  borde izquierdo de una casilla y los puestos se renumeran. *(RF-13)*
+- **US-7** *Como operador quiero limpiar la galería de lo que ya publiqué* → tras descargar,
+  «Borrar videos utilizados» elimina solo esos clips, con confirmación. *(RF-14)*
+- **US-8** *Como operador quiero saber que la generación automática existirá* → el botón está
+  visible, deshabilitado y explica «próximamente», sin prometer un comportamiento que aún no
+  existe. *(RF-15)*
+
+### 5.4 Casos borde y reglas de la Fase 2
+
+| Caso | Comportamiento definido |
+| --- | --- |
+| Menos de 5 seleccionados | «Generar manual» deshabilitado; el contador indica «faltan N». No se crea ni se modifica ningún trabajo. |
+| Ya hay 10 seleccionados | Las tarjetas no seleccionadas quedan deshabilitadas y se explica el máximo; para cambiar hay que deseleccionar una. |
+| Deseleccionar un puesto intermedio | Los siguientes se renumeran de forma consecutiva (#1, #2, #3…); el montaje en curso no cambia hasta volver a pulsar «Generar manual». |
+| Generar con un montaje en curso | Se pide confirmación antes de reemplazar las casillas; cancelar no altera el montaje ni la selección. |
+| Cerrar la app antes de borrar | La galería, el trabajo y el `ranking.mp4` persisten en disco. Al volver, el botón de borrado sigue disponible para ese ranking. |
+| Cancelar el borrado | No se elimina ningún archivo ni se limpia ninguna casilla. |
+| Borrar el último clip de una categoría | La categoría desaparece del filtro y del autocompletado; no existe una entidad de categoría aparte que mantener. |
+| Un clip usado en dos rankings | «Borrar usados» lo quita de la galería; el otro trabajo conserva su copia y su ranking. |
+| Reordenar después de montar | Los puestos se intercambian, la unión/edición se invalidan y los puestos afectados vuelven a prepararse (su tick se apaga hasta que terminan). |
+| Cambiar la categoría con un filtro activo | El clip sigue seleccionado aunque deje de coincidir con el filtro; el contador incluye la selección oculta. |
+| Fallo al importar o preparar | El trabajo muestra el error con acción de reintentar; no se borra nada de la galería y la selección se conserva. |
+| Clip sin categoría | Se agrupa como «Sin categoría» y se puede etiquetar después. |
+
 ---
 
 ## 6. Requisitos funcionales
 
 Se conservan los identificadores **RF-0, RF-6, RF-7 y RF-9** para no romper las referencias
-del código; los requisitos de las capas fuera de alcance no están activos.
+del código. La Fase 2 añade **RF-10 a RF-15**; RF-15 no está activo. Los requisitos de las capas
+fuera de alcance siguen sin estar activos.
 
 ### RF-0 — Ensamblado de los clips ya listos (L1) · **hecho**
 
@@ -219,8 +310,9 @@ audio se copia, así que la duración y la medición de loudness no cambian.
 1. `GET /jobs/{id}` devuelve el estado, la fase, el avance, el ETA, los artefactos y las últimas
    líneas del log.
 2. **Superficie editable = solo texto (ADR-8)**: título, subtítulo opcional y nombre de cada
-   puesto. **No** existe endpoint para recortar, reordenar, cambiar la plantilla ni tocar el
-   estilo.
+   puesto. **No** existe endpoint para recortar, cambiar la plantilla ni tocar el estilo. La
+   única excepción es el **orden de los puestos** (RF-13): es una decisión de montaje, no una
+   propiedad visual del preset.
 3. Un cambio de texto **no** obliga a recomponer el vídeo: se re-renderiza solo la capa de
    overlay sobre el `union.mp4` (segundos, no minutos).
 4. Sustituir el clip de un puesto conserva los otros: el tick de ese puesto se apaga, su unión y
@@ -269,23 +361,150 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
 - **Cobertura**: toda operación de L1/L2 que el operador deba ejecutar tiene su control en el
   panel.
 
+### RF-10 — Navegación lateral · **Fase 2**
+
+1. El panel tiene un **menú lateral izquierdo persistente** con dos secciones: **Montar
+   ranking** (vista principal) y **Galería de videos** (nueva). No es el cajón de la plantilla
+   de RF-9.5: aquel sigue siendo el panel de ajustes; este es la navegación principal.
+2. La sección activa está marcada de forma visible y con `aria-current`; cada entrada es
+   alcanzable con un clic desde cualquier vista.
+3. Cambiar de sección **no pierde trabajo**: la selección de la galería y el montaje en curso se
+   conservan; al volver a Montar, el estado se reconstruye desde el servidor como hoy.
+4. En pantallas estrechas el menú se pliega en un control etiquetado (nunca iconos mudos) y
+   sigue permitiendo las dos secciones.
+5. La navegación no introduce rutas técnicas ni ids en la URL visible para el operador.
+
+**Criterio de aceptación.** Las dos secciones se alcanzan en un clic, la activa está marcada,
+un montaje en marcha sigue vivo al ir a la galería y volver, y el menú funciona con teclado y
+con lector de pantalla.
+
+### RF-11 — Galería de clips y categorías · **Fase 2**
+
+1. **Repositorio persistente.** La galería guarda los clips originales en el directorio de
+   trabajos (`library/` + `library.json`) y sobrevive a reinicios y a cerrar el navegador. No
+   normaliza ni prepara nada al subir.
+2. **Subida.** Acepta los mismos formatos y límite de tamaño que la subida actual (mp4, mov,
+   mkv, webm, m4v, avi; hasta 2 GB por archivo) y valida tipo y tamaño antes de aceptarlo. El
+   contrato completo del clip (duración, lado corto, códec) se valida al generar el ranking,
+   porque la galería no prepara nada al subir.
+3. **Categoría.** Cada clip tiene **una** categoría de **texto libre**; se crea al escribirla,
+   se edita en la propia tarjeta y se sugiere con autocompletado a partir de las existentes. Se
+   recorta el espacio sobrante y se comparan sin distinguir mayúsculas; vacío = «Sin
+   categoría». No hay pantalla de administración de categorías.
+4. **Filtro.** Un control permite ver «Todas» o una categoría concreta. Filtrar no borra la
+   selección: un clip seleccionado que deja de coincidir con el filtro sigue contando y se
+   indica en el contador.
+5. **Tarjeta de clip.** Muestra nombre original, categoría, tamaño y estado de selección; los
+   datos visibles nunca incluyen rutas del host ni ids internos.
+6. **Reutilización.** Un mismo clip puede usarse en varios rankings; seleccionarlo no lo
+   consume ni lo bloquea.
+7. **Borrado individual** de un clip de la galería queda como decisión pendiente (§16); en esta
+   fase el único borrado definido es el de «Borrar videos utilizados» (RF-14).
+
+**Criterio de aceptación.** Un clip subido aparece tras recargar la página, conserva su
+categoría, se filtra por ella y desaparece del filtro cuando se borra el último clip de esa
+categoría. La API y la UI no exponen rutas ni ids internos.
+
+### RF-12 — Selección ordenada y generación manual · **Fase 2**
+
+1. **Seleccionar/deseleccionar** un clip con un clic. El **orden de selección** asigna los
+   puestos de forma consecutiva: el primero seleccionado es el **#1** (el mejor, cierra el
+   vídeo), el segundo el #2, etc. Deseleccionar un puesto intermedio **renumera** los
+   siguientes sin huecos.
+2. **Límites.** Mínimo **5** y máximo **10** clips. Con menos de 5, «Generar manual» está
+   deshabilitado y se indica cuántos faltan; al llegar a 10, las tarjetas no seleccionadas se
+   deshabilitan y se explica el máximo.
+3. **Generar manual** solo está activo con 5 a 10 seleccionados. Al pulsarlo:
+   - si hay un montaje en curso sin descargar, se pide **confirmación** antes de reemplazar;
+   - se **reutiliza el trabajo actual** (o se crea uno si no hay), se fijan sus puestos al tamaño
+     de la selección, se reemplazan sus casillas y sus archivos `input/`/`render/` anteriores, se
+     **copian** los originales a `input/`, se prepara cada puesto (el tick de siempre) y se navega
+     a **Montar ranking** con las casillas puestas en el orden de selección;
+   - el motor no cambia: sigue usando `prepare` → `join` → `render`.
+4. Si el operador cancela la confirmación, no se crea ni se modifica ningún trabajo y la
+   selección se conserva.
+5. La selección vive en la sesión del panel mientras no se genera; al recargar antes de generar
+   se pierde, pero los clips siguen en la galería (persistirla es una decisión pendiente,
+   §16.9). Una vez generado, el orden queda en el trabajo.
+6. **Generar automático** está visible pero **deshabilitado** con la etiqueta «Próximamente»
+   (RF-15); no se puede activar ni ejecutar.
+
+**Criterio de aceptación.** Con 4 seleccionados el botón está deshabilitado; con 5 se generan
+exactamente 5 casillas en el orden elegido y cada una enciende su tick; con 10 no se puede
+seleccionar el 11.º; cancelar la confirmación deja intacto el montaje anterior. En un montaje
+creado desde la galería, el número de puestos **no se cambia** con el selector de la Fase 1;
+para otro tamaño se vuelve a seleccionar.
+
+### RF-13 — Reordenación por arrastrar y soltar · **Fase 2**
+
+1. El **control de arrastre es el borde izquierdo** de cada casilla de puesto; el resto de la
+   casilla no inicia el arrastre.
+2. Se arrastra **hacia arriba o abajo** y se suelta sobre otra casilla: ambos puestos se
+   **intercambian** y los números se actualizan automáticamente.
+3. Funciona con ratón, puntero táctil y teclado: el asa es enfocable, tiene etiqueta accesible y
+   las flechas arriba/abajo realizan el mismo intercambio.
+4. Reordenar **invalida la unión y la edición** anteriores. Los clips afectados vuelven a
+   prepararse en su nuevo puesto (su tick se apaga hasta que terminan), porque el nombre estable
+   `prepared/NN.mp4` depende del puesto y no del clip.
+5. El orden resultante es el que usan `join` y `render`: `#N → … → #1`, con el #1 al final.
+6. No se puede arrastrar fuera de la lista ni cambiar el número de puestos desde el asa.
+
+**Criterio de aceptación.** Arrastrar el #5 sobre el #1 intercambia ambos, actualiza los
+números y el vídeo resultante reproduce el nuevo orden; la unión y el ranking anteriores dejan
+de estar disponibles; el mismo intercambio se puede hacer con el teclado.
+
+### RF-14 — Borrar los videos utilizados · **Fase 2**
+
+1. El botón **Borrar videos utilizados** aparece **solo cuando el ranking se ha generado
+   correctamente**, junto a **Descargar**.
+2. Al pulsarlo se abre una **ventana de confirmación** que indica cuántos clips se van a borrar
+   y advierte de que la acción es irreversible. **Cancelar no cambia nada.**
+3. Al confirmar se eliminan de la galería **y del disco** únicamente los clips usados en ese
+   ranking; se limpian las casillas de la vista de montaje y la selección de la galería.
+4. El `ranking.mp4` generado, su `spec.json` y su `manifest.json` **no se tocan**: la descarga
+   sigue disponible hasta que se inicie otro montaje. Tampoco se borran otros clips de la
+   galería ni otros trabajos.
+5. Si un archivo de la galería ya no existe, el borrado termina sin error, limpia la entrada y
+   avisa de lo que faltaba.
+6. La acción no se puede deshacer desde el panel; no hay papelera ni restauración.
+
+**Criterio de aceptación.** Tras confirmar, exactamente los N clips de ese ranking han
+desaparecido de la galería y del disco, las casillas están vacías y el `ranking.mp4` se sigue
+pudiendo descargar. Cancelar deja los N clips, las casillas y el ranking como estaban.
+
+### RF-15 — Generación automática (futura) · **no activa en la Fase 2**
+
+1. El botón **Generar automático** está visible en la galería, deshabilitado y acompañado de
+   «Próximamente».
+2. No tiene endpoint, no crea trabajos, no modifica la selección y no se puede activar por
+   teclado ni por API.
+3. El criterio de orden automático (scoring, diversidad, duración, categorías) **no está
+   definido**; se documentará en el RPD antes de implementarlo.
+
+**Criterio de aceptación.** El control tiene `disabled`/`aria-disabled`, un clic no produce
+ninguna petición ni cambio de estado y no aparece ninguna ruta de generación automática en la
+API.
+
 ---
 
 ## 7. Diseño técnico
 
 ### 7.1 Alcance técnico
 
-El código implementa **L1, L2 y el panel**. La extracción automática (L3) y la publicación (L4)
-quedan fuera: no hay módulos de segmentación, scoring, cola, almacenamiento objeto ni
-publicación. Si se retoman, se documentan y se diseñan antes de escribir código.
+El código implementa **L1, L2 y el panel**. La **Fase 2** añade a esa misma arquitectura una
+galería persistente y la navegación lateral; **el motor no cambia**: la galería guarda
+originales y, al generar, los copia al `input/` del trabajo para que `prepare` → `join` →
+`render` sigan siendo los mismos. La extracción automática (L3) y la publicación (L4) quedan
+fuera: no hay módulos de segmentación, scoring, cola, almacenamiento objeto ni publicación. Si
+se retoman, se documentan y se diseñan antes de escribir código.
 
 ### 7.5 Arquitectura de componentes
 
-Lo construido (L1 + L2 + panel) en un solo servicio:
+Arquitectura de componentes (Fase 1 + Fase 2) en un solo servicio:
 
 ```
                  ┌──────────────────┐
-   operador ────►│  panel (Next.js) │  subir clips, textos, plantilla, ver, descargar
+   operador ────►│  panel (Next.js) │  galería, selección, textos, plantilla, ver, descargar
                  └────────┬─────────┘
                           │ proceso hijo (CLI), uno por etapa
                  ┌────────▼───────────────┐
@@ -296,12 +515,14 @@ Lo construido (L1 + L2 + panel) en un solo servicio:
                  └────────┬───────────────┘
                           │ FFmpeg / libass
                  ┌────────▼─────────┐
-                 │  trabajos en disco│  input/, render/prepared/, union.mp4, ranking.mp4, manifiestos
+                 │  trabajos en disco│  library/, input/, render/prepared/, union.mp4, ranking.mp4, manifiestos
                  └──────────────────┘
 ```
 
-No hay servicios adicionales. La cola, la base de datos y el almacenamiento objeto pertenecen a
-L4 y no forman parte de esta arquitectura.
+No hay servicios adicionales. La **galería de la Fase 2** vive en el mismo directorio de
+trabajos (`library/` + `library.json`) y la sirve el propio panel; no añade base de datos ni
+proceso aparte. La cola, la base de datos y el almacenamiento objeto pertenecen a L4 y no
+forman parte de esta arquitectura.
 
 ### 7.6 Esqueleto del repositorio (lo que existe hoy)
 
@@ -325,6 +546,10 @@ geometría del encuadre) se testea en CI sin FFmpeg y sin red. El análisis de p
 `framing.py` y se ejecuta en el preparador. Los comandos de FFmpeg se **construyen** en
 `core/ffmpeg.py` y `core/overlay.py`, y se **ejecutan** en `prepare.py`, `join.py` /
 `overlay.py`.
+
+La Fase 2 se implementará **solo en el panel**: la lógica de galería y selección
+(`web/lib/gallery.ts`), las rutas `/galeria` y `/api/gallery/**`, y el layout con el menú
+lateral. El motor no gana comandos ni flags nuevos.
 
 ### 7.7 Despliegue mínimo (el que existe)
 
@@ -350,6 +575,8 @@ volumes: {jobs: {}}
 Notas de operación: la imagen incluye `ffmpeg`/`ffprobe` y las familias tipográficas que libass
 resuelve **por nombre**; los binarios de FFmpeg de npm se borran en la misma capa (dentro del
 contenedor manda el de apt). El panel fija `OPENRANKS_PRESET_FILE` en el directorio de trabajos.
+La galería de la Fase 2 queda dentro del **mismo volumen** (`/data/jobs/library/`), así que
+sobrevive a reinicios y despliegues sin configuración adicional.
 
 ---
 
@@ -358,16 +585,22 @@ contenedor manda el de apt). El panel fija `OPENRANKS_PRESET_FILE` en el directo
 **No hay base de datos.** El estado de un trabajo vive en disco, dentro del directorio de
 trabajos:
 
-- `status.json`: estado, fase, avance, `clips{}` con el tick de cada puesto, `join` y resultado.
+- `status.json`: estado, fase, avance, `clips{}` con el tick de cada puesto, `join`, resultado y
+  el mapa `gallery` (puesto → id de galería) que usa «Borrar videos utilizados».
 - `binding.json`: título, subtítulo opcional y puestos.
-- `input/`: los clips subidos.
+- `input/`: los clips subidos o importados desde la galería.
 - `render/`: `prepared/NN.mp4` con los clips ya preparados, `union.mp4`, `ranking.mp4`,
   `spec.json` y `manifest.json`.
 - `log.txt`: la traza del trabajo.
+- `library.json`: índice de la **galería** (Fase 2) con `id`, `file`, `original_name`,
+  `category`, `bytes` y `added_at`.
+- `library/<id>.<ext>`: los clips **originales** de la galería. Al generar un ranking se
+  copian a `input/` del trabajo; borrarlos de la galería no afecta a los trabajos ya creados.
 
 La unión y las piezas intermedias quedan solo para trazabilidad: la API únicamente sirve
 `ranking.mp4`. El preset guardado vive en el mismo directorio de trabajos
-(`preset.json`).
+(`preset.json`). La **selección** de la galería no se guarda en el servidor: es estado de la
+sesión del panel y se materializa en el trabajo al pulsar «Generar manual».
 
 ---
 
@@ -476,6 +709,9 @@ un mismo par texto + preset produce siempre el mismo MP4.
   para dibujar el overlay. Cambiar un texto cuesta segundos, no un montaje completo.
 - **Medido** (clips sintéticos 1080x1920): 5 clips de 7 s → unión de 1050 fotogramas y
   35,021 s, con loudness de −14,08 LUFS.
+- **Galería (Fase 2)**: subir solo guarda el original (no normaliza). Listar y filtrar responde
+  en ≤ 300 ms con una biblioteca de hasta 200 clips; si crece, la lista se pagina. La selección
+  se refleja en ≤ 100 ms y el máximo de 10 se aplica también en el servidor, no solo en la UI.
 
 ### 10.2 Fiabilidad
 
@@ -506,6 +742,9 @@ con las que se verifica:
 | Progreso por fase | cada job muestra fase, avance y estimación, refrescado ≤ 5 s |
 | Errores | el 100 % de los estados de error tiene acción de recuperación y ningún texto crudo |
 | Sesión única | el flujo de L1/L2 se cierra sin terminal ni otra aplicación |
+| Galería → montaje | seleccionar 5-10 clips y generar en ≤ 2 clics, sin volver a subirlos |
+| Acciones destructivas | el 100 % pide confirmación; cancelar no cambia ningún dato ni archivo |
+| Límite de selección | 10 clips como máximo, indicado en la UI y aplicado también en el servidor |
 
 El panel no bloquea el trabajo: si el operador cierra el navegador, el montaje sigue y al volver
 el panel reconstruye el estado desde el servidor, no desde el cliente.
@@ -541,6 +780,10 @@ el panel reconstruye el estado desde el servidor, no desde el cliente.
 | R3 | **Render lento o no determinista** | Bajo | Animaciones por tiempo de vídeo (ASS), sin reloj; unión sin recodificar; re-render solo del overlay |
 | R4 | **Fuga de datos en un repo público** | Alto | Sin secretos, sin rutas del host en manifiestos y logs; la API no sirve artefactos por ruta libre |
 | R5 | **Pérdida de trabajos al reiniciar** | Medio | Estado en disco y trabajos en un volumen persistente |
+| R6 | **Duplicación de almacenamiento** (original en la galería + copia en cada trabajo) | Medio | La copia es lo que permite borrar de la galería sin romper rankings; se documenta y se prevé una política de retención/limpieza (§16) |
+| R7 | **Borrado accidental de clips** | Alto | Confirmación obligatoria, solo tras un render correcto, y se borran únicamente los ids de ese ranking; el `ranking.mp4` no se toca |
+| R8 | **Reordenar con clips ya preparados** | Medio | El intercambio invalida unión/edición y vuelve a preparar los puestos afectados; el tick se apaga hasta que terminan |
+| R9 | **Galería grande o lenta** | Bajo | Se guardan solo originales, se lista con paginación si supera 200 clips y el filtro se resuelve en el servidor |
 
 ---
 
@@ -557,6 +800,11 @@ con esas capas.
 | ADR-9 | **La interfaz es un requisito de producto, no un extra**: un **panel único** cubre el flujo de punta a punta, con progreso por fase, errores accionables, plantilla y textos en el mismo sitio | Decisión del operador: el producto debe ser cómodo y fácil de usar. El valor del servicio es ahorrar trabajo humano, y eso se pierde si el operador necesita terminal, `curl` o un editor. Convierte la usabilidad en criterio de aceptación medible (RF-9, §10.6) |
 | ADR-10 | **El montaje es siempre de corte seco**: sin transiciones, sin *swoosh* y sin zoom de entrada. La unión se hace por **copia de streams** | Decisión del operador (16-oct-2026). El corte limpio se ve igual de bien en este nicho, elimina una generación de recodificación en la unión, quita dos decisiones por vídeo del panel y deja la capa transformativa donde de verdad se ve: el overlay. Consecuencia en el código: fuera `xfade` y fuera el `zoompan` del primer clip |
 | ADR-11 | **Encuadre automático**: el clip horizontal con un clip vertical centrado se recorta al **área nítida**; el vertical no se recorta. Si la confianza es baja, se rellena con negro sin recortar | Decisión del operador (18-oct-2026). Los clips de entrada llegan en los dos formatos y el operador no debe recortar a mano ni decidir por vídeo; el render sigue siendo automático (ADR-8). La detección usa 12 fotogramas a 192 px y un refino a resolución completa, así que no compite con la codificación. El caso de fallo se resuelve ignorando islas nítidas aisladas y, si no hay confianza, no se recorta |
+| ADR-12 | **Galería persistente de originales**: los clips viven en `library/`; al generar un ranking se **copian** al `input/` del trabajo | Decisión del operador (23-oct-2026). Reutilizar clips no puede obligar a volver a subirlos ni a prepararlos si no se usan. La copia mantiene el motor intacto (`prepare` → `join` → `render`) y hace que borrar de la galería no rompa un ranking ya hecho |
+| ADR-13 | **El orden de selección asigna #1, #2, #3…**: el primero elegido es el mejor y cierra el vídeo | Decisión del operador (23-oct-2026). El operador elige de mejor a peor, que es el orden mental del ranking; el #1 ya es el mejor en todo el producto y el arrastre permite corregir después |
+| ADR-14 | **Una categoría de texto libre por clip**, creada al escribirla y sugerida por autocompletado; sin entidad ni pantalla de categorías | Decisión del operador (23-oct-2026). Evita administración y mantiene el flujo en la propia tarjeta. El filtro y las sugerencias salen de los datos; al borrar el último clip de una categoría, esta desaparece |
+| ADR-15 | **Borrado de usados explícito y confirmado**, solo tras un render correcto: elimina los clips de la galería y del disco, limpia las casillas y **no toca** el ranking generado | Decisión del operador (23-oct-2026). Es la única acción destructiva del flujo y debe requerir intención clara; conservar el `ranking.mp4` evita que el operador pierda lo que acaba de descargar |
+| ADR-16 | **Generación automática aplazada**: el botón existe visible y deshabilitado («Próximamente»), sin endpoint ni criterio de orden | Decisión del operador (23-oct-2026). Promete la dirección del producto sin inventar un scoring que aún no está definido; se diseñará en el RPD antes de implementarlo |
 
 ---
 
@@ -568,6 +816,20 @@ con esas capas.
 2. **Duración objetivo** del short (30–58 s por defecto): ¿se quiere admitir un formato «TOP 10»
    más largo? Hoy el número de puestos llega a 10, pero el techo de duración sigue siendo 58 s.
 3. **Idioma y tono** de los textos (`clip_label`, título y subtítulo): el preset no los fija.
+4. **Miniaturas de la galería**: ¿basta con nombre, categoría y tamaño, o hace falta un
+   fotograma de referencia? Generarlo requiere `ffmpeg` al subir y un archivo extra por clip.
+5. **Borrado individual** de un clip de la galería (fuera del flujo de «Borrar usados»): ¿se
+   permite, con qué confirmación y qué pasa si está seleccionado?
+6. **Deduplicación y retención**: ¿se evita subir dos veces el mismo archivo (hash), cuántos
+   clips se conservan y se borran los originales de trabajos antiguos para no duplicar espacio?
+7. **Categorías globales**: con texto libre, renombrar «Gatos» en un clip no cambia los demás.
+   ¿Hace falta un renombrado/merge global o basta con editar clip a clip?
+8. **Subida directa desde Montar**: la Fase 1 la mantiene. ¿Debe guardar también el clip en la
+   galería, o la galería es solo para subidas hechas desde ella?
+9. **Selección antes de generar**: hoy es efímera (se pierde al recargar). ¿Debe persistir en
+   `sessionStorage` o en el servidor para sobrevivir a un cierre accidental?
+10. **Criterio de la generación automática**: orden por categoría, diversidad, duración,
+    viralidad u otro. No se implementa hasta definirlo.
 
 ---
 
@@ -592,5 +854,6 @@ con esas capas.
 | `OPENRANKS_ROOT` / `OPENRANKS_PYTHON` | — / autodetectado | Dónde está el motor y con qué intérprete |
 | `OPENRANKS_FFMPEG` / `OPENRANKS_FFPROBE` | — | Binarios de FFmpeg (si no, PATH o el de npm) |
 
-El arranque local, la utilidad del venv y el orden de resolución de Python/FFmpeg están en el
-plan, §12.1.
+La Fase 2 **no añade variables de entorno**: la galería vive en `OPENRANKS_JOBS_DIR/library/` y
+la sirve el propio panel. El arranque local, la utilidad del venv y el orden de resolución de
+Python/FFmpeg están en el plan, §12.1.
