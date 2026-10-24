@@ -67,6 +67,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   for (const name of ["union.mp4", "manifest.json", "ranking.mp4", "spec.json"]) {
     rmSync(path.join(renderDir(id), name), { force: true });
   }
+  // El puesto deja de ser el clip de la galería: «Borrar videos utilizados» ya no lo toca.
+  const gallery = { ...(current?.gallery ?? {}) };
+  delete gallery[String(slot)];
   patchStatus(id, {
     state: "uploading",
     phase: "Preparando los clips",
@@ -77,6 +80,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     revision: (current?.revision ?? 0) + 1,
     request: { ...current?.request, positions: items },
     join: { state: "idle", error: null },
+    gallery,
   });
   patchClip(id, slot, { state: "uploading", error: null, percent: 0 });
 

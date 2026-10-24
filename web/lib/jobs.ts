@@ -61,6 +61,8 @@ export interface JobStatus {
   revision: number;
   clips: Record<string, ClipStatus>;
   join: JoinStatus;
+  /** Puesto → id de la galería del que salió el clip. Lo usa «Borrar videos utilizados» (RF-14). */
+  gallery?: Record<string, string>;
 }
 
 /** Puestos por defecto si un trabajo no dice cuántos (los antiguos siguen valiendo). */
@@ -109,6 +111,7 @@ export function createJob(): JobStatus {
     revision: 0,
     clips: {},
     join: { state: "idle", error: null },
+    gallery: {},
   };
   writeStatus(id, status);
   return status;

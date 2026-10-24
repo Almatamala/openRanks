@@ -15,6 +15,8 @@ import {
 } from "@/lib/limits";
 import { formatDuration } from "@/lib/progress";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
+import Sidebar, { type Section } from "@/components/Sidebar";
+import Gallery from "@/components/Gallery";
 
 type Artifact = { path: string; bytes: number };
 
@@ -45,6 +47,8 @@ interface Job {
   logTail: string;
   clips: Record<string, ClipStatus>;
   join: { state: JoinState; error: string | null };
+  /** Puesto → id de galería del clip importado (lo usa «Borrar videos utilizados»). */
+  gallery?: Record<string, string>;
 }
 
 /** La parte de la plantilla que el panel puede ajustar y guardar. */
@@ -87,8 +91,18 @@ interface Preset {
 interface Slot {
   position: number;
   file: File | null;
+  /** Nombre del clip que vino de la galería: el archivo está en el servidor, no aquí. */
+  imported: string | null;
   label: string;
 }
+
+/** Lo que devuelve «Generar manual»: el trabajo y sus puestos ya importados. */
+type ImportResponse = {
+  error?: string;
+  id?: string;
+  positions?: number;
+  clips?: { position: number; name: string; ext: string }[];
+};
 
 const STORE_KEY = "openranks.panel.v1";
 
@@ -99,7 +113,7 @@ const POSITION_CHOICES = Array.from(
 );
 
 function initialSlots(count: number): Slot[] {
-  return positionsFor(count).map((position) => ({ position, file: null, label: "" }));
+  return positionsFor(count).map((position) => ({ position, file: null, imported: null, label: "" }));
 }
 
 /** `TOP 5 MOMENTOS` → `TOP 8 MOMENTOS`: si el título lleva un número, sigue al de puestos. */
@@ -114,10 +128,13 @@ function humanSize(bytes: number): string {
 }
 
 export default function Page() {
+  const [section, setSection] = useState<Section>("montar");
+  // Montaje creado desde la galería: su número de puestos lo fija la selección (RF-12).
+  const [importedMontage, setImportedMontage] = useState(false);
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("Ranking funny moments");
-  const [subtitle, setSubtitle] = useState("");
+  const [subtitle, setSubtitle] = useState("You’ll never guess #1 until you see it.");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +162,14 @@ export default function Page() {
   const [styleError, setStyleError] = useState<string | null>(null);
   // Puesto sobre el que se está arrastrando un archivo: resalta toda su casilla.
   const [dragSlot, setDragSlot] = useState<number | null>(null);
+  // Puesto que se está moviendo con el asa (arrastre del borde izquierdo).
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [inFlightUploads, setInFlightUploads] = useState(0);
+  const [deletingUsed, setDeletingUsed] = useState(false);
+  const [usedError, setUsedError] = useState<string | null>(null);
+  // Sube cuando «Borrar videos utilizados» cambia la galería desde el montaje.
+  const [galleryEpoch, setGalleryEpoch] = useState(0);
   // Recorrido **real** de la altura del título, calculado por el motor: fuera de él
   // el render no cambia (el título ya está pegado a la zona segura o a la escalera).
   const [titleYRange, setTitleYRange] = useState<[number, number] | null>(null);
@@ -183,10 +208,17 @@ export default function Page() {
       };
       const count = clampPositions(saved.positions ?? POSITIONS_MIN);
       if (saved.title) setTitle(saved.title);
-      if (typeof saved.subtitle === "string") setSubtitle(saved.subtitle);
+      // Un subtítulo guardado vacío se trata como «sin elegir»: así se ve el texto por
+      // defecto en una sesión limpia sin pisar un subtítulo que el operador haya escrito.
+      if (typeof saved.subtitle === "string" && saved.subtitle.trim()) setSubtitle(saved.subtitle);
       setPositions(count);
       setSlots(
-        positionsFor(count).map((position) => ({ position, file: null, label: saved.labels?.[String(position)] ?? "" })),
+        positionsFor(count).map((position) => ({
+          position,
+          file: null,
+          imported: null,
+          label: saved.labels?.[String(position)] ?? "",
+        })),
       );
     } catch {
       // Un almacén corrupto no puede impedir usar el panel.
@@ -265,17 +297,22 @@ export default function Page() {
 
   // Cambiar los puestos deja la escalera a medida: se conservan los clips y los nombres
   // que ya estaban puestos y el número del título sigue al del ranking.
-  const cambiarPuestos = useCallback((raw: number) => {
-    const count = clampPositions(raw);
-    setPositions(count);
-    setSlots((current) => {
-      const byPosition = new Map(current.map((slot) => [slot.position, slot]));
-      return positionsFor(count).map(
-        (position) => byPosition.get(position) ?? { position, file: null, label: "" },
-      );
-    });
-    setTitle((current) => retitleForCount(current, count));
-  }, []);
+  const cambiarPuestos = useCallback(
+    (raw: number) => {
+      // En un montaje de la galería el tamaño lo fija la selección: se vuelve a elegir.
+      if (importedMontage) return;
+      const count = clampPositions(raw);
+      setPositions(count);
+      setSlots((current) => {
+        const byPosition = new Map(current.map((slot) => [slot.position, slot]));
+        return positionsFor(count).map(
+          (position) => byPosition.get(position) ?? { position, file: null, imported: null, label: "" },
+        );
+      });
+      setTitle((current) => retitleForCount(current, count));
+    },
+    [importedMontage],
+  );
 
   const setSlot = useCallback((position: number, patch: Partial<Slot>) => {
     setSlots((current) => current.map((slot) => (slot.position === position ? { ...slot, ...patch } : slot)));
@@ -306,7 +343,12 @@ export default function Page() {
   // la señal de que ese clip ya está en el formato final (no un «subido» sin más).
   const onPick = useCallback(
     (position: number, file: File | null) => {
-      setSlot(position, { file });
+      // Un archivo nuevo reemplaza al importado; cancelar el selector no lo borra.
+      setSlots((current) =>
+        current.map((slot) =>
+          slot.position === position ? { ...slot, file, imported: file ? null : slot.imported } : slot,
+        ),
+      );
       const token = (pickTokens.current[position] ?? 0) + 1;
       pickTokens.current[position] = token;
       if (!file) {
@@ -319,6 +361,7 @@ export default function Page() {
       }
 
       uploadsInFlight.current.add(position);
+      setInFlightUploads(uploadsInFlight.current.size);
       setError(null);
       setPrep((current) => ({
         ...current,
@@ -354,6 +397,7 @@ export default function Page() {
           }));
         } finally {
           uploadsInFlight.current.delete(position);
+          setInFlightUploads(uploadsInFlight.current.size);
           setPollNonce((value) => value + 1);
         }
       })();
@@ -525,7 +569,174 @@ export default function Page() {
     }
   }, [jobId, poll, prep, slots, startPayload, subtitle, title]);
 
+  // «Generar manual»: el servidor copia los originales al trabajo, limpia el montaje
+  // anterior y prepara cada puesto; aquí solo se abre Montar con las casillas puestas.
+  const generarDesdeGaleria = useCallback(
+    async (ids: string[]) => {
+      const response = await fetch("/api/library/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, jobId }),
+      });
+      const payload = (await response.json().catch(() => null)) as ImportResponse | null;
+      if (!response.ok || !payload?.id || !payload.positions || !payload.clips) {
+        throw new Error(payload?.error ?? "No se pudo preparar el montaje con los clips elegidos.");
+      }
+
+      const nextJobId = payload.id;
+      const count = payload.positions;
+      const clips = payload.clips;
+      const names = new Map(clips.map((clip) => [clip.position, clip.name]));
+      // El trabajo es el mismo (o uno nuevo): la vista se reconstruye desde el servidor.
+      jobPromise.current = Promise.resolve(nextJobId);
+      runToken.current += 1;
+      setBusy(false);
+      setError(null);
+      setJob(null);
+      setJobId(nextJobId);
+      setPositions(count);
+      setSlots(
+        positionsFor(count).map((position) => ({
+          position,
+          file: null,
+          imported: names.get(position) ?? null,
+          label: "",
+        })),
+      );
+      setPrep(
+        Object.fromEntries(
+          clips.map((clip) => [clip.position, { state: "uploading" as const, error: null }]),
+        ),
+      );
+      setTitle((current) => retitleForCount(current, count));
+      setImportedMontage(true);
+      setPollNonce((value) => value + 1);
+      setSection("montar");
+    },
+    [jobId],
+  );
+
+  // Reintentar la preparación de un puesto importado: no hay archivo en el navegador.
+  const reintentarPreparacion = useCallback(
+    async (position: number) => {
+      if (!jobId) return;
+      setPrep((current) => ({ ...current, [position]: { state: "preparing", error: null } }));
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/clips/${position}/prepare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ positions }),
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!response.ok) throw new Error(payload?.error ?? "No se pudo preparar el clip.");
+        setPollNonce((value) => value + 1);
+      } catch (failure) {
+        setPrep((current) => ({
+          ...current,
+          [position]: {
+            state: "failed",
+            error: failure instanceof Error ? failure.message : "No se pudo preparar el clip.",
+          },
+        }));
+      }
+    },
+    [jobId, positions],
+  );
+
   const running = busy || job?.state === "running";
+
+  // RF-13: intercambiar dos puestos. El nombre del puesto y el clip viajan juntos y el
+  // servidor invalida la unión/edición anteriores y vuelve a preparar los dos clips.
+  const moverPuesto = useCallback(
+    async (from: number, to: number) => {
+      if (from === to || running || reordering) return;
+      if (uploadsInFlight.current.size > 0) {
+        setError("Espera a que terminen de subirse los clips para cambiar el orden.");
+        return;
+      }
+      const swapLocal = () =>
+        setSlots((current) => {
+          const source = current.find((slot) => slot.position === from);
+          const target = current.find((slot) => slot.position === to);
+          if (!source || !target) return current;
+          return current.map((slot) => {
+            if (slot.position === from) {
+              return { ...slot, file: target.file, imported: target.imported, label: target.label };
+            }
+            if (slot.position === to) {
+              return { ...slot, file: source.file, imported: source.imported, label: source.label };
+            }
+            return slot;
+          });
+        });
+
+      swapLocal();
+      if (!jobId) return;
+
+      setReordering(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/reorder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from, to }),
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!response.ok) throw new Error(payload?.error ?? "No se pudo cambiar el orden de los puestos.");
+        // Los dos puestos se preparan otra vez con su nuevo número.
+        setPrep((current) => ({
+          ...current,
+          [from]: { state: "uploading", error: null, percent: 0 },
+          [to]: { state: "uploading", error: null, percent: 0 },
+        }));
+        setPollNonce((value) => value + 1);
+      } catch (failure) {
+        swapLocal();
+        setError(
+          failure instanceof Error ? failure.message : "No se pudo cambiar el orden de los puestos.",
+        );
+      } finally {
+        setReordering(false);
+      }
+    },
+    [jobId, reordering, running],
+  );
+
+  const canReorder = !running && !reordering && inFlightUploads === 0;
+
+  // RF-14: borra de la galería solo los clips de este ranking; el vídeo ya montado sigue.
+  const borrarUsados = useCallback(async () => {
+    if (!jobId || deletingUsed) return;
+    const count = Object.keys(job?.gallery ?? {}).length;
+    const confirmed = window.confirm(
+      `Se eliminarán ${count} ${count === 1 ? "clip" : "clips"} de la galería y se vaciarán las casillas. El ranking ya montado no se toca. Esta acción no se puede deshacer. ¿Quieres continuar?`,
+    );
+    if (!confirmed) return;
+
+    setDeletingUsed(true);
+    setUsedError(null);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/library`, { method: "DELETE" });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "No se pudieron borrar los videos utilizados.");
+      }
+      setSlots((current) =>
+        current.map((slot) => ({ ...slot, file: null, imported: null, label: "" })),
+      );
+      setPrep({});
+      // Sin clips, el montaje deja de estar atado a la selección: el tamaño se elige aquí.
+      setImportedMontage(false);
+      setGalleryEpoch((value) => value + 1);
+      setPollNonce((value) => value + 1);
+    } catch (failure) {
+      setUsedError(
+        failure instanceof Error ? failure.message : "No se pudieron borrar los videos utilizados.",
+      );
+    } finally {
+      setDeletingUsed(false);
+    }
+  }, [deletingUsed, job, jobId]);
 
   // La barra solo se mueve mientras hay trabajo; el reloj va por dentro para que el
   // tiempo restante baje cada segundo y no solo cuando llega una consulta nueva.
@@ -547,6 +758,8 @@ export default function Page() {
   const eta = etaFromMeasurement ?? (running ? (job?.etaSeconds ?? null) : null);
 
   const ranking = job?.artifacts.find((artifact) => artifact.path === "ranking.mp4");
+  // Clips de la galería que usó este ranking: los que borra «Borrar videos utilizados».
+  const usados = Object.keys(job?.gallery ?? {}).length;
   const fileUrl = (path: string) => `/api/jobs/${job?.id}/files?path=${encodeURIComponent(path)}`;
 
   // Móvil con el **render exacto** dentro: es el motor el que dibuja el overlay sobre
@@ -585,20 +798,35 @@ export default function Page() {
   );
 
   return (
-    <main className="shell">
-      <header className="top">
-        <div className="top-row">
-          <div>
-            <h1>openRanks · montar un TOP {positions}</h1>
-            <p>
-              Sube los clips y escribe los puestos y el título. Cada clip se prepara solo al entrar:
-              cuando todos tienen su tick, «Montar» une los clips y añade la edición.
-            </p>
-          </div>
-        </div>
-      </header>
+    <div className="app-shell">
+      <Sidebar active={section} onNavigate={setSection} />
 
-      <div className="layout">
+      <main className="shell">
+        <header className="top">
+          <div className="top-row">
+            <div>
+              <h1>
+                {section === "montar"
+                  ? `openRanks · montar un TOP ${positions}`
+                  : "openRanks · galería de videos"}
+              </h1>
+              {section === "montar" ? (
+                <p>
+                  Sube los clips y escribe los puestos y el título. Cada clip se prepara solo al entrar:
+                  cuando todos tienen su tick, «Montar» une los clips y añade la edición.
+                </p>
+              ) : (
+                <p>
+                  Los clips que ya subiste, con su categoría, para elegir entre 5 y 10 en orden y
+                  montar el ranking sin volver a subirlos.
+                </p>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <section className="view" hidden={section !== "montar"} aria-label="Montar ranking">
+          <div className="layout">
         <div>
           <section className="card">
             <h2>
@@ -608,7 +836,7 @@ export default function Page() {
                 className="title-select"
                 aria-label="Cuántos puestos tiene el ranking"
                 value={positions}
-                disabled={running}
+                disabled={running || importedMontage}
                 onChange={(event) => cambiarPuestos(Number(event.target.value))}
                 style={{
                   WebkitAppearance: 'none',
@@ -627,9 +855,16 @@ export default function Page() {
               Al elegir un clip se prepara en segundo plano (área útil, 9:16, 30 fps y audio
               normalizado).
             </p>
+            {importedMontage ? (
+              <p className="hint">
+                Los puestos vienen de la galería: para otro tamaño, vuelve a elegir los clips allí.
+              </p>
+            ) : null}
             {slots.map((slot) => (
               <div
-                className={`slot ${dragSlot === slot.position ? "drag-over" : ""}`}
+                className={`slot ${dragSlot === slot.position ? "drag-over" : ""} ${
+                  dragFrom === slot.position ? "dragging" : ""
+                }`}
                 key={slot.position}
                 onDragEnter={(event) => {
                   event.preventDefault();
@@ -645,6 +880,13 @@ export default function Page() {
                 onDrop={(event) => {
                   event.preventDefault();
                   setDragSlot(null);
+                  // Un asa arrastrada intercambia puestos; un archivo se sube al puesto.
+                  const moving = Number(event.dataTransfer?.getData("text/x-openranks-slot") ?? "");
+                  setDragFrom(null);
+                  if (Number.isInteger(moving) && moving >= 1) {
+                    void moverPuesto(moving, slot.position);
+                    return;
+                  }
                   if (running) return;
                   const file = event.dataTransfer?.files?.[0];
                   if (!file) return;
@@ -665,9 +907,40 @@ export default function Page() {
               >
                 {dragSlot === slot.position ? (
                   <div className="slot-drop-hint" aria-hidden="true">
-                    Suelta el clip en este puesto
+                    {dragFrom !== null
+                      ? `Suelta para intercambiar con el #${dragFrom}`
+                      : "Suelta el clip en este puesto"}
                   </div>
                 ) : null}
+                <button
+                  className="slot-handle"
+                  type="button"
+                  draggable={canReorder}
+                  disabled={!canReorder}
+                  aria-label={`Mover el puesto #${slot.position}: arrastra o usa las flechas arriba y abajo`}
+                  title="Arrastra el borde para cambiar de puesto; flechas arriba y abajo"
+                  onDragStart={(event) => {
+                    setDragFrom(slot.position);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/x-openranks-slot", String(slot.position));
+                  }}
+                  onDragEnd={() => {
+                    setDragFrom(null);
+                    setDragSlot(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp" && slot.position > 1) {
+                      event.preventDefault();
+                      void moverPuesto(slot.position, slot.position - 1);
+                    }
+                    if (event.key === "ArrowDown" && slot.position < positions) {
+                      event.preventDefault();
+                      void moverPuesto(slot.position, slot.position + 1);
+                    }
+                  }}
+                >
+                  <GripIcon />
+                </button>
                 <div className="rank">
                   {slot.file ? (
                     <SlotThumb file={slot.file} position={slot.position} />
@@ -677,7 +950,19 @@ export default function Page() {
                 </div>
                 <div className="fields">
                   <div className="file-field">
+                    <span className={`slot-file-name ${slot.file || slot.imported ? "" : "empty"}`}>
+                      {slot.file?.name ?? slot.imported ?? "Ningún archivo seleccionado"}
+                    </span>
+                    <button
+                      className="secondary small"
+                      type="button"
+                      disabled={running}
+                      onClick={() => fileInputs.current[slot.position]?.click()}
+                    >
+                      {slot.file || slot.imported ? "Cambiar clip" : "Seleccionar archivo"}
+                    </button>
                     <input
+                      className="slot-file-hidden"
                       type="file"
                       accept="video/*"
                       aria-label={`Archivo del puesto ${slot.position}`}
@@ -691,7 +976,13 @@ export default function Page() {
                   </div>
                   <SlotStatus
                     status={prep[slot.position]}
-                    onRetry={slot.file && !running ? () => onPick(slot.position, slot.file) : undefined}
+                    onRetry={
+                      slot.file && !running
+                        ? () => onPick(slot.position, slot.file)
+                        : slot.imported && !running
+                          ? () => void reintentarPreparacion(slot.position)
+                          : undefined
+                    }
                   />
                   <div>
                     <label className="field" htmlFor={`label-${slot.position}`}>
@@ -871,6 +1162,21 @@ export default function Page() {
                     <a className="button-link" href={fileUrl(ranking.path)} download>
                       Descargar el ranking ({humanSize(ranking.bytes)})
                     </a>
+                    {usados > 0 ? (
+                      <button
+                        className="secondary"
+                        type="button"
+                        disabled={running || deletingUsed}
+                        onClick={() => void borrarUsados()}
+                      >
+                        {deletingUsed ? "Borrando…" : "Borrar videos utilizados"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {usedError ? (
+                  <div className="alert error" role="alert">
+                    {usedError}
                   </div>
                 ) : null}
 
@@ -889,7 +1195,17 @@ export default function Page() {
           </section>
 
         </div>
-      </div>
+          </div>
+        </section>
+
+        <section className="view" hidden={section !== "galeria"} aria-label="Galería de videos">
+          <Gallery
+            hasMontage={jobId !== null}
+            montageBusy={running}
+            onGenerate={generarDesdeGaleria}
+            refreshKey={galleryEpoch}
+          />
+        </section>
 
       {drawerOpen ? (
         <>
@@ -1024,11 +1340,12 @@ export default function Page() {
         </>
       ) : null}
 
-      <footer className="note">
+      <footer className="note" hidden={section !== "montar"}>
         Solo el título, el subtítulo opcional y los nombres de los puestos son editables: el resto del estilo vive en el
         preset bloqueado y el render es siempre automático.
       </footer>
     </main>
+    </div>
   );
 }
 
@@ -1077,6 +1394,24 @@ function SlotThumb({ file, position }: { file: File; position: number }) {
       ) : null}
       <span className="slot-thumb-number">#{position}</span>
     </div>
+  );
+}
+
+/** Asa del borde izquierdo: el control de arrastre del puesto (trazos de Lucide). */
+function GripIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+    >
+      {[9, 15].map((x) =>
+        [6, 12, 18].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" />),
+      )}
+    </svg>
   );
 }
 

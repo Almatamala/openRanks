@@ -126,7 +126,7 @@ header.top p {
   border-radius: 12px;
   padding: 14px;
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr);
+  grid-template-columns: 14px 148px minmax(0, 1fr);
   gap: 14px;
   align-items: center;
   margin-bottom: 10px;
@@ -137,6 +137,39 @@ header.top p {
 .slot.drag-over {
   border-color: var(--accent);
   background: rgba(255, 214, 10, 0.07);
+}
+
+/* El puesto que se está moviendo con el asa se apaga un poco. */
+.slot.dragging {
+  opacity: 0.55;
+}
+
+/* Asa de arrastre del borde izquierdo (RF-13): sin caja, solo los puntos. */
+.slot-handle {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  line-height: 0;
+  touch-action: none;
+}
+
+.slot-handle:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.slot-handle:active {
+  cursor: grabbing;
+}
+
+.slot-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .slot-drop-hint {
@@ -159,7 +192,8 @@ header.top p {
 
 @media (max-width: 520px) {
   .slot {
-    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-columns: 12px 108px minmax(0, 1fr);
+    gap: 10px;
   }
 }
 
@@ -227,6 +261,28 @@ header.top p {
 .slot .file-field input[type="file"] {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Cada puesto enseña el nombre del clip a la izquierda y el botón para elegirlo o
+   cambiarlo; el selector nativo sigue en el DOM (oculto) para poder reemplazarlo. */
+.slot-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.slot-file-name.empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.slot-file-hidden {
+  display: none;
 }
 
 .slot .file-badge {
@@ -759,4 +815,393 @@ code {
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 5px;
+}
+
+/* Navegación principal de la Fase 2 (RF-10): menú lateral persistente con las dos
+   secciones. Cambiar de sección no navega ni recarga: el montaje sigue vivo. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 14px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-brand {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.sidebar-brand-name {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-brand-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* En pantallas estrechas el menú se pliega detrás de este control etiquetado. */
+.sidebar-toggle {
+  display: none;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+.sidebar-nav {
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.sidebar-item:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.sidebar-item.active {
+  background: rgba(255, 214, 10, 0.1);
+  border-color: rgba(255, 214, 10, 0.5);
+  color: var(--accent);
+}
+
+.sidebar-item-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sidebar-item-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* La sección inactiva no se desmonta: se oculta para no perder el montaje. */
+.view[hidden] {
+  display: none;
+}
+
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    overflow: visible;
+    gap: 12px;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-toggle {
+    display: block;
+  }
+
+  .sidebar-nav {
+    display: none;
+  }
+
+  .sidebar-nav.open {
+    display: grid;
+  }
+}
+
+/* Galería de la Fase 2 (RF-11 y RF-12): subida, tarjetas, filtro y selección. */
+.upload-drop {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 26px 18px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  background: #0b0d12;
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.upload-drop strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.upload-drop span {
+  font-size: 13px;
+}
+
+.upload-drop:hover,
+.upload-drop:focus-visible,
+.upload-drop.drag-over {
+  border-color: var(--accent);
+  background: rgba(255, 214, 10, 0.07);
+}
+
+/* Toda la tarjeta de subida recibe los archivos, como la casilla del montaje. */
+.card.drag-over {
+  border-color: var(--accent);
+  background: rgba(255, 214, 10, 0.05);
+}
+
+.upload-ask {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.upload-ask p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.upload-ask-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-ask-row input[type="text"] {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.upload-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.gallery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gallery-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.gallery-summary {
+  font-size: 14px;
+  text-align: right;
+}
+
+.gallery-summary p {
+  margin: 0;
+}
+
+.gallery-summary .hint {
+  margin: 4px 0 0;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gallery-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.gallery-card:hover:not(.picked) {
+  border-color: #3a4150;
+}
+
+/* Un clip elegido se marca con el color de la casa y enseña su puesto. */
+.gallery-card.picked {
+  border-color: rgba(255, 214, 10, 0.55);
+  background: rgba(255, 214, 10, 0.06);
+}
+
+/* Miniatura reproducible como la de la casilla del montaje. */
+.gallery-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.gallery-thumb video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-position {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.gallery-name {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.gallery-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* La categoría solo se lee: se cambia con el lápiz de la barra. */
+.gallery-category {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.gallery-category-label {
+  color: var(--muted);
+}
+
+.gallery-category.empty {
+  color: var(--muted);
+}
+
+.error-text {
+  color: #fecaca;
+}
+
+.gallery-actions {
+  margin-top: 18px;
+}
+
+.gallery-tools {
+  display: flex;
+  gap: 8px;
+}
+
+/* Iconos sin caja: solo el trazo, como un botón de icono al uso. */
+.gallery-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  line-height: 0;
+}
+
+.gallery-tool:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.gallery-name-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gallery-name-button:hover {
+  color: var(--accent);
+}
+
+.gallery-name-button:disabled {
+  cursor: not-allowed;
+}
+
+.gallery-batch {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
 }
