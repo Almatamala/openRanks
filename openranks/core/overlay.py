@@ -563,17 +563,24 @@ def preview_argv(ffmpeg: str, dst: Path, *, ass_file: Path, at_s: float, config:
     La fuente de color la genera FFmpeg: no hace falta ningún vídeo y se aplica el
     **mismo** script ASS que el render final, así que la vista previa no puede mentir.
     """
-    seconds = max(0.05, float(at_s)) + 0.05
+    at = max(0.0, float(at_s))
+    seconds = max(0.05, at) + 0.05
+    # El fotograma se busca en la **entrada**. Con la búsqueda en la salida FFmpeg
+    # codificaba toda la línea temporal sintética (6 s por puesto: ~23 s de trabajo para
+    # un TOP 10) y tiraba casi todos los fotogramas; además competía con las
+    # preparaciones de los clips y agotaba el tiempo de espera del panel. `-copyts`
+    # conserva los tiempos del script ASS, así que el PNG es exactamente el mismo. A 0 no
+    # se busca nada: la entrada ya empieza en el primer fotograma.
+    seek = ["-ss", f"{at:.3f}", "-copyts"] if at > 0 else []
     return [
         *base_argv(ffmpeg),
+        *seek,
         "-f",
         "lavfi",
         "-i",
         f"color=c=black:s={config.target_width}x{config.target_height}:r={config.fps}:d={seconds:.3f}",
         "-vf",
         video_chain(ass_file),
-        "-ss",
-        f"{max(0.0, float(at_s)):.3f}",
         "-frames:v",
         "1",
         str(dst),

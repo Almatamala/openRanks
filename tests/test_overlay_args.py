@@ -346,3 +346,12 @@ def test_preview_argv_draws_the_overlay_over_a_black_source():
     assert argv[argv.index("-ss") + 1] == "29.700"
     assert argv[argv.index("-frames:v") + 1] == "1"
     assert argv[-1] == "preview.png"
+    # La búsqueda va en la **entrada**: la salida codificaba la línea temporal entera
+    # (6 s por puesto) para tirar casi todos los fotogramas.
+    assert argv.index("-ss") < argv.index("-i")
+    assert argv[argv.index("-ss") + 2] == "-copyts"
+
+
+def test_preview_argv_without_seek_when_the_frame_is_the_first_one():
+    argv = preview_argv("ffmpeg", Path("preview.png"), ass_file=Path("work/preview.ass"), at_s=0, config=Config())
+    assert "-ss" not in argv and "-copyts" not in argv

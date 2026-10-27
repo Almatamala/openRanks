@@ -12,8 +12,9 @@ interface ReorderBody {
 }
 
 /**
- * RF-13: intercambia dos puestos del montaje. Responde enseguida: la unión/edición
- * anteriores se invalidan y los dos clips vuelven a prepararse en segundo plano.
+ * RF-13: intercambia dos puestos del montaje. Responde enseguida: los preparados se
+ * mueven con su clip (sin recodificar) y solo la unión/edición anteriores se invalidan;
+ * se rehacen al pulsar «Montar».
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

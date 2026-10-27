@@ -598,6 +598,17 @@ export default function Gallery({
           >
             {generating ? "Preparando los clips…" : "Generar manual"}
           </button>
+          {/* RF-15 / P2-7: visible y deshabilitado; sin endpoint ni efectos. */}
+          <button
+            className="secondary"
+            type="button"
+            disabled
+            aria-disabled="true"
+            aria-label="Generar automático, próximamente"
+            title="La generación automática estará disponible próximamente."
+          >
+            Generar automático · Próximamente
+          </button>
         </div>
         {montageBusy ? (
           <p className="hint">El montaje está en marcha: cuando termine podrás generar otro ranking.</p>

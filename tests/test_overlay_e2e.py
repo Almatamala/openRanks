@@ -1,7 +1,7 @@
 """Integración real de L2: la edición del estándar sobre la unión de L1.
 
 Comprueba el criterio de §9.4 (``ranking.mp4`` 1080x1920 con overlay y ``spec.json``,
-sin portada: el único entregable es el vídeo final) y que el overlay **dibuja de
+sin portada: el entregable principal es el vídeo final) y que el overlay **dibuja de
 verdad**: sin texto, la edición no existe aunque el MP4 sea válido.
 """
 

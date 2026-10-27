@@ -159,10 +159,14 @@ export function expectedPositions(status: JobStatus): number {
   return status.request.positions ?? TOTAL_POSITIONS;
 }
 
-/** ¿Están todos los puestos con su tick? Es la condición para unir y para montar. */
-export function allClipsReady(status: JobStatus): boolean {
-  const count = expectedPositions(status);
-  for (let position = 1; position <= count; position += 1) {
+/**
+ * ¿Están todos los puestos con su tick? Es la condición para unir y para montar.
+ *
+ * `positions` permite validar contra el tamaño que pide el panel ahora mismo: el
+ * operador puede cambiarlo después de generar el montaje sin tocar el servidor.
+ */
+export function allClipsReady(status: JobStatus, positions = expectedPositions(status)): boolean {
+  for (let position = 1; position <= positions; position += 1) {
     if (status.clips[String(position)]?.state !== "ready") return false;
   }
   return true;
@@ -239,16 +243,20 @@ export function inferPhase(id: string, status: JobStatus): { phase: string; prog
 }
 
 /**
- * Lo único que el operador usa es el **ranking final**. La unión, los clips preparados,
- * el spec y el manifiesto son piezas internas: se quedan en disco para trazabilidad,
- * pero ni se listan ni se sirven.
+ * Artefactos que la API sirve: el **ranking final** y, para la descarga opcional sin
+ * overlay, la **unión** (`union.mp4`). Los clips preparados, el spec y el manifiesto
+ * siguen siendo piezas internas.
  */
 export function listArtifacts(id: string): Artifact[] {
-  const ranking = path.join(renderDir(id), "ranking.mp4");
-  if (!existsSync(ranking)) return [];
-  const stat = statSync(ranking);
-  if (!stat.isFile()) return [];
-  return [{ path: "ranking.mp4", bytes: stat.size }];
+  const dir = renderDir(id);
+  const artifacts: Artifact[] = [];
+  for (const name of ["ranking.mp4", "union.mp4"]) {
+    const file = path.join(dir, name);
+    if (!existsSync(file)) continue;
+    const stat = statSync(file);
+    if (stat.isFile()) artifacts.push({ path: name, bytes: stat.size });
+  }
+  return artifacts;
 }
 
 /** Comprueba que un artefacto pedido por la API es uno de los que la lista ofrece. */

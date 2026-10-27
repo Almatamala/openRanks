@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) definida y planificada**: requisitos cerrados, código pendiente |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) implementada en código**; cierre de pruebas y checklist pendiente (P2-8) |
 | **Fecha** | 23-oct-2026 |
 | **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado y verificación) vive en `docs/plan/openRanks-plan.md` |
 | **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
@@ -12,8 +12,9 @@
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
 
-Este documento describe **lo que el producto hace hoy** y lo que añadirá la **Fase 2**. Lo
-planificado se marca como tal; lo que aún no tiene diseño cerrado está en §16. La extracción
+Este documento describe **lo que el producto hace hoy**, incluida la **Fase 2** ya implementada
+en el panel. Lo que sigue siendo futuro se marca como tal; lo que aún no tiene diseño cerrado
+está en §16. La extracción
 automática y la publicación siguen **fuera del alcance** (§4.2).
 
 ---
@@ -36,7 +37,7 @@ El valor está en estandarizar lo que hoy se hace a mano:
 4. **Panel único** que encadena todo el flujo sin terminal, con progreso real y errores
    accionables.
 
-**Fase 2 — galería y navegación (planificada).** El panel gana un menú lateral persistente con
+**Fase 2 — galería y navegación (implementada).** El panel gana un menú lateral persistente con
 **Montar ranking** y **Galería de videos**. La galería guarda los clips originales, les asigna
 una categoría y permite filtrarlos; el operador selecciona entre 5 y 10 y el orden de selección
 fija los puestos (#1 para el primero). **Generar manual** importa los clips al trabajo, los
@@ -128,15 +129,15 @@ Reglas de composición:
 | 3 | **Preparación por puesto al subir** (tick) y **unión en corte seco al montar**, en un solo vídeo vertical | **Hecho** |
 | 4 | Edición del estándar sobre la unión (título, subtítulo, escalera y rótulos) | **Hecho** |
 | 5 | **Plantilla editable y persistente** (fuente, cursiva, tamaño y posición) | **Hecho** |
-| 6 | **Panel único** con progreso por fase, errores accionables y descarga del ranking final | **Hecho** |
+| 6 | **Panel único** con progreso por fase, errores accionables, descarga del ranking final y descarga opcional de la unión sin edición | **Hecho** |
 | 7 | Re-render de solo el overlay al cambiar textos | **Hecho** |
 | 8 | **Banner de referencia** y **música/sfx** con la cama a −14 LUFS | Pendiente de L2: requieren assets propios y van desactivados por defecto |
-| 9 | **Galería persistente** de clips con categoría libre y filtro | **Fase 2** (definido, sin código) |
-| 10 | **Navegación lateral** entre «Montar ranking» y «Galería de videos» | **Fase 2** (definido, sin código) |
-| 11 | **Selección ordenada de 5 a 10** clips y **generación manual** del ranking | **Fase 2** (definido, sin código) |
-| 12 | **Reordenación por arrastrar y soltar** desde el borde izquierdo de cada casilla | **Fase 2** (definido, sin código) |
-| 13 | **Borrado de los videos utilizados** tras un render correcto, con confirmación | **Fase 2** (definido, sin código) |
-| 14 | **Generación automática** del ranking a partir de una selección | **Futuro**: botón visible y deshabilitado («próximamente»), sin algoritmo ni endpoint |
+| 9 | **Galería persistente** de clips con categoría libre y filtro | **Hecho** |
+| 10 | **Navegación lateral** entre «Montar ranking» y «Galería de videos» | **Hecho** |
+| 11 | **Selección ordenada de 5 a 10** clips y **generación manual** del ranking | **Hecho** |
+| 12 | **Reordenación por arrastrar y soltar** desde el borde izquierdo de cada casilla | **Hecho** |
+| 13 | **Borrado de los videos utilizados** tras un render correcto, con confirmación | **Hecho** |
+| 14 | **Generación automática** del ranking a partir de una selección | **Futuro**: botón visible y deshabilitado («próximamente»), sin algoritmo ni endpoint (botón ya entregado) |
 
 ### 4.2 Fuera del alcance actual
 
@@ -179,8 +180,9 @@ Flujo actual, entero dentro del panel:
    la edición sobre esa unión; si la unión ya existe, solo rehace la edición. La unión no se
    hace antes: así un cambio de orden o un clip reemplazado no deja uniones de más. El panel
    muestra la fase y el tiempo restante.
-5. Ve el `ranking.mp4` en 9:16 dentro del panel y lo descarga: es el **único** archivo que se
-   entrega.
+5. Ve el `ranking.mp4` en 9:16 dentro del panel y lo descarga: es el **entregable principal**.
+   Opcionalmente puede descargar la **unión sin edición** (`union.mp4`) desde el mismo bloque de
+   resultado, sin overlay ni textos.
 6. Si cambia un texto, vuelve a montar la edición sobre el mismo vídeo (segundos).
 
 Historias de usuario:
@@ -212,7 +214,9 @@ Historias de usuario:
    selección. Cada casilla muestra su tick cuando su clip está preparado.
 7. En el montaje, el operador puede **reordenar** arrastrando el **borde izquierdo** de una
    casilla hacia arriba o abajo. Los números de puesto se actualizan y la unión/edición
-   anteriores dejan de valer.
+   anteriores dejan de valer, pero el intercambio **no recodifica los clips**: mueve sus
+   preparados con ellos y los ticks siguen encendidos. La unión y la edición se rehacen al
+   pulsar «Montar».
 8. Escribe título, subtítulo y nombres, pulsa **Montar** y revisa el resultado; cuando termina,
    descarga el `ranking.mp4`.
 9. Junto a **Descargar** aparece **Borrar videos utilizados**. Al pulsarlo se abre una
@@ -246,7 +250,7 @@ Historias de usuario:
 | Cancelar el borrado | No se elimina ningún archivo ni se limpia ninguna casilla. |
 | Borrar el último clip de una categoría | La categoría desaparece del filtro y del autocompletado; no existe una entidad de categoría aparte que mantener. |
 | Un clip usado en dos rankings | «Borrar usados» lo quita de la galería; el otro trabajo conserva su copia y su ranking. |
-| Reordenar después de montar | Los puestos se intercambian, la unión/edición se invalidan y los puestos afectados vuelven a prepararse (su tick se apaga hasta que terminan). |
+| Reordenar después de montar | Los puestos se intercambian. El clip ya preparado se mueve con su puesto (no se vuelve a normalizar y el tick sigue encendido); solo la unión/edición se invalidan y se rehacen al pulsar «Montar». |
 | Cambiar la categoría con un filtro activo | El clip sigue seleccionado aunque deje de coincidir con el filtro; el contador incluye la selección oculta. |
 | Fallo al importar o preparar | El trabajo muestra el error con acción de reintentar; no se borra nada de la galería y la selección se conserva. |
 | Clip sin categoría | Se agrupa como «Sin categoría» y se puede etiquetar después. |
@@ -296,9 +300,9 @@ islas nítidas ajenas al área útil ignoradas, rotación y salida normalizada.
    cada badge, escalera, rótulos, encaje del título y duración total.
 3. La capa de overlay se dibuja con un script **ASS** sobre la unión, con el mismo encuadre y
    formato (1080x1920, 30 fps, yuv420p), `-map_metadata -1` y `+faststart`.
-4. Artefactos: `ranking.mp4` (final y **único entregable**), `spec.json` (props exactas,
-   reproducible) y el `manifest.json` de L1 ampliado con el bloque de L2 (capa, preset, hashes,
-   medidas y avisos).
+4. Artefactos: `ranking.mp4` (final, **entregable principal**), `union.mp4` (unión sin edición,
+   descarga opcional), `spec.json` (props exactas, reproducible) y el `manifest.json` de L1
+   ampliado con el bloque de L2 (capa, preset, hashes, medidas y avisos).
 
 **Criterio de aceptación** (verificado en `tests/test_overlay_e2e.py`): el MP4 valida con
 `ffprobe` (1080x1920, 30 fps, yuv420p, audio presente) y **el overlay dibuja de verdad** (se
@@ -317,6 +321,9 @@ audio se copia, así que la duración y la medición de loudness no cambian.
    overlay sobre el `union.mp4` (segundos, no minutos).
 4. Sustituir el clip de un puesto conserva los otros: el tick de ese puesto se apaga, su unión y
    su edición se invalidan y se rehacen al volver a montar.
+5. El panel ofrece **Guardar** junto al título y el subtítulo: persiste el texto actual en
+   el navegador y en el servidor (`text.json`) y recupera ese respaldo si el navegador
+   pierde el borrador local.
 
 ### RF-9 — Interfaz de operación (un solo panel, cómodo y fácil de usar) · **hecho**
 
@@ -325,7 +332,8 @@ editor de vídeo, ni una segunda web: si una tarea del flujo de §5 no se puede 
 panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Router).
 
 1. **Un solo sitio.** El panel cubre el flujo de L1/L2 —clips (que se preparan solos al entrar),
-   textos, plantilla, montaje, resultado y la descarga del ranking— sin cambiar de herramienta.
+   textos, plantilla, montaje, resultado y la descarga del ranking (y, opcionalmente, de la
+   unión sin edición)— sin cambiar de herramienta.
 2. **Mínimos pasos.** Iniciar un montaje = subir los clips + un botón. Ajustar la plantilla =
    arrastrar un control. Ningún paso obligatorio pide escribir un id, una ruta ni JSON.
 3. **Estado y progreso siempre visibles.** Cada job muestra su **fase con nombre humano**
@@ -344,7 +352,9 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
 6. **Todos los textos editables se editan en su sitio**, con contador de caracteres y validación
    en vivo antes de gastar un montaje (§9.5).
 7. **Nada del trabajo en curso se pierde.** El panel persiste el título, el subtítulo, los
-   nombres y el número de puestos; el estado real vive en el servidor.
+   nombres y el número de puestos; el estado real vive en el servidor. El título y el
+   subtítulo tienen además un botón **Guardar** a su derecha, que confirma el texto actual
+   en el navegador y en el servidor.
 8. **Legibilidad y accesibilidad.** Contraste sobre fondo oscuro, controles etiquetados (no
    iconos mudos), `aria` en la barra de progreso y foco visible.
 9. **Cero jerga interna.** La UI habla el idioma del operador («Nombre del puesto #3»,
@@ -428,12 +438,15 @@ categoría. La API y la UI no exponen rutas ni ids internos.
    §16.9). Una vez generado, el orden queda en el trabajo.
 6. **Generar automático** está visible pero **deshabilitado** con la etiqueta «Próximamente»
    (RF-15); no se puede activar ni ejecutar.
+7. **El selector de puestos sigue activo después de generar.** Aumentar el tamaño añade
+   casillas vacías, que se rellenan subiendo clips; reducirlo deja fuera los puestos
+   sobrantes. Los clips que se conservan no se preparan otra vez.
 
 **Criterio de aceptación.** Con 4 seleccionados el botón está deshabilitado; con 5 se generan
 exactamente 5 casillas en el orden elegido y cada una enciende su tick; con 10 no se puede
 seleccionar el 11.º; cancelar la confirmación deja intacto el montaje anterior. En un montaje
-creado desde la galería, el número de puestos **no se cambia** con el selector de la Fase 1;
-para otro tamaño se vuelve a seleccionar.
+creado desde la galería, el selector de la Fase 1 **sigue activo**: al ampliar aparecen casillas
+vacías y al reducir se dejan de usar las sobrantes.
 
 ### RF-13 — Reordenación por arrastrar y soltar · **Fase 2**
 
@@ -443,9 +456,10 @@ para otro tamaño se vuelve a seleccionar.
    **intercambian** y los números se actualizan automáticamente.
 3. Funciona con ratón, puntero táctil y teclado: el asa es enfocable, tiene etiqueta accesible y
    las flechas arriba/abajo realizan el mismo intercambio.
-4. Reordenar **invalida la unión y la edición** anteriores. Los clips afectados vuelven a
-   prepararse en su nuevo puesto (su tick se apaga hasta que terminan), porque el nombre estable
-   `prepared/NN.mp4` depende del puesto y no del clip.
+4. Reordenar **invalida la unión y la edición** anteriores, que se rehacen al pulsar
+   «Montar». El intercambio **no vuelve a preparar ni recodificar los clips**: mueve
+   `prepared/NN.mp4` y su JSON con el clip, así que los ticks siguen encendidos. Si un
+   puesto todavía no estaba preparado, ese caso aislado se prepara después del intercambio.
 5. El orden resultante es el que usan `join` y `render`: `#N → … → #1`, con el #1 al final.
 6. No se puede arrastrar fuera de la lista ni cambiar el número de puestos desde el asa.
 
@@ -547,9 +561,9 @@ geometría del encuadre) se testea en CI sin FFmpeg y sin red. El análisis de p
 `core/ffmpeg.py` y `core/overlay.py`, y se **ejecutan** en `prepare.py`, `join.py` /
 `overlay.py`.
 
-La Fase 2 se implementará **solo en el panel**: la lógica de galería y selección
-(`web/lib/gallery.ts`), las rutas `/galeria` y `/api/gallery/**`, y el layout con el menú
-lateral. El motor no gana comandos ni flags nuevos.
+La Fase 2 se implementó **solo en el panel**: la lógica de galería y selección
+(`web/lib/gallery.ts`), las rutas de galería y el layout con el menú lateral. El motor no gana
+comandos ni flags nuevos.
 
 ### 7.7 Despliegue mínimo (el que existe)
 
@@ -588,6 +602,8 @@ trabajos:
 - `status.json`: estado, fase, avance, `clips{}` con el tick de cada puesto, `join`, resultado y
   el mapa `gallery` (puesto → id de galería) que usa «Borrar videos utilizados».
 - `binding.json`: título, subtítulo opcional y puestos.
+- `text.json`: último texto guardado con el botón **Guardar** (título y subtítulo), como
+  respaldo para una sesión sin borrador local.
 - `input/`: los clips subidos o importados desde la galería.
 - `render/`: `prepared/NN.mp4` con los clips ya preparados, `union.mp4`, `ranking.mp4`,
   `spec.json` y `manifest.json`.
@@ -671,7 +687,8 @@ L1, mediante el mismo motor que hace L1:
 
 | Artefacto | Especificación |
 | --- | --- |
-| `ranking.mp4` | 1080x1920, 30 fps, H.264 High, CRF 19, yuv420p, audio copiado, `+faststart`, ≤ 60 s. **Único archivo que se entrega** |
+| `ranking.mp4` | 1080x1920, 30 fps, H.264 High, CRF 19, yuv420p, audio copiado, `+faststart`, ≤ 60 s. **Entregable principal** |
+| `union.mp4` | Unión de los clips preparados sin overlay; **descarga opcional sin edición** desde el panel |
 | `spec.json` | props exactas del render (reproducible); interno |
 | `manifest.json` | capa, preset, hashes de fuentes y salidas, formato, duración, loudness y avisos; interno |
 | `prepared/NN.mp4` | clip normalizado de un puesto; pieza interna de la unión (no se descarga) |
@@ -782,7 +799,7 @@ el panel reconstruye el estado desde el servidor, no desde el cliente.
 | R5 | **Pérdida de trabajos al reiniciar** | Medio | Estado en disco y trabajos en un volumen persistente |
 | R6 | **Duplicación de almacenamiento** (original en la galería + copia en cada trabajo) | Medio | La copia es lo que permite borrar de la galería sin romper rankings; se documenta y se prevé una política de retención/limpieza (§16) |
 | R7 | **Borrado accidental de clips** | Alto | Confirmación obligatoria, solo tras un render correcto, y se borran únicamente los ids de ese ranking; el `ranking.mp4` no se toca |
-| R8 | **Reordenar con clips ya preparados** | Medio | El intercambio invalida unión/edición y vuelve a preparar los puestos afectados; el tick se apaga hasta que terminan |
+| R8 | **Reordenar con clips ya preparados** | Medio | El intercambio mueve los preparados con el clip (sin recodificar) y conserva los ticks; solo invalida la unión/edición, que se rehacen al montar. Si un puesto no estaba preparado, se prepara después del intercambio |
 | R9 | **Galería grande o lenta** | Bajo | Se guardan solo originales, se lista con paginación si supera 200 clips y el filtro se resuelve en el servidor |
 
 ---

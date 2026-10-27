@@ -106,6 +106,9 @@ type ImportResponse = {
 
 const STORE_KEY = "openranks.panel.v1";
 
+/** Reintentos automáticos de la vista previa cuando el motor está ocupado. */
+const PREVIEW_RETRIES = 2;
+
 /** Puestos que ofrece el panel: del TOP 5 al TOP 10. */
 const POSITION_CHOICES = Array.from(
   { length: POSITIONS_MAX - POSITIONS_MIN + 1 },
@@ -129,12 +132,16 @@ function humanSize(bytes: number): string {
 
 export default function Page() {
   const [section, setSection] = useState<Section>("montar");
-  // Montaje creado desde la galería: su número de puestos lo fija la selección (RF-12).
-  const [importedMontage, setImportedMontage] = useState(false);
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("Ranking funny moments");
   const [subtitle, setSubtitle] = useState("You’ll never guess #1 until you see it.");
+  const [savingText, setSavingText] = useState(false);
+  const [textSavedFlash, setTextSavedFlash] = useState(false);
+  const [textSaveError, setTextSaveError] = useState<string | null>(null);
+  // El operador ya tocó el texto: un borrador del servidor no puede pisar lo que escribe.
+  const textTouched = useRef(false);
+  const textFlashTimer = useRef<number | undefined>(undefined);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +182,8 @@ export default function Page() {
   const [titleYRange, setTitleYRange] = useState<[number, number] | null>(null);
   const runToken = useRef(0);
   const previewToken = useRef(0);
+  // Intentos de vista previa que ya fallaron para el pedido actual.
+  const previewRetries = useRef(0);
 
   // La plantilla vive en el motor: el panel la lee, la edita y la guarda (§RF-9.10).
   const cargarPlantilla = useCallback(async () => {
@@ -195,37 +204,64 @@ export default function Page() {
     void cargarPlantilla();
   }, [cargarPlantilla]);
 
-  // RF-9.7: nada del trabajo en curso se pierde al recargar.
+  // RF-9.7: nada del trabajo en curso se pierde al recargar. El texto tiene además un
+  // guardado explícito en el servidor, que se usa como respaldo si este navegador no
+  // tiene borrador local (otro equipo, almacenamiento limpio).
   useEffect(() => {
+    let savedTitle: string | null = null;
+    let savedSubtitle: string | null = null;
     try {
       const raw = window.localStorage.getItem(STORE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        title?: string;
-        subtitle?: string;
-        positions?: number;
-        labels?: Record<string, string>;
-      };
-      const count = clampPositions(saved.positions ?? POSITIONS_MIN);
-      if (saved.title) setTitle(saved.title);
-      // Un subtítulo guardado vacío se trata como «sin elegir»: así se ve el texto por
-      // defecto en una sesión limpia sin pisar un subtítulo que el operador haya escrito.
-      if (typeof saved.subtitle === "string" && saved.subtitle.trim()) setSubtitle(saved.subtitle);
-      setPositions(count);
-      setSlots(
-        positionsFor(count).map((position) => ({
-          position,
-          file: null,
-          imported: null,
-          label: saved.labels?.[String(position)] ?? "",
-        })),
-      );
+      if (raw) {
+        const saved = JSON.parse(raw) as {
+          title?: string;
+          subtitle?: string;
+          positions?: number;
+          labels?: Record<string, string>;
+        };
+        const count = clampPositions(saved.positions ?? POSITIONS_MIN);
+        savedTitle = typeof saved.title === "string" && saved.title.trim() ? saved.title : null;
+        // Un subtítulo guardado vacío se trata como «sin elegir»: así se ve el texto por
+        // defecto en una sesión limpia sin pisar un subtítulo que el operador haya escrito.
+        savedSubtitle =
+          typeof saved.subtitle === "string" && saved.subtitle.trim() ? saved.subtitle : null;
+        if (savedTitle) setTitle(savedTitle);
+        if (savedSubtitle) setSubtitle(savedSubtitle);
+        setPositions(count);
+        setSlots(
+          positionsFor(count).map((position) => ({
+            position,
+            file: null,
+            imported: null,
+            label: saved.labels?.[String(position)] ?? "",
+          })),
+        );
+      }
     } catch {
       // Un almacén corrupto no puede impedir usar el panel.
     }
+
+    if (savedTitle) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/text", { cache: "no-store" });
+        if (!response.ok) return;
+        const draft = (await response.json()) as { title?: unknown; subtitle?: unknown };
+        if (cancelled || textTouched.current) return;
+        if (!savedTitle && typeof draft.title === "string" && draft.title.trim()) setTitle(draft.title);
+        if (!savedSubtitle && typeof draft.subtitle === "string" && draft.subtitle.trim())
+          setSubtitle(draft.subtitle);
+      } catch {
+        // Sin respaldo en el servidor se sigue con los textos de la sesión.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
+  const guardarBorradorLocal = useCallback(() => {
     const labels = Object.fromEntries(slots.map((slot) => [String(slot.position), slot.label]));
     try {
       window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, subtitle, positions, labels }));
@@ -233,6 +269,39 @@ export default function Page() {
       // Sin espacio o en modo privado: seguir, el estado vive en el servidor igual.
     }
   }, [slots, title, subtitle, positions]);
+
+  useEffect(() => {
+    guardarBorradorLocal();
+  }, [guardarBorradorLocal]);
+
+  useEffect(() => () => {
+    if (textFlashTimer.current) window.clearTimeout(textFlashTimer.current);
+  }, []);
+
+  // Guardado explícito del texto: primero el borrador de este navegador y después el
+  // respaldo del servidor, que es lo que recupera una sesión limpia.
+  const guardarTexto = useCallback(async () => {
+    if (savingText) return;
+    textTouched.current = true;
+    setSavingText(true);
+    setTextSaveError(null);
+    guardarBorradorLocal();
+    try {
+      const response = await fetch("/api/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, subtitle }),
+      });
+      if (!response.ok) throw new Error("sin respuesta");
+      setTextSavedFlash(true);
+      if (textFlashTimer.current) window.clearTimeout(textFlashTimer.current);
+      textFlashTimer.current = window.setTimeout(() => setTextSavedFlash(false), 2500);
+    } catch {
+      setTextSaveError("No se pudo guardar el texto. Vuelve a intentarlo.");
+    } finally {
+      setSavingText(false);
+    }
+  }, [guardarBorradorLocal, savingText, subtitle, title]);
 
   // El render del motor (FFmpeg) **no es instantáneo**: dibuja el overlay sobre negro
   // pero tarda unos segundos, así que se pide con retardo y nunca en vivo. Se descarga
@@ -270,7 +339,18 @@ export default function Page() {
       if (previewToken.current !== token) return;
       setRenderUrl(URL.createObjectURL(blob));
     } catch {
-      if (previewToken.current === token) setPreviewFailed(true);
+      if (previewToken.current !== token) return;
+      // El motor puede estar ocupado preparando los clips recién importados, así que un
+      // fallo pasajero no puede dejar el panel sin plantilla: se reintenta solo un par de
+      // veces antes de dar el error por bueno.
+      if (previewRetries.current < PREVIEW_RETRIES) {
+        previewRetries.current += 1;
+        window.setTimeout(() => {
+          if (previewToken.current === token) void pedirRender();
+        }, 4000);
+      } else {
+        setPreviewFailed(true);
+      }
     } finally {
       if (previewToken.current === token) setRendering(false);
     }
@@ -291,27 +371,39 @@ export default function Page() {
   // lanza un FFmpeg por cada tirón.
   useEffect(() => {
     if (!style) return;
+    // Un cambio de verdad (texto o plantilla) empieza de cero: los reintentos son para el
+    // mismo pedido, no para acumular intentos entre ediciones.
+    previewRetries.current = 0;
     const timer = window.setTimeout(() => pedirRender(), 900);
     return () => window.clearTimeout(timer);
   }, [style, pedirRender]);
 
   // Cambiar los puestos deja la escalera a medida: se conservan los clips y los nombres
-  // que ya estaban puestos y el número del título sigue al del ranking.
+  // que ya estaban puestos y el número del título sigue al del ranking. Vale también en
+  // un montaje generado desde la galería: el selector sigue siendo del operador.
   const cambiarPuestos = useCallback(
     (raw: number) => {
-      // En un montaje de la galería el tamaño lo fija la selección: se vuelve a elegir.
-      if (importedMontage) return;
       const count = clampPositions(raw);
+      const byPosition = new Map(slots.map((slot) => [slot.position, slot]));
+      const nextSlots = positionsFor(count).map(
+        (position) => byPosition.get(position) ?? { position, file: null, imported: null, label: "" },
+      );
+      textTouched.current = true;
       setPositions(count);
-      setSlots((current) => {
-        const byPosition = new Map(current.map((slot) => [slot.position, slot]));
-        return positionsFor(count).map(
-          (position) => byPosition.get(position) ?? { position, file: null, imported: null, label: "" },
-        );
+      setSlots(nextSlots);
+      // Un puesto nuevo no hereda el tick de un montaje anterior; los que conservan su
+      // clip mantienen el suyo, porque no hay nada que volver a preparar.
+      setPrep((current) => {
+        const next: Record<number, ClipStatus> = {};
+        for (const slot of nextSlots) {
+          const status = current[slot.position];
+          if (status && (slot.file || slot.imported)) next[slot.position] = status;
+        }
+        return next;
       });
       setTitle((current) => retitleForCount(current, count));
     },
-    [importedMontage],
+    [slots],
   );
 
   const setSlot = useCallback((position: number, patch: Partial<Slot>) => {
@@ -608,8 +700,8 @@ export default function Page() {
           clips.map((clip) => [clip.position, { state: "uploading" as const, error: null }]),
         ),
       );
+      textTouched.current = true;
       setTitle((current) => retitleForCount(current, count));
-      setImportedMontage(true);
       setPollNonce((value) => value + 1);
       setSection("montar");
     },
@@ -645,8 +737,8 @@ export default function Page() {
 
   const running = busy || job?.state === "running";
 
-  // RF-13: intercambiar dos puestos. El nombre del puesto y el clip viajan juntos y el
-  // servidor invalida la unión/edición anteriores y vuelve a preparar los dos clips.
+  // RF-13: intercambiar dos puestos. El nombre del puesto y el clip viajan juntos; el
+  // servidor mueve los preparados (sin recodificar) e invalida la unión/edición anteriores.
   const moverPuesto = useCallback(
     async (from: number, to: number) => {
       if (from === to || running || reordering) return;
@@ -681,14 +773,21 @@ export default function Page() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ from, to }),
         });
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        if (!response.ok) throw new Error(payload?.error ?? "No se pudo cambiar el orden de los puestos.");
-        // Los dos puestos se preparan otra vez con su nuevo número.
-        setPrep((current) => ({
-          ...current,
-          [from]: { state: "uploading", error: null, percent: 0 },
-          [to]: { state: "uploading", error: null, percent: 0 },
-        }));
+        const payload = (await response.json().catch(() => null)) as
+          | (Job & { error?: string })
+          | null;
+        if (!response.ok || !payload) {
+          throw new Error(payload?.error ?? "No se pudo cambiar el orden de los puestos.");
+        }
+        // Los preparados se han movido con su clip: los ticks no se apagan y no hay
+        // nada que recodificar. Solo cambia el estado del trabajo (unión/edición viejas).
+        setPrep((current) => {
+          const merged = { ...current };
+          for (const [key, value] of Object.entries(payload?.clips ?? {})) {
+            merged[Number(key)] = value;
+          }
+          return merged;
+        });
         setPollNonce((value) => value + 1);
       } catch (failure) {
         swapLocal();
@@ -725,8 +824,6 @@ export default function Page() {
         current.map((slot) => ({ ...slot, file: null, imported: null, label: "" })),
       );
       setPrep({});
-      // Sin clips, el montaje deja de estar atado a la selección: el tamaño se elige aquí.
-      setImportedMontage(false);
       setGalleryEpoch((value) => value + 1);
       setPollNonce((value) => value + 1);
     } catch (failure) {
@@ -758,6 +855,8 @@ export default function Page() {
   const eta = etaFromMeasurement ?? (running ? (job?.etaSeconds ?? null) : null);
 
   const ranking = job?.artifacts.find((artifact) => artifact.path === "ranking.mp4");
+  // Unión de los clips preparados, sin el overlay: descarga opcional junto al ranking.
+  const union = job?.artifacts.find((artifact) => artifact.path === "union.mp4");
   // Clips de la galería que usó este ranking: los que borra «Borrar videos utilizados».
   const usados = Object.keys(job?.gallery ?? {}).length;
   const fileUrl = (path: string) => `/api/jobs/${job?.id}/files?path=${encodeURIComponent(path)}`;
@@ -836,7 +935,7 @@ export default function Page() {
                 className="title-select"
                 aria-label="Cuántos puestos tiene el ranking"
                 value={positions}
-                disabled={running || importedMontage}
+                disabled={running}
                 onChange={(event) => cambiarPuestos(Number(event.target.value))}
                 style={{
                   WebkitAppearance: 'none',
@@ -855,11 +954,6 @@ export default function Page() {
               Al elegir un clip se prepara en segundo plano (área útil, 9:16, 30 fps y audio
               normalizado).
             </p>
-            {importedMontage ? (
-              <p className="hint">
-                Los puestos vienen de la galería: para otro tamaño, vuelve a elegir los clips allí.
-              </p>
-            ) : null}
             {slots.map((slot) => (
               <div
                 className={`slot ${dragSlot === slot.position ? "drag-over" : ""} ${
@@ -942,8 +1036,12 @@ export default function Page() {
                   <GripIcon />
                 </button>
                 <div className="rank">
-                  {slot.file ? (
-                    <SlotThumb file={slot.file} position={slot.position} />
+                  {slot.file || (slot.imported && job?.gallery?.[String(slot.position)]) ? (
+                    <SlotThumb
+                      file={slot.file}
+                      libraryId={job?.gallery?.[String(slot.position)] ?? null}
+                      position={slot.position}
+                    />
                   ) : (
                     <div className="num">#{slot.position}</div>
                   )}
@@ -1013,32 +1111,65 @@ export default function Page() {
             <label className="field" htmlFor="title">
               Título del vídeo
             </label>
-            <input
-              id="title"
-              type="text"
-              value={title}
-              maxLength={LIMITS.titleLayerChars * 2}
-              disabled={running}
-              onChange={(event) => setTitle(event.target.value)}
-            />
+            <div className="field-row">
+              <input
+                id="title"
+                type="text"
+                value={title}
+                maxLength={LIMITS.titleLayerChars * 2}
+                disabled={running}
+                onChange={(event) => {
+                  textTouched.current = true;
+                  setTitle(event.target.value);
+                }}
+              />
+              <button
+                className="secondary field-save"
+                type="button"
+                disabled={running || savingText}
+                aria-label="Guardar el título y el subtítulo actuales"
+                onClick={() => void guardarTexto()}
+              >
+                {savingText ? "Guardando…" : textSavedFlash ? "Guardado" : "Guardar"}
+              </button>
+            </div>
             <div className={`counter ${visibleLength(title) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {visibleLength(title)}/{LIMITS.titleLayerChars} caracteres
             </div>
             <label className="field" htmlFor="subtitle" style={{ marginTop: 16 }}>
               Subtítulo del vídeo (opcional)
             </label>
-            <input
-              id="subtitle"
-              type="text"
-              value={subtitle}
-              maxLength={LIMITS.titleLayerChars * 2}
-              placeholder="p. ej. LOS MOMENTOS MÁS LOCOS"
-              disabled={running}
-              onChange={(event) => setSubtitle(event.target.value)}
-            />
+            <div className="field-row">
+              <input
+                id="subtitle"
+                type="text"
+                value={subtitle}
+                maxLength={LIMITS.titleLayerChars * 2}
+                placeholder="p. ej. LOS MOMENTOS MÁS LOCOS"
+                disabled={running}
+                onChange={(event) => {
+                  textTouched.current = true;
+                  setSubtitle(event.target.value);
+                }}
+              />
+              <button
+                className="secondary field-save"
+                type="button"
+                disabled={running || savingText}
+                aria-label="Guardar el título y el subtítulo actuales"
+                onClick={() => void guardarTexto()}
+              >
+                {savingText ? "Guardando…" : textSavedFlash ? "Guardado" : "Guardar"}
+              </button>
+            </div>
             <div className={`counter ${textLength(subtitle.trim()) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {textLength(subtitle.trim())}/{LIMITS.titleLayerChars} caracteres
             </div>
+            {textSaveError ? (
+              <div className="alert error" role="alert">
+                {textSaveError}
+              </div>
+            ) : null}
             <p className="hint" style={{ marginTop: 12 }}>
               Toca una palabra para cambiar su color: blanco → <strong>amarillo</strong> → <strong>azul</strong>. En
               el texto se marca con <code>*amarillo*</code> y <code>_azul_</code>.
@@ -1052,6 +1183,7 @@ export default function Page() {
                   disabled={running}
                   aria-label={`${word.text}: cambiar color (ahora ${word.color})`}
                   onClick={() => {
+                    textTouched.current = true;
                     const words = titleWords(title);
                     words[index] = { ...words[index], color: cycleColor(words[index].color) };
                     setTitle(wordsToTitle(words));
@@ -1156,15 +1288,21 @@ export default function Page() {
                 )}
 
                 {ranking ? (
-                  <div className="actions">
-                    {/* Lo único que se entrega es el ranking final: ni unión, ni spec,
-                        ni manifiesto, ni portada. */}
-                    <a className="button-link" href={fileUrl(ranking.path)} download>
-                      Descargar el ranking ({humanSize(ranking.bytes)})
-                    </a>
+                  <div className="result-actions">
+                    {/* Dos descargas lado a lado; el borrado va debajo. */}
+                    <div className="download-actions">
+                      <a className="button-link" href={fileUrl(ranking.path)} download>
+                        Descargar el ranking ({humanSize(ranking.bytes)})
+                      </a>
+                      {union ? (
+                        <a className="button-link" href={fileUrl(union.path)} download>
+                          Descargar sin edición ({humanSize(union.bytes)})
+                        </a>
+                      ) : null}
+                    </div>
                     {usados > 0 ? (
                       <button
-                        className="secondary"
+                        className="danger-soft"
                         type="button"
                         disabled={running || deletingUsed}
                         onClick={() => void borrarUsados()}
@@ -1367,22 +1505,38 @@ function styleKey(value: EditablePreset): string {
 
 /**
  * Miniatura del clip elegido, en el hueco del número del puesto, con ese número
- * en la esquina superior izquierda. El objeto URL se crea y se libera con el archivo.
+ * en la esquina superior izquierda. El archivo del navegador se sirve con un objeto URL
+ * (se crea y se libera con él); un clip importado desde la galería no está en el
+ * navegador, así que se reproduce su original del servidor.
  */
-function SlotThumb({ file, position }: { file: File; position: number }) {
+function SlotThumb({
+  file,
+  libraryId,
+  position,
+}: {
+  file: File | null;
+  libraryId: string | null;
+  position: number;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!file) {
+      setUrl(null);
+      return;
+    }
     const next = URL.createObjectURL(file);
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [file]);
 
+  const src = file ? url : libraryId ? `/api/library/${libraryId}/file` : null;
+
   return (
     <div className="slot-thumb">
-      {url ? (
+      {src ? (
         <video
-          src={url}
+          src={src}
           controls
           playsInline
           preload="metadata"

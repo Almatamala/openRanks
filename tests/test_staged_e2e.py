@@ -131,7 +131,7 @@ def test_render_only_adds_the_overlay_on_top_of_the_join(
     # La edición recodifica una generación: el contenedor puede arrastrar un fotograma,
     # pero la duración tiene que seguir siendo la de la unión.
     assert probe(ffprobe_bin, result.ranking).duration_s == pytest.approx(10.0, abs=0.15)
-    # Sin portada: el único entregable del panel es el ranking final.
+    # Sin portada: el entregable principal es el ranking final; la unión se sirve aparte.
     assert not (out / "cover.jpg").exists()
 
 

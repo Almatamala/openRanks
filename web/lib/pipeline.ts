@@ -81,8 +81,8 @@ function collectOutput(child: ChildProcess, id: string, onProgress?: (event: Pro
   return { stderr: () => stderr };
 }
 
-/** Quita las piezas que ya no valen cuando entra un clip nuevo (unión, edición, spec). */
-function dropStaleRender(id: string): void {
+/** Quita las piezas que ya no valen cuando cambia el material (unión, edición, spec). */
+export function dropStaleRender(id: string): void {
   const dir = renderDir(id);
   for (const name of ["union.mp4", "manifest.json", "ranking.mp4", "spec.json"]) {
     rmSync(path.join(dir, name), { force: true });
@@ -225,14 +225,14 @@ export async function joinJob(id: string, request: JobRequest): Promise<JobStatu
   const status = readStatus(id);
   if (!status) throw new JobError("Ese trabajo ya no existe.");
   if (joining.has(id)) return status;
-  if (!allClipsReady(status)) throw new JobError("Todavía faltan clips por preparar.");
+  const count = clampPositions(request.positions ?? expectedPositions(status));
+  if (!allClipsReady(status, count)) throw new JobError("Todavía faltan clips por preparar.");
 
   const engine = await resolveEngine();
   if (!engine.python) throw new JobError(engine.problems[0] ?? "No hay un motor con el que unir los clips.");
   if (!engine.ffmpeg) throw new JobError(engine.problems[0] ?? "No hay FFmpeg con el que unir los clips.");
   const { ffmpeg, ffprobe } = engine;
 
-  const count = clampPositions(request.positions ?? expectedPositions(status));
   const revision = status.revision ?? 0;
   patchJoin(id, { state: "joining", error: null });
 
@@ -417,7 +417,9 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
   const status = readStatus(id);
   if (!status) throw new JobError("Ese trabajo ya no existe.");
   const expected = clampPositions(request.positions ?? TOTAL_POSITIONS);
-  if (!allClipsReady(status))
+  // La comprobación es contra el tamaño **pedido ahora**: el selector de puestos puede
+  // cambiar después de generar el montaje, sin pasar antes por el servidor.
+  if (!allClipsReady(status, expected))
     throw new JobError("Todavía se están preparando los clips. Espera a que cada puesto tenga su tick.");
 
   // El binding solo lleva los textos: `render` lo usa para título, subtítulo y rótulos.

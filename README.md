@@ -36,10 +36,10 @@ recorta**. `band`, `contain` y `cover` siguen disponibles como elección explíc
 
 | Artefacto | Qué es |
 | --- | --- |
-| `ranking.mp4` | El short terminado, con la edición encima: **el único archivo que se entrega** |
+| `ranking.mp4` | El short terminado, con la edición encima: **el entregable principal** |
 | `spec.json` | Las props exactas del render (interno, para trazabilidad y para la vista previa) |
 
-El entregable del panel es el vídeo final, y nada más.
+El entregable principal del panel es el vídeo final. La **unión sin edición** (`union.mp4`) se puede descargar aparte desde Resultado, sin overlay ni textos.
 
 Lo que dibuja: **título** con el número en su propio color y a mayor tamaño, y
 **palabras en otro color** a elección (`*amarillo*` / `_azul_` en el propio texto). El
@@ -68,10 +68,11 @@ overlay** —`openranks render`— sin volver a montar el vídeo.
 
 `web/` es un **panel Next.js** que cubre el flujo entero sin terminal: subir los clips
 (de 5 a 10: se elige cuántos puestos tiene el ranking), escribir el título, un subtítulo
-opcional y los nombres de los puestos, y **ver el resultado en el panel** (9:16 *inline*
-y una sola descarga: el ranking final). Muestra la fase en lenguaje humano («Preparando el
-clip #4», «Añadiendo la edición»), valida el texto antes de gastar un render y no enseña
-rutas, ids internos ni JSON (§RF-9).
+opcional y los nombres de los puestos, y **ver el resultado en el panel** (9:16 *inline*,
+con la descarga del ranking final y, opcionalmente, de la unión sin edición). Muestra la fase en
+lenguaje humano («Preparando el clip #4», «Añadiendo la edición»), valida el texto antes de
+gastar un render y no enseña rutas, ids internos ni JSON (§RF-9). En la galería, **Generar
+automático** está visible y deshabilitado («Próximamente»).
 
 **El trabajo pesado ocurre al subir, no al montar.** Al elegir el archivo de un puesto se
 sube y se **prepara en segundo plano** (área útil, 1080x1920, 30 fps, audio a −14 LUFS);
@@ -81,7 +82,10 @@ esperar. **«Montar» une primero** los clips preparados (copia de streams, sin 
 y **después compone la edición** encima, de modo que no se generan uniones que un cambio
 de orden o un clip nuevo dejarían inservibles; si la unión ya existe, solo rehace la
 edición. Si un clip se reemplaza, su tick y la unión se invalidan y se rehacen al volver
-a montar.
+a montar. **Reordenar** dos puestos mueve los clips ya preparados con su puesto (no los
+vuelve a normalizar); solo la unión y la edición se rehacen al montar. El título y el
+subtítulo se autoguardan en el navegador y tienen un botón **Guardar** que deja el texto
+actual también en el servidor.
 
 **Barra de progreso con tiempo restante.** El motor publica el avance en **porcentaje
 medido** (`openranks/core/progress.py`) y el panel lo convierte en una barra y en un
