@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import {
   clampPositions,
@@ -132,16 +132,22 @@ function humanSize(bytes: number): string {
 
 export default function Page() {
   const [section, setSection] = useState<Section>("montar");
+  // El menú lateral se puede retraer a una barra para dejar todo el ancho al contenido.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("Ranking funny moments");
   const [subtitle, setSubtitle] = useState("You’ll never guess #1 until you see it.");
   const [savingText, setSavingText] = useState(false);
-  const [textSavedFlash, setTextSavedFlash] = useState(false);
+  // Texto que el servidor confirmó con el último «Guardar»: mientras coincida, el botón
+  // lo dice sin depender de un aviso de dos segundos que se puede perder de vista.
+  const [savedText, setSavedText] = useState<{ title: string; subtitle: string } | null>(null);
   const [textSaveError, setTextSaveError] = useState<string | null>(null);
   // El operador ya tocó el texto: un borrador del servidor no puede pisar lo que escribe.
   const textTouched = useRef(false);
-  const textFlashTimer = useRef<number | undefined>(undefined);
+  // El borrador local se escribe con retardo: teclear no debe golpear `localStorage`
+  // en cada pulsación.
+  const draftTimer = useRef<number | undefined>(undefined);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +190,8 @@ export default function Page() {
   const previewToken = useRef(0);
   // Intentos de vista previa que ya fallaron para el pedido actual.
   const previewRetries = useRef(0);
+  // Petición de vista previa en curso: al cambiar el texto se cancela la anterior.
+  const previewAbort = useRef<AbortController | null>(null);
 
   // La plantilla vive en el motor: el panel la lee, la edita y la guarda (§RF-9.10).
   const cargarPlantilla = useCallback(async () => {
@@ -271,12 +279,18 @@ export default function Page() {
   }, [slots, title, subtitle, positions]);
 
   useEffect(() => {
-    guardarBorradorLocal();
+    if (draftTimer.current) window.clearTimeout(draftTimer.current);
+    draftTimer.current = window.setTimeout(() => {
+      draftTimer.current = undefined;
+      guardarBorradorLocal();
+    }, 400);
+    return () => {
+      if (draftTimer.current) {
+        window.clearTimeout(draftTimer.current);
+        draftTimer.current = undefined;
+      }
+    };
   }, [guardarBorradorLocal]);
-
-  useEffect(() => () => {
-    if (textFlashTimer.current) window.clearTimeout(textFlashTimer.current);
-  }, []);
 
   // Guardado explícito del texto: primero el borrador de este navegador y después el
   // respaldo del servidor, que es lo que recupera una sesión limpia.
@@ -293,9 +307,7 @@ export default function Page() {
         body: JSON.stringify({ title, subtitle }),
       });
       if (!response.ok) throw new Error("sin respuesta");
-      setTextSavedFlash(true);
-      if (textFlashTimer.current) window.clearTimeout(textFlashTimer.current);
-      textFlashTimer.current = window.setTimeout(() => setTextSavedFlash(false), 2500);
+      setSavedText({ title: title.trim(), subtitle: subtitle.trim() });
     } catch {
       setTextSaveError("No se pudo guardar el texto. Vuelve a intentarlo.");
     } finally {
@@ -312,10 +324,18 @@ export default function Page() {
     const params = new URLSearchParams({ title: title.trim(), subtitle: subtitle.trim(), positions: String(positions) });
     for (const slot of slots) params.set(`label${slot.position}`, slot.label.trim());
     if (style) params.set("style", JSON.stringify(style));
+    // El pedido anterior deja de interesar: se aborta para que el motor no acumule
+    // procesos de FFmpeg mientras el operador sigue escribiendo.
+    previewAbort.current?.abort();
+    const controller = new AbortController();
+    previewAbort.current = controller;
     setPreviewFailed(false);
     setRendering(true);
     try {
-      const response = await fetch(`/api/preview?${params.toString()}&t=${Date.now()}`, { cache: "no-store" });
+      const response = await fetch(`/api/preview?${params.toString()}&t=${Date.now()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error("sin vista previa");
       if (previewToken.current !== token) return;
 
@@ -339,7 +359,8 @@ export default function Page() {
       if (previewToken.current !== token) return;
       setRenderUrl(URL.createObjectURL(blob));
     } catch {
-      if (previewToken.current !== token) return;
+      // Cancelar el pedido anterior no es un fallo: no dispara reintentos ni el aviso.
+      if (controller.signal.aborted || previewToken.current !== token) return;
       // El motor puede estar ocupado preparando los clips recién importados, así que un
       // fallo pasajero no puede dejar el panel sin plantilla: se reintenta solo un par de
       // veces antes de dar el error por bueno.
@@ -352,7 +373,10 @@ export default function Page() {
         setPreviewFailed(true);
       }
     } finally {
-      if (previewToken.current === token) setRendering(false);
+      if (previewToken.current === token) {
+        setRendering(false);
+        if (previewAbort.current === controller) previewAbort.current = null;
+      }
     }
   }, [title, subtitle, slots, style, positions]);
 
@@ -364,6 +388,7 @@ export default function Page() {
 
   useEffect(() => () => {
     previewToken.current += 1;
+    previewAbort.current?.abort();
   }, []);
 
   // El render exacto es **implícito**: no hay botón que lo pida. Se pide solo, con una
@@ -374,7 +399,9 @@ export default function Page() {
     // Un cambio de verdad (texto o plantilla) empieza de cero: los reintentos son para el
     // mismo pedido, no para acumular intentos entre ediciones.
     previewRetries.current = 0;
-    const timer = window.setTimeout(() => pedirRender(), 900);
+    // Más margen que antes: una pausa de 1,2 s agrupa varias pulsaciones y evita
+    // lanzar un proceso por cada cambio pequeño.
+    const timer = window.setTimeout(() => pedirRender(), 1200);
     return () => window.clearTimeout(timer);
   }, [style, pedirRender]);
 
@@ -555,6 +582,9 @@ export default function Page() {
 
   // Hay cambios en pantalla que el montaje todavía no usaría: se avisa.
   const dirty = savedStyle !== null && style !== null && styleKey(style) !== styleKey(savedStyle);
+  // El botón solo vuelve a «Guardar» cuando el texto cambia de verdad.
+  const textDirty =
+    savedText === null || savedText.title !== title.trim() || savedText.subtitle !== subtitle.trim();
 
   // El deslizador de altura solo recorre el hueco donde el motor mueve el título.
   const titleYBounds: [number, number] = titleYRange ?? preset?.ranges?.titleY ?? [96, 900];
@@ -897,8 +927,13 @@ export default function Page() {
   );
 
   return (
-    <div className="app-shell">
-      <Sidebar active={section} onNavigate={setSection} />
+    <div className={`app-shell ${sidebarCollapsed ? "nav-collapsed" : ""}`}>
+      <Sidebar
+        active={section}
+        onNavigate={setSection}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((value) => !value)}
+      />
 
       <main className="shell">
         <header className="top">
@@ -955,151 +990,25 @@ export default function Page() {
               normalizado).
             </p>
             {slots.map((slot) => (
-              <div
-                className={`slot ${dragSlot === slot.position ? "drag-over" : ""} ${
-                  dragFrom === slot.position ? "dragging" : ""
-                }`}
+              <SlotRow
                 key={slot.position}
-                onDragEnter={(event) => {
-                  event.preventDefault();
-                  if (!running) setDragSlot(slot.position);
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDragLeave={(event) => {
-                  const next = event.relatedTarget;
-                  if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
-                    setDragSlot((current) => (current === slot.position ? null : current));
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setDragSlot(null);
-                  // Un asa arrastrada intercambia puestos; un archivo se sube al puesto.
-                  const moving = Number(event.dataTransfer?.getData("text/x-openranks-slot") ?? "");
-                  setDragFrom(null);
-                  if (Number.isInteger(moving) && moving >= 1) {
-                    void moverPuesto(moving, slot.position);
-                    return;
-                  }
-                  if (running) return;
-                  const file = event.dataTransfer?.files?.[0];
-                  if (!file) return;
-                  // El selector nativo solo cambia su etiqueta si el archivo entra en su
-                  // lista; reflejarlo aquí evita que siga diciendo «sin archivos seleccionados».
-                  const input = fileInputs.current[slot.position];
-                  if (input) {
-                    try {
-                      const transfer = new DataTransfer();
-                      transfer.items.add(file);
-                      input.files = transfer.files;
-                    } catch {
-                      // Sin soporte para asignar archivos: el clip se sube igual.
-                    }
-                  }
-                  onPick(slot.position, file);
-                }}
-              >
-                {dragSlot === slot.position ? (
-                  <div className="slot-drop-hint" aria-hidden="true">
-                    {dragFrom !== null
-                      ? `Suelta para intercambiar con el #${dragFrom}`
-                      : "Suelta el clip en este puesto"}
-                  </div>
-                ) : null}
-                <button
-                  className="slot-handle"
-                  type="button"
-                  draggable={canReorder}
-                  disabled={!canReorder}
-                  aria-label={`Mover el puesto #${slot.position}: arrastra o usa las flechas arriba y abajo`}
-                  title="Arrastra el borde para cambiar de puesto; flechas arriba y abajo"
-                  onDragStart={(event) => {
-                    setDragFrom(slot.position);
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/x-openranks-slot", String(slot.position));
-                  }}
-                  onDragEnd={() => {
-                    setDragFrom(null);
-                    setDragSlot(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowUp" && slot.position > 1) {
-                      event.preventDefault();
-                      void moverPuesto(slot.position, slot.position - 1);
-                    }
-                    if (event.key === "ArrowDown" && slot.position < positions) {
-                      event.preventDefault();
-                      void moverPuesto(slot.position, slot.position + 1);
-                    }
-                  }}
-                >
-                  <GripIcon />
-                </button>
-                <div className="rank">
-                  {slot.file || (slot.imported && job?.gallery?.[String(slot.position)]) ? (
-                    <SlotThumb
-                      file={slot.file}
-                      libraryId={job?.gallery?.[String(slot.position)] ?? null}
-                      position={slot.position}
-                    />
-                  ) : (
-                    <div className="num">#{slot.position}</div>
-                  )}
-                </div>
-                <div className="fields">
-                  <div className="file-field">
-                    <span className={`slot-file-name ${slot.file || slot.imported ? "" : "empty"}`}>
-                      {slot.file?.name ?? slot.imported ?? "Ningún archivo seleccionado"}
-                    </span>
-                    <button
-                      className="secondary small"
-                      type="button"
-                      disabled={running}
-                      onClick={() => fileInputs.current[slot.position]?.click()}
-                    >
-                      {slot.file || slot.imported ? "Cambiar clip" : "Seleccionar archivo"}
-                    </button>
-                    <input
-                      className="slot-file-hidden"
-                      type="file"
-                      accept="video/*"
-                      aria-label={`Archivo del puesto ${slot.position}`}
-                      disabled={running}
-                      ref={(node) => {
-                        fileInputs.current[slot.position] = node;
-                      }}
-                      onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
-                    />
-                    <ClipBadge status={prep[slot.position]} />
-                  </div>
-                  <SlotStatus
-                    status={prep[slot.position]}
-                    onRetry={
-                      slot.file && !running
-                        ? () => onPick(slot.position, slot.file)
-                        : slot.imported && !running
-                          ? () => void reintentarPreparacion(slot.position)
-                          : undefined
-                    }
-                  />
-                  <div>
-                    <label className="field" htmlFor={`label-${slot.position}`}>
-                      Nombre del puesto #{slot.position}
-                    </label>
-                    <input
-                      id={`label-${slot.position}`}
-                      type="text"
-                      value={slot.label}
-                      maxLength={LIMITS.labelChars}
-                      placeholder="p. ej. GATO VOLADOR"
-                      onChange={(event) => setSlot(slot.position, { label: event.target.value })}
-                    />
-                    <div className={`counter ${slot.label.length >= LIMITS.labelChars ? "over" : ""}`}>
-                      {slot.label.length}/{LIMITS.labelChars} caracteres
-                    </div>
-                  </div>
-                </div>
-              </div>
+                slot={slot}
+                running={running}
+                canReorder={canReorder}
+                positions={positions}
+                prepStatus={prep[slot.position]}
+                libraryId={job?.gallery?.[String(slot.position)] ?? null}
+                dragOver={dragSlot === slot.position}
+                dragging={dragFrom === slot.position}
+                dragFrom={dragFrom}
+                fileInputs={fileInputs}
+                onDragSlot={setDragSlot}
+                onDragFrom={setDragFrom}
+                onPick={onPick}
+                onMove={moverPuesto}
+                onSetSlot={setSlot}
+                onRetryImport={reintentarPreparacion}
+              />
             ))}
           </section>
 
@@ -1130,7 +1039,7 @@ export default function Page() {
                 aria-label="Guardar el título y el subtítulo actuales"
                 onClick={() => void guardarTexto()}
               >
-                {savingText ? "Guardando…" : textSavedFlash ? "Guardado" : "Guardar"}
+                {savingText ? "Guardando…" : textDirty ? "Guardar" : "Guardado"}
               </button>
             </div>
             <div className={`counter ${visibleLength(title) > LIMITS.titleLayerChars ? "over" : ""}`}>
@@ -1159,7 +1068,7 @@ export default function Page() {
                 aria-label="Guardar el título y el subtítulo actuales"
                 onClick={() => void guardarTexto()}
               >
-                {savingText ? "Guardando…" : textSavedFlash ? "Guardado" : "Guardar"}
+                {savingText ? "Guardando…" : textDirty ? "Guardar" : "Guardado"}
               </button>
             </div>
             <div className={`counter ${textLength(subtitle.trim()) > LIMITS.titleLayerChars ? "over" : ""}`}>
@@ -1338,6 +1247,7 @@ export default function Page() {
 
         <section className="view" hidden={section !== "galeria"} aria-label="Galería de videos">
           <Gallery
+            active={section === "galeria"}
             hasMontage={jobId !== null}
             montageBusy={running}
             onGenerate={generarDesdeGaleria}
@@ -1487,6 +1397,196 @@ export default function Page() {
   );
 }
 
+/**
+ * Un puesto del ranking, memorizado: escribir el título o el subtítulo no vuelve a
+ * renderizar las casillas mientras el clip, su estado y los callbacks no cambien.
+ */
+interface SlotRowProps {
+  slot: Slot;
+  running: boolean;
+  canReorder: boolean;
+  positions: number;
+  prepStatus: ClipStatus | undefined;
+  libraryId: string | null;
+  dragOver: boolean;
+  dragging: boolean;
+  dragFrom: number | null;
+  fileInputs: { current: Record<number, HTMLInputElement | null> };
+  onDragSlot: Dispatch<SetStateAction<number | null>>;
+  onDragFrom: Dispatch<SetStateAction<number | null>>;
+  onPick: (position: number, file: File | null) => void;
+  onMove: (from: number, to: number) => Promise<void>;
+  onSetSlot: (position: number, patch: Partial<Slot>) => void;
+  onRetryImport: (position: number) => Promise<void>;
+}
+
+const SlotRow = memo(function SlotRow({
+  slot,
+  running,
+  canReorder,
+  positions,
+  prepStatus,
+  libraryId,
+  dragOver,
+  dragging,
+  dragFrom,
+  fileInputs,
+  onDragSlot,
+  onDragFrom,
+  onPick,
+  onMove,
+  onSetSlot,
+  onRetryImport,
+}: SlotRowProps) {
+  return (
+
+              <div
+                className={`slot ${dragOver ? "drag-over" : ""} ${
+                  dragging ? "dragging" : ""
+                }`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  if (!running) onDragSlot(slot.position);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={(event) => {
+                  const next = event.relatedTarget;
+                  if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+                    onDragSlot((current) => (current === slot.position ? null : current));
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  onDragSlot(null);
+                  // Un asa arrastrada intercambia puestos; un archivo se sube al puesto.
+                  const moving = Number(event.dataTransfer?.getData("text/x-openranks-slot") ?? "");
+                  onDragFrom(null);
+                  if (Number.isInteger(moving) && moving >= 1) {
+                    void onMove(moving, slot.position);
+                    return;
+                  }
+                  if (running) return;
+                  const file = event.dataTransfer?.files?.[0];
+                  if (!file) return;
+                  // El selector nativo solo cambia su etiqueta si el archivo entra en su
+                  // lista; reflejarlo aquí evita que siga diciendo «sin archivos seleccionados».
+                  const input = fileInputs.current[slot.position];
+                  if (input) {
+                    try {
+                      const transfer = new DataTransfer();
+                      transfer.items.add(file);
+                      input.files = transfer.files;
+                    } catch {
+                      // Sin soporte para asignar archivos: el clip se sube igual.
+                    }
+                  }
+                  onPick(slot.position, file);
+                }}
+              >
+                {dragOver ? (
+                  <div className="slot-drop-hint" aria-hidden="true">
+                    {dragFrom !== null
+                      ? `Suelta para intercambiar con el #${dragFrom}`
+                      : "Suelta el clip en este puesto"}
+                  </div>
+                ) : null}
+                <button
+                  className="slot-handle"
+                  type="button"
+                  draggable={canReorder}
+                  disabled={!canReorder}
+                  aria-label={`Mover el puesto #${slot.position}: arrastra o usa las flechas arriba y abajo`}
+                  title="Arrastra el borde para cambiar de puesto; flechas arriba y abajo"
+                  onDragStart={(event) => {
+                    onDragFrom(slot.position);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/x-openranks-slot", String(slot.position));
+                  }}
+                  onDragEnd={() => {
+                    onDragFrom(null);
+                    onDragSlot(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp" && slot.position > 1) {
+                      event.preventDefault();
+                      void onMove(slot.position, slot.position - 1);
+                    }
+                    if (event.key === "ArrowDown" && slot.position < positions) {
+                      event.preventDefault();
+                      void onMove(slot.position, slot.position + 1);
+                    }
+                  }}
+                >
+                  <GripIcon />
+                </button>
+                <div className="rank">
+                  {slot.file || (slot.imported && libraryId) ? (
+                    <SlotThumb
+                      file={slot.file}
+                      libraryId={libraryId}
+                      position={slot.position}
+                    />
+                  ) : (
+                    <div className="num">#{slot.position}</div>
+                  )}
+                </div>
+                <div className="fields">
+                  <div className="file-field">
+                    <span className={`slot-file-name ${slot.file || slot.imported ? "" : "empty"}`}>
+                      {slot.file?.name ?? slot.imported ?? "Ningún archivo seleccionado"}
+                    </span>
+                    <button
+                      className="secondary small"
+                      type="button"
+                      disabled={running}
+                      onClick={() => fileInputs.current[slot.position]?.click()}
+                    >
+                      {slot.file || slot.imported ? "Cambiar clip" : "Seleccionar archivo"}
+                    </button>
+                    <input
+                      className="slot-file-hidden"
+                      type="file"
+                      accept="video/*"
+                      aria-label={`Archivo del puesto ${slot.position}`}
+                      disabled={running}
+                      ref={(node) => {
+                        fileInputs.current[slot.position] = node;
+                      }}
+                      onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
+                    />
+                    <ClipBadge status={prepStatus} />
+                  </div>
+                  <SlotStatus
+                    status={prepStatus}
+                    onRetry={
+                      slot.file && !running
+                        ? () => onPick(slot.position, slot.file)
+                        : slot.imported && !running
+                          ? () => void onRetryImport(slot.position)
+                          : undefined
+                    }
+                  />
+                  <div>
+                    <label className="field" htmlFor={`label-${slot.position}`}>
+                      Nombre del puesto #{slot.position}
+                    </label>
+                    <input
+                      id={`label-${slot.position}`}
+                      type="text"
+                      value={slot.label}
+                      maxLength={LIMITS.labelChars}
+                      placeholder="p. ej. GATO VOLADOR"
+                      onChange={(event) => onSetSlot(slot.position, { label: event.target.value })}
+                    />
+                    <div className={`counter ${slot.label.length >= LIMITS.labelChars ? "over" : ""}`}>
+                      {slot.label.length}/{LIMITS.labelChars} caracteres
+                    </div>
+                  </div>
+                </div>
+              </div>
+  );
+});
+
 /** Clave estable para comparar si la plantilla en pantalla difiere de la guardada. */
 function styleKey(value: EditablePreset): string {
   const { font, italic, title, subtitle, rank_ladder } = value;
@@ -1509,7 +1609,7 @@ function styleKey(value: EditablePreset): string {
  * (se crea y se libera con él); un clip importado desde la galería no está en el
  * navegador, así que se reproduce su original del servidor.
  */
-function SlotThumb({
+const SlotThumb = memo(function SlotThumb({
   file,
   libraryId,
   position,
@@ -1549,7 +1649,7 @@ function SlotThumb({
       <span className="slot-thumb-number">#{position}</span>
     </div>
   );
-}
+});
 
 /** Asa del borde izquierdo: el control de arrastre del puesto (trazos de Lucide). */
 function GripIcon() {

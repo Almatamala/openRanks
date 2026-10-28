@@ -97,12 +97,14 @@ El panel resuelve el intérprete y FFmpeg por su cuenta, en este orden:
 Por eso **el panel no necesita el venv**: `npm run dev` desde la raíz funciona con Node y un
 Python 3.11+ del sistema.
 
-**¿Para qué sirve activar el venv al iniciar el repo?** Solo para la terminal en la que se
-trabaja: al activarlo, `python`, `pip`, `pytest` y el comando `openranks` apuntan al entorno
-del repo en vez de al Python global. Eso evita mezclar versiones e instalar dependencias de
-desarrollo fuera del entorno. **No cambia la resolución del panel** (que ya mira `.venv`) y
-**no configura FFmpeg** por sí solo: los binarios se resuelven por las variables o por el
-`PATH`, y `static_ffmpeg` del venv solo entra como último recurso.
+**¿Para qué sirve activar el venv?** No es un requisito del repo, sino una comodidad de la
+terminal en la que se trabaja: al activarlo, `python`, `pip`, `pytest` y el comando
+`openranks` apuntan al entorno del repo en vez de al Python global. Eso evita mezclar
+versiones e instalar dependencias de desarrollo fuera del entorno. **La activación no cambia
+la resolución del panel** (que ya mira `.venv` por ruta absoluta) y **no configura FFmpeg**
+por sí solo: los binarios se resuelven por las variables o por el `PATH`, y `static_ffmpeg`
+del venv solo entra como último recurso. Si no lo activas, usa el intérprete explícito
+(`.venv/Scripts/python -m pytest -q`), que es la forma en que el panel lanza el motor.
 
 Recomendación: activarlo **solo en la terminal donde se van a correr el CLI o los tests**, no
 como paso obligatorio al arrancar el repo.
@@ -157,7 +159,7 @@ siendo los mismos.
 | Tarea | Entregable | Depende de | Verificación |
 | --- | --- | --- | --- |
 | **P2-1** | Galería en disco: `library.json` + `library/<id>.<ext>`, con subida, listado, filtro y edición de categoría. APIs del panel para crear, listar y actualizar. | — | El índice y los archivos sobreviven a un reinicio; la API no expone rutas del host; subir un formato no permitido falla con un error legible. |
-| **P2-2** | Layout con **menú lateral persistente**: «Montar ranking» y «Galería de videos», sección activa, foco y navegación por teclado. | — | Ambas secciones a un clic; la activa está marcada; ir a la galería y volver no pierde el montaje. |
+| **P2-2** | Layout con **menú lateral persistente y retraíble**: «Montar ranking» y «Galería de videos», sección activa, foco y navegación por teclado. | — | Con el menú desplegado, ambas secciones a un clic; la activa está marcada; retraído deja una barra etiquetada para abrirlo; ir a la galería y volver no pierde el montaje. |
 | **P2-3** | UI de galería: subida, tarjetas, categoría en línea con autocompletado, filtro, selección ordenada, contador y límite de 10. | P2-1, P2-2 | Subir → recargar → sigue; categoría y filtro correctos; 4 seleccionados deshabilitan «Generar manual»; el 11.º no se puede seleccionar. |
 | **P2-4** | **Generar manual**: valida 5-10, confirma el reemplazo si hay montaje, reemplaza casillas y `input/`/`render/` anteriores, copia los originales, prepara por puesto y abre Montar con las casillas en orden. | P2-3 | Con 5-10, las casillas quedan #1… y encienden su tick; cancelar la confirmación no cambia nada; no quedan archivos del montaje anterior; el selector de puestos sigue activo tras generar; el motor recibe los mismos comandos de siempre. |
 | **P2-5** | **Arrastrar y soltar** desde el borde izquierdo: intercambia puestos, renumera, mueve los preparados con su clip (sin recodificar) e invalida unión/edición; solo prepara lo afectado si todavía no lo estaba. Equivalente por teclado. | P2-4 | Arrastrar #5 sobre #1 intercambia ambos; el vídeo sale en el nuevo orden; los ticks siguen encendidos porque los preparados se mueven, no se recodifican; la unión anterior deja de valer; las flechas del asa hacen lo mismo. |

@@ -375,7 +375,9 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
 
 1. El panel tiene un **menú lateral izquierdo persistente** con dos secciones: **Montar
    ranking** (vista principal) y **Galería de videos** (nueva). No es el cajón de la plantilla
-   de RF-9.5: aquel sigue siendo el panel de ajustes; este es la navegación principal.
+   de RF-9.5: aquel sigue siendo el panel de ajustes; este es la navegación principal. El menú
+   puede **retraerse** a una barra estrecha con un control etiquetado para volver a abrirlo,
+   de modo que deje todo el ancho al contenido cuando el operador no lo necesita.
 2. La sección activa está marcada de forma visible y con `aria-current`; cada entrada es
    alcanzable con un clic desde cualquier vista.
 3. Cambiar de sección **no pierde trabajo**: la selección de la galería y el montaje en curso se
@@ -384,9 +386,9 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
    sigue permitiendo las dos secciones.
 5. La navegación no introduce rutas técnicas ni ids en la URL visible para el operador.
 
-**Criterio de aceptación.** Las dos secciones se alcanzan en un clic, la activa está marcada,
-un montaje en marcha sigue vivo al ir a la galería y volver, y el menú funciona con teclado y
-con lector de pantalla.
+**Criterio de aceptación.** Con el menú desplegado, las dos secciones se alcanzan en un clic;
+la activa está marcada, un montaje en marcha sigue vivo al ir a la galería y volver, y el menú
+funciona con teclado y con lector de pantalla.
 
 ### RF-11 — Galería de clips y categorías · **Fase 2**
 
@@ -404,7 +406,7 @@ con lector de pantalla.
 4. **Filtro.** Un control permite ver «Todas» o una categoría concreta. Filtrar no borra la
    selección: un clip seleccionado que deja de coincidir con el filtro sigue contando y se
    indica en el contador.
-5. **Tarjeta de clip.** Muestra nombre original, categoría, tamaño y estado de selección; los
+5. **Tarjeta de clip.** Muestra nombre original, categoría, duración y estado de selección; los
    datos visibles nunca incluyen rutas del host ni ids internos.
 6. **Reutilización.** Un mismo clip puede usarse en varios rankings; seleccionarlo no lo
    consume ni lo bloquea.

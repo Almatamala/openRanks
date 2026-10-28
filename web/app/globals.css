@@ -872,6 +872,11 @@ code {
   min-height: 100vh;
 }
 
+/* Menú retraído: solo queda una barra estrecha con el control para abrirlo. */
+.app-shell.nav-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -886,10 +891,66 @@ code {
   border-right: 1px solid var(--border);
 }
 
+.sidebar-brand-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+}
+
 .sidebar-brand {
   display: grid;
   gap: 2px;
-  padding: 0 8px;
+  min-width: 0;
+}
+
+/* Retraer el menú: la flecha vive junto a la marca, siempre a la vista. */
+.sidebar-collapse {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  line-height: 0;
+}
+
+.sidebar-collapse:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* Barra del menú retraído: un único control etiquetado, nunca un icono mudo. */
+.sidebar-rail {
+  align-items: stretch;
+  gap: 0;
+  padding: 16px 10px;
+}
+
+.sidebar-expand {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 4px;
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sidebar-expand:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sidebar-expand-label {
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .sidebar-brand-name {
@@ -970,7 +1031,8 @@ code {
 }
 
 @media (max-width: 860px) {
-  .app-shell {
+  .app-shell,
+  .app-shell.nav-collapsed {
     grid-template-columns: 1fr;
   }
 
@@ -982,6 +1044,23 @@ code {
     padding: 12px 16px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  /* En el móvil la barra retraída es una franja superior, no una columna. */
+  .sidebar-rail {
+    padding: 8px 16px;
+  }
+
+  .sidebar-expand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    text-align: left;
+  }
+
+  .sidebar-expand-label {
+    font-size: 14px;
   }
 
   .sidebar-toggle {
@@ -1073,19 +1152,26 @@ code {
   padding-left: 18px;
 }
 
+/* El filtro y las herramientas quedan pegados arriba al recorrer la galería. */
 .gallery-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 0;
+  margin: -10px 0 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
 }
 
 .gallery-side {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   margin-left: auto;
 }
 
@@ -1109,6 +1195,13 @@ code {
   margin: 18px 0 0;
   padding: 0;
   list-style: none;
+}
+
+/* La galería se pagina: el botón deja pedir otra tanda sin montar todo de golpe. */
+.gallery-more {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 4px;
 }
 
 .gallery-card {
@@ -1199,9 +1292,22 @@ code {
   color: #fecaca;
 }
 
+/* Los botones de generar viven abajo a la derecha y no se pierden al recorrer la
+   galería: la barra entera queda pegada al borde inferior del viewport. */
+.gallery-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin-top: 18px;
+  padding: 12px 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
 .gallery-actions {
   flex-wrap: wrap;
-  margin-top: 18px;
+  justify-content: flex-end;
+  margin-top: 0;
 }
 
 .gallery-tools {

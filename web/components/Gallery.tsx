@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { formatDuration } from "@/lib/progress";
 import {
   canGenerate,
   canSelect,
@@ -25,15 +26,12 @@ const NONE = "__sin_categoria__";
 
 const FORMATS = LIBRARY_EXTENSIONS.map((ext) => ext.slice(1).toUpperCase()).join(", ");
 
+/** Tarjetas que se montan de una vez: con muchas más, la galería se arrastra. */
+const PAGE_SIZE = 24;
+
 /** Origen reproducible de un original de la galería. */
 function fileUrl(id: string): string {
   return `/api/library/${id}/file`;
-}
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
@@ -41,12 +39,15 @@ function humanSize(bytes: number): string {
  * entre 5 y 10 en el orden del ranking. La selección vive en la sesión —no se guarda—
  * y sobrevive a cambiar de sección; el orden de selección fija el puesto (#1 el primero).
  */
-export default function Gallery({
+function Gallery({
+  active,
   hasMontage,
   montageBusy,
   onGenerate,
   refreshKey = 0,
 }: {
+  /** La sección de galería está a la vista: sin esto no se montan sus tarjetas ni sus vídeos. */
+  active: boolean;
   /** Hay un montaje abierto en la sesión: generar pedirá confirmación antes de reemplazarlo. */
   hasMontage: boolean;
   /** El montaje está en marcha: no se puede generar otro hasta que termine. */
@@ -61,6 +62,8 @@ export default function Gallery({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [filter, setFilter] = useState<string>(ALL);
+  // La galería se pagina: montar cientos de tarjetas (y sus vídeos) de golpe la frena.
+  const [limit, setLimit] = useState(PAGE_SIZE);
 
   // Subida: los archivos se eligen primero y la categoría se pregunta antes de subirlos.
   const [pending, setPending] = useState<File[]>([]);
@@ -79,6 +82,11 @@ export default function Gallery({
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const uploadInput = useRef<HTMLInputElement | null>(null);
+
+  // Callback estable: las tarjetas memorizadas no se re-renderizan al cambiar la selección.
+  const toggleItem = useCallback((id: string) => {
+    setSelected((current) => toggleSelection(current, id));
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -104,6 +112,12 @@ export default function Gallery({
     setSelected([]);
     void load();
   }, [load, refreshKey]);
+
+  // Cada filtro empieza por la primera página; si no, cambiar de categoría dejaría
+  // ocultos clips que sí encajan y el operador no sabría por qué.
+  useEffect(() => {
+    setLimit(PAGE_SIZE);
+  }, [filter, refreshKey]);
 
   // Si el filtro se queda sin categoría (porque el último clip cambió de etiqueta o se
   // borró), se vuelve a «Todas» en vez de dejar la galería en blanco sin explicación.
@@ -287,6 +301,8 @@ export default function Gallery({
   // `undefined` es «Todas» y `null` es «Sin categoría»: filtrar nunca toca la selección.
   const filterValue = filter === ALL ? undefined : filter === NONE ? null : filter;
   const visible = items ? filterItems(items, filterValue) : [];
+  const shown = visible.slice(0, limit);
+  const remaining = visible.length - shown.length;
   const hiddenSelected = items
     ? selected.filter((id) => !visible.some((item) => item.id === id)).length
     : 0;
@@ -304,7 +320,11 @@ export default function Gallery({
           : `${selected.length} de ${SELECTION_MAX} seleccionados. Listo para generar.`;
 
   let content: ReactNode;
-  if (loadError) {
+  if (!active) {
+    // La sección está oculta: no se montan tarjetas ni vídeos. El estado (selección,
+    // filtro y lista) sigue vivo en este componente y aparece al volver.
+    content = null;
+  } else if (loadError) {
     content = (
       <div className="alert error" role="alert">
         <p>{loadError}</p>
@@ -329,18 +349,31 @@ export default function Gallery({
     );
   } else {
     content = (
-      <ul className="gallery-grid" aria-label="Clips de la galería">
-        {visible.map((item) => (
-          <GalleryCard
-            key={item.id}
-            item={item}
-            position={selectionPosition(selected, item.id)}
-            picked={selected.includes(item.id)}
-            disabled={!canSelect(selected, item.id)}
-            onToggle={() => setSelected((current) => toggleSelection(current, item.id))}
-          />
-        ))}
-      </ul>
+      <>
+        <ul className="gallery-grid" aria-label="Clips de la galería">
+          {shown.map((item) => (
+            <GalleryCard
+              key={item.id}
+              item={item}
+              position={selectionPosition(selected, item.id)}
+              picked={selected.includes(item.id)}
+              disabled={!canSelect(selected, item.id)}
+              onToggle={toggleItem}
+            />
+          ))}
+        </ul>
+        {remaining > 0 ? (
+          <div className="gallery-more">
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => setLimit((value) => value + PAGE_SIZE)}
+            >
+              Mostrar {Math.min(remaining, PAGE_SIZE)} más · quedan {remaining}
+            </button>
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -471,21 +504,31 @@ export default function Gallery({
 
       <section className="card">
         <div className="gallery-toolbar">
-          <div>
-            <label className="field" htmlFor="gallery-filter">
-              Ver
-            </label>
-            <select id="gallery-filter" value={filter} onChange={(event) => setFilter(event.target.value)}>
-              <option value={ALL}>Todas las categorías</option>
-              {hasUncategorized ? <option value={NONE}>Sin categoría</option> : null}
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            id="gallery-filter"
+            aria-label="Filtrar la galería por categoría"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          >
+            <option value={ALL}>Todas las categorías</option>
+            {hasUncategorized ? <option value={NONE}>Sin categoría</option> : null}
+            {categories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
           <div className="gallery-side">
+            <div className="gallery-summary" role="status" aria-live="polite">
+              <p>{summary}</p>
+              {hiddenSelected > 0 ? (
+                <p className="hint">
+                  {hiddenSelected === 1
+                    ? "1 de los seleccionados no se ve con este filtro."
+                    : `${hiddenSelected} de los seleccionados no se ven con este filtro.`}
+                </p>
+              ) : null}
+            </div>
             <div className="gallery-tools">
               <button
                 className="gallery-tool"
@@ -511,16 +554,6 @@ export default function Gallery({
               >
                 <GalleryToolIcon name="trash" />
               </button>
-            </div>
-            <div className="gallery-summary" role="status" aria-live="polite">
-              <p>{summary}</p>
-              {hiddenSelected > 0 ? (
-                <p className="hint">
-                  {hiddenSelected === 1
-                    ? "1 de los seleccionados no se ve con este filtro."
-                    : `${hiddenSelected} de los seleccionados no se ven con este filtro.`}
-                </p>
-              ) : null}
             </div>
           </div>
         </div>
@@ -589,35 +622,39 @@ export default function Gallery({
 
         {content}
 
-        <div className="actions gallery-actions">
-          <button
-            className="primary"
-            type="button"
-            disabled={!ready || generating || montageBusy}
-            onClick={() => void generate()}
-          >
-            {generating ? "Preparando los clips…" : "Generar manual"}
-          </button>
-          {/* RF-15 / P2-7: visible y deshabilitado; sin endpoint ni efectos. */}
-          <button
-            className="secondary"
-            type="button"
-            disabled
-            aria-disabled="true"
-            aria-label="Generar automático, próximamente"
-            title="La generación automática estará disponible próximamente."
-          >
-            Generar automático · Próximamente
-          </button>
-        </div>
-        {montageBusy ? (
-          <p className="hint">El montaje está en marcha: cuando termine podrás generar otro ranking.</p>
-        ) : null}
-        {generateError ? (
-          <div className="alert error" role="alert">
-            {generateError}
+        {/* Barra inferior pegada al viewport: los botones de generar no se pierden al
+            recorrer una galería larga. */}
+        <div className="gallery-footer">
+          <div className="actions gallery-actions">
+            <button
+              className="primary"
+              type="button"
+              disabled={!ready || generating || montageBusy}
+              onClick={() => void generate()}
+            >
+              {generating ? "Preparando los clips…" : "Generar manual"}
+            </button>
+            {/* RF-15 / P2-7: visible y deshabilitado; sin endpoint ni efectos. */}
+            <button
+              className="secondary"
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-label="Generar automático, próximamente"
+              title="La generación automática estará disponible próximamente."
+            >
+              Generar automático · Próximamente
+            </button>
           </div>
-        ) : null}
+          {montageBusy ? (
+            <p className="hint">El montaje está en marcha: cuando termine podrás generar otro ranking.</p>
+          ) : null}
+          {generateError ? (
+            <div className="alert error" role="alert">
+              {generateError}
+            </div>
+          ) : null}
+        </div>
       </section>
     </div>
   );
@@ -655,10 +692,10 @@ function GalleryToolIcon({ name }: { name: "pen" | "trash" }) {
 
 /**
  * Tarjeta de un clip: miniatura reproducible igual que en el montaje, nombre original,
- * tamaño y categoría de solo lectura (se cambia con el lápiz de la barra). Se elige
+ * duración y categoría de solo lectura (se cambia con el lápiz de la barra). Se elige
  * pulsando cualquier parte que no sea el vídeo, y el puesto se ve en la esquina.
  */
-function GalleryCard({
+const GalleryCard = memo(function GalleryCard({
   item,
   position,
   picked,
@@ -669,8 +706,12 @@ function GalleryCard({
   position: number | null;
   picked: boolean;
   disabled: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
 }) {
+  // La duración sale del propio vídeo al leer sus metadatos: no hace falta sondear
+  // 159 archivos en el servidor para pintar la galería.
+  const [duration, setDuration] = useState<number | null>(null);
+
   return (
     <li
       className={`gallery-card ${picked ? "picked" : ""}`}
@@ -679,7 +720,7 @@ function GalleryCard({
         // La miniatura se queda para reproducir el vídeo: el resto de la tarjeta elige.
         const target = event.target as HTMLElement;
         if (target.closest("video, input, button, a, label")) return;
-        onToggle();
+        onToggle(item.id);
       }}
     >
       <div className="gallery-thumb">
@@ -691,6 +732,8 @@ function GalleryCard({
           aria-label={`Vista previa de ${item.name}`}
           onLoadedMetadata={(event) => {
             event.currentTarget.currentTime = 0.1;
+            const value = event.currentTarget.duration;
+            if (Number.isFinite(value) && value > 0) setDuration(value);
           }}
         />
         {position !== null ? <span className="gallery-position">#{position}</span> : null}
@@ -705,12 +748,14 @@ function GalleryCard({
             picked ? `Quitar ${item.name} del ranking` : `Elegir ${item.name} para el ranking`
           }
           disabled={disabled}
-          onClick={onToggle}
+          onClick={() => onToggle(item.id)}
         >
           {item.name}
         </button>
       </h3>
-      <p className="gallery-meta">{humanSize(item.bytes)}</p>
+      <p className="gallery-meta">
+        {duration === null ? "Duración: —" : `Duración: ${formatDuration(duration)}`}
+      </p>
 
       <p className={`gallery-category ${item.category ? "" : "empty"}`}>
         <span className="gallery-category-label">Categoría:</span>{" "}
@@ -718,4 +763,6 @@ function GalleryCard({
       </p>
     </li>
   );
-}
+});
+
+export default memo(Gallery);
