@@ -14,6 +14,7 @@ import {
   titleErrors,
 } from "@/lib/limits";
 import { formatDuration } from "@/lib/progress";
+import { swapSlots, type Slot } from "@/lib/slots";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
 import Sidebar, { type Section } from "@/components/Sidebar";
 import Gallery from "@/components/Gallery";
@@ -86,14 +87,6 @@ interface Preset {
   fonts: string[];
   fontNotes: Record<string, string>;
   ranges: PresetRanges;
-}
-
-interface Slot {
-  position: number;
-  file: File | null;
-  /** Nombre del clip que vino de la galería: el archivo está en el servidor, no aquí. */
-  imported: string | null;
-  label: string;
 }
 
 /** Lo que devuelve «Generar manual»: el trabajo y sus puestos ya importados. */
@@ -776,21 +769,7 @@ export default function Page() {
         setError("Espera a que terminen de subirse los clips para cambiar el orden.");
         return;
       }
-      const swapLocal = () =>
-        setSlots((current) => {
-          const source = current.find((slot) => slot.position === from);
-          const target = current.find((slot) => slot.position === to);
-          if (!source || !target) return current;
-          return current.map((slot) => {
-            if (slot.position === from) {
-              return { ...slot, file: target.file, imported: target.imported, label: target.label };
-            }
-            if (slot.position === to) {
-              return { ...slot, file: source.file, imported: source.imported, label: source.label };
-            }
-            return slot;
-          });
-        });
+      const swapLocal = () => setSlots((current) => swapSlots(current, from, to));
 
       swapLocal();
       if (!jobId) return;

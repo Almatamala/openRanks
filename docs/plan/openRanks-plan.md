@@ -3,8 +3,8 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) implementada en código; cierre pendiente (P2-8: pruebas `node --test` y checklist E2E)** |
-| **Fecha** | 23-oct-2026 |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada; solo queda pasar el checklist E2E de §13.3 en el navegador.** **Fase 3 (L3 · Extractora) diseñada en el RPD, sin construir** |
+| **Fecha** | 28-oct-2026 |
 | **Alcance** | **Plan**: en qué orden se construye, qué entrega cada capa, qué está hecho, cómo se verifica y qué falta. El **qué y el por qué** están en el RPD (`docs/rpd/openRanks-rpd.md`) |
 | **Documentos** | **RPD** + **plan** (este). La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven en el RPD; §12–§13 viven aquí |
 
@@ -23,19 +23,22 @@ navegación).
 | --- | --- | --- | --- |
 | **1** | **L1 · Ensamblador** | Los clips ya listos (normalizados, 9:16, 30 fps, audio a −14 LUFS) **y su unión en un solo vídeo vertical en corte seco** | **Hecho** |
 | **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, subtítulo opcional, escalera de rangos, rótulo por puesto, medallas del podio y atenuado de lo que no tiene el turno. **Render automático y estilo bloqueado** | **Hecho** |
-| **3** | **Fase 2 · Galería y navegación (panel)** | Menú lateral, galería persistente con categorías, selección ordenada de 5 a 10, generación manual, reordenación por arrastre y borrado de los usados | **Implementada (P2-8 pendiente)** |
+| **3** | **Fase 2 · Galería y navegación (panel)** | Menú lateral, galería persistente con categorías, selección ordenada de 5 a 10, generación manual, reordenación por arrastre y borrado de los usados | **Hecho (checklist E2E manual pendiente)** |
+| **4** | **Fase 3 · Extractora (L3)** | Ingesta multi-fuente (YouTube, TikTok y archivos locales), segmentación en escenas con revisión, score de viralidad de 0 a 100, selección manual o automática y aterrizaje en la galería | **Diseñada en el RPD (RF-16 a RF-20, ADR-17 a ADR-19), sin construir** |
 
 **Contrato entre capas.** Cada capa consume la salida de la anterior como **archivos +
 manifiesto**, nunca como llamadas acopladas. L1 produce `prepared/NN.mp4` + `union.mp4` +
 `manifest.json`; L2 produce `ranking.mp4` + `spec.json`.
 
-La extracción automática (L3) y la publicación (L4) **no forman parte del alcance actual**; no
-hay código, tablas ni endpoints de esas capas. La **generación automática** de la Fase 2 es
-futura: solo existe el botón deshabilitado, sin algoritmo ni endpoint.
+La **Fase 3 (L3 · Extractora)** está **diseñada en el RPD** (§4.4, §5.5 y RF-16 a RF-20) y **no
+construida**: no hay código, tablas ni endpoints de esa capa, y sus tareas de este plan están aún
+por escribir. La **publicación (L4) sigue fuera del alcance**. La generación automática del panel
+(RF-15) se activa con la Fase 3 y su criterio ya está fijado en RF-19: score 0-100 y el mejor clip
+al final (#1).
 
 ---
 
-## Estado de implementación (23-oct-2026)
+## Estado de implementación (28-oct-2026)
 
 Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo):
 
@@ -55,12 +58,19 @@ Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
 | Texto guardable | `web/lib/text-draft.ts`, `web/app/api/text` | Botón **Guardar** junto al título y el subtítulo; respaldo en `text.json` para una sesión sin borrador local |
 | Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
+| Pruebas del panel | `web/test/` | Lógica pura de galería, selección y orden, y contrato de la API de la galería, con `node --test` |
 
 **Estado — Fase 2.** La galería (`library/` + `library.json`), el menú lateral, la selección
 ordenada, la generación manual, el arrastre de puestos y el borrado de usados están
-implementados en el panel. Queda el cierre **P2-8**: pruebas `node --test` de la lógica pura,
-prueba del contrato de la API y checklist E2E de §13.3. La descarga opcional de la unión sin
-edición se añade como tarea extra **P2-9**.
+implementados en el panel, más la descarga opcional de la unión sin edición (**P2-9**).
+**P2-8 está cerrada en su parte automática**: 20 pruebas `node --test` (`web/test/`) de la
+lógica pura y del contrato de la API de la galería, en CI. Lo único que queda de la fase es
+pasar el checklist E2E de §13.3 en un navegador, que no se puede automatizar.
+
+**Pruebas del panel.** `npm test` (o `npm run test` desde la raíz) corre
+`node --experimental-strip-types --import ./test/loader.mjs --test test/*.test.mjs` dentro de
+`web/`, sin dependencias nuevas: `test/loader.mjs` resuelve el alias `@/` y las extensiones
+`.ts` como lo hace Next.
 
 **La interfaz es el punto de entrada único** (RF-9): no hay paso que exija terminal, `curl`
 ni un editor externo, y el panel no enseña rutas, ids internos ni JSON crudo.
@@ -83,7 +93,8 @@ exigir tocar esas reglas, se cambia el RPD/ADR primero, no el código por detrá
 | **L0** — Esqueleto | repo, contrato de entrada, medición, CI, legal | **Hecho** |
 | **L1** — Clips listos y unión vertical | normalización 9:16 por clip, unión en corte seco, audio a −14 LUFS | **Hecho** |
 | **L2** — Edición del estándar | overlay ASS, escalera, rótulos, spec, preset editable | **Hecho** |
-| **F2** — Galería y navegación (panel) | menú lateral, galería persistente, categorías, selección 5-10, generación manual, arrastre y borrado de usados | **Implementada (P2-8 pendiente)** |
+| **F2** — Galería y navegación (panel) | menú lateral, galería persistente, categorías, selección 5-10, generación manual, arrastre y borrado de usados | **Hecho (checklist E2E manual pendiente)** |
+| **F3** — Extractora (L3) | ingesta multi-fuente, segmentación en escenas, score de viralidad 0-100, selección manual o automática | **Diseñada en el RPD, sin construir** |
 
 ### 12.1 Entorno local: Python, venv y FFmpeg
 
@@ -150,7 +161,7 @@ python -m pytest -q
 | **Salida (criterio)** | sobre el `union.mp4` de L1 sale un `ranking.mp4` publicable; el overlay **dibuja de verdad** (test de píxeles) y el cambio de texto tarda segundos |
 | Pendiente de L2 | **banner con la foto de referencia** (`assets/banners/`) y **música/sfx** con la cama a −14 LUFS: requieren assets propios y van desactivados por defecto |
 
-### F2 — Galería y navegación (panel) · **implementado (P2-8 pendiente)**
+### F2 — Galería y navegación (panel) · **hecho (P2-8 cerrado salvo el checklist E2E)**
 
 Depende de la Fase 1: el panel y el motor ya están verdes. **El motor no se toca**: la galería
 guarda originales y, al generar, los copia a `input/`; `prepare` → `join` → `render` siguen
@@ -165,11 +176,12 @@ siendo los mismos.
 | **P2-5** | **Arrastrar y soltar** desde el borde izquierdo: intercambia puestos, renumera, mueve los preparados con su clip (sin recodificar) e invalida unión/edición; solo prepara lo afectado si todavía no lo estaba. Equivalente por teclado. | P2-4 | Arrastrar #5 sobre #1 intercambia ambos; el vídeo sale en el nuevo orden; los ticks siguen encendidos porque los preparados se mueven, no se recodifican; la unión anterior deja de valer; las flechas del asa hacen lo mismo. |
 | **P2-6** | **Borrar videos utilizados**: aparece junto a Descargar solo con un ranking correcto; confirmación; borra los N clips de la galería y del disco; limpia casillas; conserva el ranking. | P2-4, P2-5 | Confirmar elimina exactamente los N clips y deja el `ranking.mp4` descargable; cancelar no cambia nada; no toca otros clips ni otros trabajos. |
 | **P2-7** | **Generar automático** visible y deshabilitado con «Próximamente», sin endpoint ni side effects. | P2-3 | `disabled`/`aria-disabled`; un clic no hace ninguna petición; no hay ruta de generación automática. |
-| **P2-8** | Pruebas y documentación de la fase: lógica pura de galería/selección con `node --test`, typecheck/build y checklist E2E del flujo completo. | Todas | CI en verde (pytest, `node --test`, typecheck, build); el checklist de §13.3 se pasa entero; RPD/plan actualizados si cambia una decisión. |
+| **P2-8** | Pruebas y documentación de la fase: lógica pura de galería, selección, orden e intercambio de puestos con `node --test`, contrato de la API de la galería, typecheck/build y checklist E2E del flujo completo. | Todas | CI en verde (pytest, `node --test`, typecheck, build); el checklist de §13.3 se pasa entero; RPD/plan actualizados si cambia una decisión. |
 | **P2-9** | **Descarga sin edición**: botón extra en Resultado que sirve `union.mp4`; las dos descargas van juntas y «Borrar videos utilizados» queda debajo, en rojo difuminado. | P2-4, P2-5 | `union.mp4` se descarga y se reproduce sin overlay; el ranking sigue siendo el entregable principal; el borrado conserva su confirmación. |
 
-**Estado (26-oct-2026):** P2-1 a P2-7 y P2-9 implementados en el panel. P2-8 pendiente:
-faltan las pruebas `node --test` y el checklist E2E de §13.3.
+**Estado (28-oct-2026):** P2-1 a P2-9 implementados en el panel, y **P2-8 cerrada en su
+parte automática**: pruebas `node --test` de la lógica pura y del contrato de la API de la
+galería, en CI. Falta pasar el checklist E2E de §13.3 en el navegador.
 
 **Orden recomendado:** P2-1 → P2-2 → P2-3 → P2-4 → P2-5 → P2-6. P2-7 puede hacerse en
 cuanto exista la galería; P2-8 se cierra al final de la fase, con las pruebas de cada tarea ya
@@ -177,15 +189,14 @@ verdes.
 
 ### 12.2 Fuera del alcance actual
 
-- **L3 — Extractora**: ingesta de YouTube, segmentación de compilados, screening, scoring de
-  viralidad y selección TOP N.
 - **L4 — Integración y publicación**: orquestación de punta a punta, cola, almacenamiento,
   publicación en redes y analítica.
-- **Algoritmo de generación automática (Fase 2 futura)**: el botón deshabilitado se entrega en
-  P2-7, pero el criterio de orden y el scoring no están definidos. Se documentan en el RPD antes
-  de implementarlos; el roadmap candidato de IA/LLM está en §12.3 y **no está activo**.
-- **v2+**: descarga de TikTok, voz en off/TTS, autopilot por canal, reescritura de bordes,
-  generación de banners por IA, multi-idioma y A/B de estilos.
+- **Algoritmo de generación automática**: el criterio ya está definido en el RPD (RF-18, RF-19 y
+  ADR-19: score 0-100 y el mejor clip al final), pero **no hay implementación**: el botón sigue
+  deshabilitado (P2-7) hasta que se construya la Fase 3. El roadmap de IA/LLM está en §12.3 y **no
+  está activo**.
+- **v2+**: voz en off/TTS, autopilot por canal, reescritura de bordes, generación de banners por
+  IA, multi-idioma y A/B de estilos.
 
 Si se retoma alguna, primero se documenta en el RPD y se añade aquí su entregable y su
 verificación; no se construye por detrás de estas reglas.
@@ -195,7 +206,8 @@ verificación; no se construye por detrás de estas reglas.
 > **No forma parte del alcance actual.** Hoy la única IA en producción es **visión artificial
 > clásica** para el encuadre automático (§L1). No hay LLMs, RAG, embeddings, modelos tabulares
 > ni MLOps con monitoreo. Esta sección ordena el trabajo futuro para que, si se aprueba, entre
-> por el RPD y no por detrás del plan.
+> por el RPD y no por detrás del plan. El proveedor del score de la Fase 3 (IA-2) ya está
+> decidido en el RPD §7.9 y ADR-20: Claude Haiku 5.5, ≈0,0011 USD por trabajo de 10 clips.
 
 **Regla de entrada:** antes de implementar cualquier tarea de este bloque se define el RF/ADR
 correspondiente en el RPD, se añaden sus criterios de aceptación y se actualiza §13. Ninguna
@@ -252,10 +264,13 @@ su operación; el tercero activa la generación automática en el producto.
 ### 13.3 Verificación de la Fase 2
 
 **Automática.** La lógica que no depende del DOM (asignación de puestos por orden de selección,
-renumeración al deseleccionar, filtro por categoría y validación 5-10) vive en funciones puras
-y se prueba con `node --test`, sin dependencias nuevas. El contrato de la galería se prueba con
-peticiones a la API (subir, listar, filtrar, categoría y borrado). CI mantiene `pytest`,
-`typecheck` y `build`.
+renumeración al deseleccionar, filtro por categoría, validación 5-10 e intercambio de puestos)
+vive en funciones puras (`web/lib/gallery.ts`, `web/lib/slots.ts`) y se prueba con `node --test`,
+sin dependencias nuevas. El contrato de la galería se prueba llamando a los handlers de
+`web/app/api/library` con `Request` normales y el índice en un directorio temporal: subir,
+listar, filtrar, categoría y borrado. Son `web/test/gallery.test.mjs`, `web/test/slots.test.mjs`
+y `web/test/library-api.test.mjs`, y CI corre `npm test` junto a `pytest`, `typecheck` y `build`.
+El checklist de abajo es lo único que queda en manos del operador.
 
 | RF | Cómo se verifica |
 | --- | --- |
@@ -292,20 +307,24 @@ puedan automatizar quedan en este checklist y se revisan antes de cerrar la fase
 
 - **L1 y L2 están hechas** (prioridades 1 y 2) y el **panel** (RF-9) cubre el flujo de esas dos
   capas.
-- **La Fase 2** (prioridad 3) está implementada: flujo **galería → selección → generar manual →
+- **La Fase 2** (prioridad 3) está construida: flujo **galería → selección → generar manual →
   montaje → descarga → borrar usados**, más el botón de generación automática deshabilitado y la
-  descarga opcional sin edición. **Queda P2-8**: pruebas `node --test` y checklist E2E de §13.3.
-  La fase vive solo en el panel: el motor no gana comandos y sus pruebas siguen siendo la red de
-  seguridad.
+  descarga opcional sin edición. **P2-8 está cerrada en su parte automática** (pruebas
+  `node --test` de la lógica pura y de la API de la galería, en CI); **queda pasar el checklist
+  E2E de §13.3 en el navegador**, que es lo único que no se automatiza. La fase vive solo en el
+  panel: el motor no gana comandos y sus pruebas siguen siendo la red de seguridad.
 - El panel **no necesita el venv**: `npm run dev` desde la raíz resuelve un Python 3.11+
   cualquiera y el FFmpeg estático de npm. El venv es una comodidad para el CLI y los tests
   (§12.1).
 - Pendiente de L2, ya previsto en el RPD: **banner con la foto de referencia**
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van desactivados,
   §9.2, y requieren assets propios).
-- **La generación automática** de la Fase 2 es futura (ADR-16): el botón se entrega
-  deshabilitado y el criterio de orden queda como decisión pendiente del RPD §16.
+- **La generación automática** del panel sigue deshabilitada (ADR-16): su criterio ya está en el
+  RPD (RF-18, RF-19, ADR-19) y el botón se activa al construir la Fase 3.
 - **El plan de IA y automatización con LLM** está documentado como roadmap candidato en §12.3,
   pero **no está activo**. Antes de implementar cada tarea se define su RF/ADR en el RPD.
-- **L3 y L4 no forman parte del alcance actual** (ADR-7): no se construyen ni se documentan con
-  más detalle hasta que se retomen.
+- **La Fase 3 (L3 · Extractora)** está **diseñada en el RPD** —fuentes, segmentación al estilo
+  CapCut, score 0-100 y orden con el mejor al final— y **no construida**. Antes de tocarla hay que
+  escribir sus tareas y su verificación en §12 y §13, como se hizo con la Fase 2.
+- **L4 sigue fuera del alcance** (ADR-7): no se construye ni se documenta con más detalle hasta
+  que se retome.

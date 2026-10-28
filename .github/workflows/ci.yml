@@ -49,5 +49,10 @@ jobs:
       - name: Tipos
         run: npm run typecheck
 
+      # Lógica pura (galería, selección, orden) y contrato de la API de la galería,
+      # con el runner de Node y sin dependencias nuevas.
+      - name: Pruebas del panel
+        run: npm test
+
       - name: Compilar el panel
         run: npm run build
