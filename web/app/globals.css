@@ -427,6 +427,12 @@ a.button-link:hover {
   color: var(--accent);
 }
 
+/* Junto a un botón, el enlace de descarga mide lo mismo: misma caja, misma tipografía. */
+.actions a.button-link {
+  padding: 12px 20px;
+  font-size: 16px;
+}
+
 select {
   background: #0b0d12;
   border: 1px solid var(--border);
@@ -1358,4 +1364,261 @@ code {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-2);
+}
+
+/* Extraer clips (F3 · P3-1): origen, declaración de derechos y herramienta de descarga.
+   Ocupa todo el ancho de la sección: la parrilla de escenas necesita el espacio. */
+.extract {
+  width: 100%;
+}
+
+.extract-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.extract-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.extract-mode input {
+  accent-color: var(--accent);
+}
+
+.extract-mode:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(255, 214, 10, 0.08);
+}
+
+.extract-mode:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.extract-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.extract-link input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.platform-pill {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+.extract-note {
+  margin: 8px 0 0;
+}
+
+/* La casilla de cumplimiento va justo debajo del origen (términos y privacidad). */
+.extract-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+/* Casilla redonda: sin caja nativa y sin cambios al pasar el ratón, solo al marcarla. */
+.extract-check input[type="checkbox"] {
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: #0b0d12;
+  cursor: pointer;
+}
+
+.extract-check input[type="checkbox"]::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-ink);
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+
+.extract-check input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.extract-check input[type="checkbox"]:checked::after {
+  transform: scale(1);
+}
+
+.extract-check input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* La zona del vídeo local no reacciona al pasar el ratón: solo al arrastrar o al enfocar. */
+.extract .upload-drop {
+  margin-bottom: 0;
+}
+
+.extract .upload-drop:hover {
+  border-color: var(--border);
+  background: #0b0d12;
+}
+
+.extract-check:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.extract-blocker {
+  margin: 0;
+}
+
+/* Descarga en curso: barra con el avance medido y su detalle (tamaño, velocidad, ETA). */
+.extract-run {
+  margin-top: 14px;
+}
+
+.extract-run .progress {
+  margin: 10px 0;
+}
+
+.download-detail {
+  margin: 0 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Parrilla de escenas (F3 · P3-3): el mismo tamaño que las tarjetas de la galería, para
+   que el vídeo del tramo se vea de verdad y no en una miniatura diminuta. */
+.candidates {
+  margin-top: 16px;
+}
+
+.candidates-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.candidates-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.candidates-head .hint {
+  margin: 0;
+}
+
+.candidate-warning {
+  margin: 8px 0 0;
+}
+
+/* Plano repetido según el pHash: se señala, pero el operador decide cuál aprueba. */
+.candidate-duplicate,
+.gallery-duplicate {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.candidate {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.candidate.approved {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(52, 211, 153, 0.07);
+}
+
+.candidate.discarded {
+  opacity: 0.45;
+}
+
+.candidate-thumb {
+  width: 100%;
+  /* Misma huella que la miniatura de la galería: con 16:9 el reproductor quedaba
+     diminuto y no se veía nada. */
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #000;
+  display: block;
+}
+
+.candidate-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.candidate-meta {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.candidate-actions button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.candidate-actions button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }

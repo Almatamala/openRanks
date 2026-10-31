@@ -94,6 +94,45 @@ def _build_parser() -> argparse.ArgumentParser:
     join_cmd.add_argument("--json", action="store_true", help="salida legible por máquina")
     join_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
 
+    analyze_cmd = subparsers.add_parser(
+        "analyze",
+        help="detecta escenas y propone los tramos de 1-30 s (F3 · P3-3)",
+    )
+    analyze_cmd.add_argument("--input", required=True, help="vídeo completo del área temporal")
+    analyze_cmd.add_argument(
+        "--out", required=True, help="directorio de la extracción (deja extract.json y candidates/)"
+    )
+    analyze_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    analyze_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    analyze_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+    analyze_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    phash_cmd = subparsers.add_parser(
+        "phash",
+        help="huella perceptual (pHash) de un vídeo: detecta planos repetidos",
+    )
+    phash_cmd.add_argument("--input", required=True, help="archivo del que se calcula la huella")
+    phash_cmd.add_argument(
+        "--at", type=float, default=None, help="segundo del fotograma (por defecto, la mitad)"
+    )
+    phash_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    phash_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    phash_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+    phash_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
+    cut_cmd = subparsers.add_parser(
+        "cut",
+        help="recorta un tramo aprobado del temporal (F3 · P3-4)",
+    )
+    cut_cmd.add_argument("--input", required=True, help="vídeo completo del área temporal")
+    cut_cmd.add_argument("--out", required=True, help="archivo del clip aprobado")
+    cut_cmd.add_argument("--start", type=float, required=True, help="segundo en el que empieza el tramo")
+    cut_cmd.add_argument("--end", type=float, required=True, help="segundo en el que acaba el tramo")
+    cut_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    cut_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    cut_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+    cut_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
     render_cmd = subparsers.add_parser(
         "render",
         help="L2 solo: re-compone la edición sobre un union.mp4 ya ensamblado (segundos, no minutos)",
@@ -200,6 +239,9 @@ def main(argv: list[str] | None = None) -> int:
     _configure_output()
     args = _build_parser().parse_args(argv)
     handlers = {
+        "analyze": _run_analyze,
+        "phash": _run_phash,
+        "cut": _run_cut,
         "render": _run_render,
         "prepare": _run_prepare,
         "join": _run_join,
@@ -316,6 +358,98 @@ def _run_preview(args: argparse.Namespace) -> int:
         )
     else:
         print(result.summary())
+    return EXIT_OK
+
+
+def _run_analyze(args: argparse.Namespace) -> int:
+    """F3 · P3-3: una pasada sin recodificar y la propuesta de tramos."""
+    from .scenes import SceneError, analyze
+
+    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
+    try:
+        result = analyze(
+            args.input,
+            args.out,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            log=say,
+        )
+    except SceneError as exc:
+        print(f"fallo el análisis: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (ToolError, ToolNotFound) as exc:
+        print(f"fallo el análisis: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    manifest = result.to_manifest()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "candidates": manifest["candidates"],
+                    "warnings": manifest["warnings"],
+                    "duration_s": manifest["source"]["duration_s"],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(f"{len(result.candidates)} tramos en {result.source.name}")
+        for candidate in manifest["candidates"]:
+            print(
+                f"  #{candidate['index']:02d}  {candidate['start_s']:.1f}s - "
+                f"{candidate['end_s']:.1f}s ({candidate['duration_s']:.1f}s)"
+            )
+        for warning in result.warnings:
+            print(f"  aviso: {warning}")
+    return EXIT_OK
+
+
+def _run_phash(args: argparse.Namespace) -> int:
+    """Huella perceptual del fotograma central: la galería la usa para marcar repetidos."""
+    from .scenes import source_phash
+
+    try:
+        value = source_phash(args.input, at_s=args.at, ffmpeg=args.ffmpeg, ffprobe=args.ffprobe)
+    except (RuntimeError, ToolError, ToolNotFound) as exc:
+        print(f"fallo la huella: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
+        print(json.dumps({"phash": value, "at_s": args.at}, indent=2))
+    else:
+        print(value or "sin huella")
+    return EXIT_OK
+
+
+def _run_cut(args: argparse.Namespace) -> int:
+    """P3-4: recorta **solo** el tramo aprobado desde la fuente temporal."""
+    from .cut import CutError, cut_clip
+
+    try:
+        result = cut_clip(
+            args.input,
+            args.out,
+            args.start,
+            args.end,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+        )
+    except CutError as exc:
+        print(f"fallo el recorte: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (ToolError, ToolNotFound) as exc:
+        print(f"fallo el recorte: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
+        print(json.dumps(result.to_manifest(), indent=2, ensure_ascii=False))
+    else:
+        print(
+            f"OK {result.output.name} "
+            f"({result.start_s:.1f}s - {result.end_s:.1f}s, {result.duration_s:.2f}s)"
+        )
     return EXIT_OK
 
 

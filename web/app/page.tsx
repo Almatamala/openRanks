@@ -18,6 +18,7 @@ import { swapSlots, type Slot } from "@/lib/slots";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
 import Sidebar, { type Section } from "@/components/Sidebar";
 import Gallery from "@/components/Gallery";
+import Extract from "@/components/Extract";
 
 type Artifact = { path: string; bytes: number };
 
@@ -921,17 +922,24 @@ export default function Page() {
               <h1>
                 {section === "montar"
                   ? `openRanks · montar un TOP ${positions}`
-                  : "openRanks · galería de videos"}
+                  : section === "galeria"
+                    ? "openRanks · galería de videos"
+                    : "openRanks · divisor de escenas"}
               </h1>
               {section === "montar" ? (
                 <p>
                   Sube los clips y escribe los puestos y el título. Cada clip se prepara solo al entrar:
                   cuando todos tienen su tick, «Montar» une los clips y añade la edición.
                 </p>
-              ) : (
+              ) : section === "galeria" ? (
                 <p>
                   Los clips que ya subiste, con su categoría, para elegir entre 5 y 10 en orden y
                   montar el ranking sin volver a subirlos.
+                </p>
+              ) : (
+                <p>
+                  De un vídeo a las escenas: declara la procedencia y los derechos; openRanks lo
+                  divide en escenas y tú eliges las que entran en el ranking.
                 </p>
               )}
             </div>
@@ -1231,6 +1239,13 @@ export default function Page() {
             montageBusy={running}
             onGenerate={generarDesdeGaleria}
             refreshKey={galleryEpoch}
+          />
+        </section>
+
+        <section className="view" hidden={section !== "extraer"} aria-label="Divisor de escenas">
+          <Extract
+            onOpenGallery={() => setSection("galeria")}
+            onApproved={() => setGalleryEpoch((value) => value + 1)}
           />
         </section>
 
