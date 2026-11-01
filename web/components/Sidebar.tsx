@@ -3,17 +3,18 @@
 import { useEffect, useState } from "react";
 
 /** Secciones del panel. La navegación no usa rutas: el montaje sigue vivo al cambiar. */
-export type Section = "montar" | "galeria";
+export type Section = "montar" | "galeria" | "extraer";
 
 const SECTIONS: { id: Section; label: string; note: string }[] = [
   { id: "montar", label: "Montar ranking", note: "Clips, textos y montaje" },
   { id: "galeria", label: "Galería de videos", note: "Tus clips, con categoría" },
+  { id: "extraer", label: "Divisor de escenas", note: "Un vídeo, en escenas" },
 ];
 
 /**
- * Menú lateral izquierdo con las dos secciones (RF-10). Se puede **retraer** a una
- * barra estrecha para dejar todo el ancho al contenido, y en pantallas estrechas se
- * pliega en un control etiquetado —nunca un icono mudo— y sigue permitiendo las dos.
+ * Menú lateral izquierdo con las secciones del panel (RF-10 y RF-16). Se puede **retraer**
+ * a una barra estrecha para dejar todo el ancho al contenido, y en pantallas estrechas se
+ * pliega en un control etiquetado —nunca un icono mudo— y sigue permitiendo todas.
  */
 export default function Sidebar({
   active,

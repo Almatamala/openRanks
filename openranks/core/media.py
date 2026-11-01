@@ -45,6 +45,10 @@ class MediaInfo:
     rotation: int = 0
     display_width: int | None = None
     display_height: int | None = None
+    # `format.start_time` del contenedor: algunas fuentes (MPEG-TS) no arrancan en 0 y
+    # todos los `pts_time` de FFmpeg vienen desplazados. El divisor lo resta para cortar
+    # exacto en el fotograma del cambio.
+    start_time_s: float | None = None
 
     @property
     def has_audio(self) -> bool:
@@ -189,6 +193,7 @@ def parse_probe(path: Path, payload: dict) -> MediaInfo:
         rotation=rotation,
         display_width=display_width,
         display_height=display_height,
+        start_time_s=_parse_float(fmt.get("start_time")),
     )
 
 

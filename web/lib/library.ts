@@ -5,6 +5,7 @@ import path from "node:path";
 import { JOBS_DIR } from "./paths";
 import {
   categoriesOf,
+  duplicatesByHash,
   filterItems,
   LIBRARY_EXTENSIONS,
   normalizeCategory,
@@ -71,7 +72,26 @@ function isLibraryItem(value: unknown): value is LibraryItem {
     Number.isFinite(item.bytes) &&
     item.bytes >= 0 &&
     (item.category === null || typeof item.category === "string") &&
-    typeof item.addedAt === "string"
+    typeof item.addedAt === "string" &&
+    // Procedencia, duración y hash son opcionales (los clips subidos a mano no los
+    // tienen); si vienen, tienen que ser válidos.
+    (item.source === undefined ||
+      item.source === null ||
+      (typeof item.source === "object" &&
+        typeof (item.source as { url?: unknown }).url === "string" &&
+        ((item.source as { platform?: unknown }).platform === null ||
+          typeof (item.source as { platform?: unknown }).platform === "string"))) &&
+    (item.duration_s === undefined ||
+      item.duration_s === null ||
+      (typeof item.duration_s === "number" &&
+        Number.isFinite(item.duration_s) &&
+        item.duration_s >= 0)) &&
+    (item.sha256 === undefined ||
+      item.sha256 === null ||
+      (typeof item.sha256 === "string" && /^[a-f0-9]{64}$/.test(item.sha256))) &&
+    (item.phash === undefined ||
+      item.phash === null ||
+      (typeof item.phash === "string" && /^[0-9a-f]{16}$/.test(item.phash)))
   );
 }
 
@@ -112,7 +132,14 @@ export function libraryListing(category?: string | null): {
   categories: string[];
 } {
   const all = sortedLibrary();
-  return { items: filterItems(all, category), categories: categoriesOf(all) };
+  // El duplicado se busca en **toda** la galería: un filtro activo no puede ocultar que
+  // dos clips son el mismo plano. El mapa va de más antiguo a más reciente.
+  const duplicates = duplicatesByHash([...all].reverse());
+  const items = filterItems(all, category).map((item) => {
+    const duplicateOf = duplicates.get(item.id);
+    return duplicateOf ? { ...item, duplicateOf } : item;
+  });
+  return { items, categories: categoriesOf(all) };
 }
 
 /** Reserva un identificador y la ruta del original; el archivo lo escribe la API. */
@@ -129,6 +156,11 @@ export function addLibraryItem(input: {
   ext: string;
   bytes: number;
   category?: string | null;
+  /** Procedencia de un tramo extraído (plataforma y URL). */
+  source?: { url: string; platform: string | null } | null;
+  duration_s?: number | null;
+  sha256?: string | null;
+  phash?: string | null;
 }): LibraryItem {
   const item: LibraryItem = {
     id: input.id,
@@ -137,6 +169,13 @@ export function addLibraryItem(input: {
     bytes: input.bytes,
     category: normalizeCategory(input.category ?? null),
     addedAt: new Date().toISOString(),
+    // Solo se escriben cuando existen: el contrato de los clips subidos a mano no cambia.
+    ...(input.source
+      ? { source: { url: input.source.url, platform: input.source.platform ?? null } }
+      : {}),
+    ...(typeof input.duration_s === "number" ? { duration_s: input.duration_s } : {}),
+    ...(input.sha256 ? { sha256: input.sha256 } : {}),
+    ...(input.phash ? { phash: input.phash } : {}),
   };
   writeLibrary([item, ...readLibrary()]);
   return item;

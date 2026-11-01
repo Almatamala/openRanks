@@ -181,3 +181,15 @@ def test_source_entry_carries_no_absolute_path():
     entry = _info().to_source_entry(position=3, sha256="abc")
     assert entry["file"] == "clip.mp4"
     assert "/" not in entry["file"] and "\\" not in entry["file"]
+
+
+def test_probe_reads_the_container_start_time():
+    # Una fuente que arranca en 1,4 s desplaza todos los `pts_time`: el divisor lo resta.
+    info = parse_probe(
+        Path("ts.ts"),
+        {
+            "format": {"duration": "10.0", "start_time": "1.4"},
+            "streams": [{"codec_type": "video", "codec_name": "h264"}],
+        },
+    )
+    assert info.start_time_s == 1.4

@@ -95,6 +95,32 @@ def run(
     return completed
 
 
+def run_bytes(
+    argv: list[str] | tuple[str, ...],
+    *,
+    timeout_s: int = 300,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
+    """Como `run`, pero sin decodificar la salida: fotogramas crudos (`rawvideo`).
+
+    Un fotograma de 32×32 en gris son 1.024 bytes; pasarlo por `text=True` con UTF-8 lo
+    corrompería. `check` no existe aquí: el llamador decide con `returncode`.
+    """
+    argv = [str(part) for part in argv]
+    try:
+        return subprocess.run(  # noqa: S603 - argv explícito, shell=False
+            argv,
+            capture_output=True,
+            timeout=timeout_s,
+            cwd=None if cwd is None else str(cwd),
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ToolError(f"no se encontró el ejecutable: {argv[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ToolError(f"el comando excedió {timeout_s}s") from exc
+
+
 def version_of(binary: str, *, timeout_s: int = 30) -> str:
     """Primera línea de ``<binary> -version`` (para el manifiesto)."""
     completed = run([binary, "-version"], timeout_s=timeout_s, check=False)
