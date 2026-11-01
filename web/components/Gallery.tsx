@@ -754,18 +754,8 @@ const GalleryCard = memo(function GalleryCard({
         </button>
       </h3>
       <p className="gallery-meta">
-        {item.duration_s != null
-          ? `Duración: ${formatDuration(item.duration_s)}`
-          : duration === null
-            ? "Duración: —"
-            : `Duración: ${formatDuration(duration)}`}
+        {duration === null ? "Duración: —" : `Duración: ${formatDuration(duration)}`}
       </p>
-      {item.source ? (
-        <p className="gallery-meta">Fuente: {item.source.platform ?? "archivo local"}</p>
-      ) : null}
-      {item.duplicateOf ? (
-        <p className="gallery-meta gallery-duplicate">Posible duplicado de otro clip</p>
-      ) : null}
 
       <p className={`gallery-category ${item.category ? "" : "empty"}`}>
         <span className="gallery-category-label">Categoría:</span>{" "}

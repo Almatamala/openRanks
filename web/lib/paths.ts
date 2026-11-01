@@ -104,7 +104,7 @@ async function probePython(candidate: {
 }
 
 /** Busca un ejecutable en el `PATH` (equivalente a `shutil.which`, sin depender de Python). */
-export function onPath(name: string): string | null {
+function onPath(name: string): string | null {
   const extensions = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
     if (!dir) continue;

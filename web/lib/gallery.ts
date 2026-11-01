@@ -5,12 +5,6 @@
  */
 import { POSITIONS_MAX, POSITIONS_MIN } from "./limits";
 
-/** Procedencia de un clip extraído (RF-20): plataforma y URL de la fuente. */
-export interface ClipSource {
-  url: string;
-  platform: string | null;
-}
-
 /** Un clip de la galería, tal y como lo devuelve la API (nunca con rutas del host). */
 export interface LibraryItem {
   /** Identificador público del clip en la galería. */
@@ -24,16 +18,6 @@ export interface LibraryItem {
   category: string | null;
   /** Cuándo entró (ISO 8601): la galería enseña lo más reciente primero. */
   addedAt: string;
-  /** De dónde salió un tramo extraído; los clips subidos a mano no lo tienen. */
-  source?: ClipSource | null;
-  /** Duración medida al recortar el tramo (segundos). */
-  duration_s?: number | null;
-  /** SHA-256 del clip: deduplicación al volver a extraer el mismo tramo. */
-  sha256?: string | null;
-  /** Huella perceptual del fotograma central; ausente si no se pudo calcular. */
-  phash?: string | null;
-  /** Id del clip más antiguo con el mismo plano: lo calcula el listado, no se guarda. */
-  duplicateOf?: string | null;
 }
 
 /** Los mismos formatos que la subida de puestos (RF-11.2). */
@@ -127,50 +111,4 @@ export function missingForGeneration(selected: string[]): number {
 /** «Generar manual» solo se activa con 5 a 10 seleccionados (RF-12.2 y RF-12.3). */
 export function canGenerate(selected: string[]): boolean {
   return selected.length >= SELECTION_MIN && selected.length <= SELECTION_MAX;
-}
-
-/** Distancia de Hamming con la que dos pHash son el mismo plano (huella de 64 bits). */
-export const PHASH_DUPLICATE_DISTANCE = 8;
-
-const PHASH_PATTERN = /^[0-9a-f]{16}$/;
-
-/** ¿Es una huella pHash de 16 dígitos hexadecimales? */
-export function isPhash(value: unknown): value is string {
-  return typeof value === "string" && PHASH_PATTERN.test(value);
-}
-
-/** Bits distintos entre dos huellas; 64 (el máximo) si alguna no es válida. */
-export function hammingDistance(left: unknown, right: unknown): number {
-  if (!isPhash(left) || !isPhash(right)) return 64;
-  let difference = BigInt(`0x${left}`) ^ BigInt(`0x${right}`);
-  let bits = 0;
-  while (difference > 0n) {
-    bits += Number(difference & 1n);
-    difference >>= 1n;
-  }
-  return bits;
-}
-
-/**
- * Planos repetidos: para cada clip, el id del **primero** (el más antiguo) que tiene la
- * misma huella. Se recorre de más antiguo a más reciente, así todas las copias apuntan
- * al original y no a la anterior.
- */
-export function duplicatesByHash<T extends { id: string; phash?: string | null }>(
-  chronological: T[],
-  maxDistance = PHASH_DUPLICATE_DISTANCE,
-): Map<string, string> {
-  const duplicates = new Map<string, string>();
-  for (let position = 0; position < chronological.length; position += 1) {
-    const current = chronological[position];
-    if (!isPhash(current.phash)) continue;
-    for (let earlier = 0; earlier < position; earlier += 1) {
-      const previous = chronological[earlier];
-      if (hammingDistance(previous.phash, current.phash) <= maxDistance) {
-        duplicates.set(current.id, previous.id);
-        break;
-      }
-    }
-  }
-  return duplicates;
 }

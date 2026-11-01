@@ -10,11 +10,8 @@ import {
   canSelect,
   categoriesOf,
   categoryKey,
-  duplicatesByHash,
   extensionOf,
   filterItems,
-  hammingDistance,
-  isPhash,
   missingForGeneration,
   normalizeCategory,
   SELECTION_MAX,
@@ -122,34 +119,6 @@ test("no se pueden seleccionar más de 10 clips", () => {
   const withRoom = toggleSelection(toggleSelection(selected, "clip-1"), "clip-11");
   assert.equal(withRoom.length, 10);
   assert.equal(selectionPosition(withRoom, "clip-11"), 10);
-});
-
-test("hammingDistance mide los bits distintos y rechaza huellas que no lo son", () => {
-  assert.equal(hammingDistance("0000000000000000", "0000000000000000"), 0);
-  assert.equal(hammingDistance("0000000000000000", "000000000000000f"), 4);
-  assert.equal(hammingDistance(null, "0000000000000000"), 64);
-  assert.equal(isPhash("0123456789abcdef"), true);
-  assert.equal(isPhash("0123456789ABCDEF"), false, "la huella va en minúsculas");
-  assert.equal(isPhash("no-es-huella"), false);
-  assert.equal(isPhash(null), false);
-});
-
-test("duplicatesByHash apunta siempre al primero con el mismo plano", () => {
-  const items = [
-    { id: "a", phash: "0123456789abcdef" },
-    { id: "b", phash: "fedcba9876543210" },
-    // Un bit de diferencia con «a»: es el mismo plano recodificado.
-    { id: "c", phash: "0123456789abcdee" },
-  ];
-  const duplicates = duplicatesByHash(items);
-
-  assert.equal(duplicates.get("a"), undefined);
-  assert.equal(duplicates.get("b"), undefined);
-  assert.equal(duplicates.get("c"), "a");
-
-  // Sin huella no hay duplicado, y un plano distinto no se une a nadie.
-  assert.equal(duplicatesByHash([{ id: "x" }, { id: "y", phash: null }]).size, 0);
-  assert.equal(duplicatesByHash([{ id: "p", phash: "ffffffffffffffff" }, { id: "q", phash: "0000000000000000" }]).size, 0);
 });
 
 test("«Generar manual» pide entre 5 y 10 y avisa cuántos faltan", () => {

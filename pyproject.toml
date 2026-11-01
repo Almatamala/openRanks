@@ -18,10 +18,6 @@ dev = [
   # Solo para desarrollo local: descarga ffmpeg/ffprobe estáticos dentro del repo.
   "static-ffmpeg>=2",
 ]
-# Fase 3 (extractora): descarga de enlaces con yt-dlp. Es opcional y externa al núcleo
-extract = [
-  "yt-dlp>=2024.1.1",
-]
 
 [project.scripts]
 openranks = "openranks.cli:main"

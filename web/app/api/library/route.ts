@@ -14,7 +14,6 @@ import {
   normalizeCategory,
   readLibrary,
 } from "@/lib/library";
-import { phashOf } from "@/lib/phash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,10 +60,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No se pudo guardar el archivo en el servidor." }, { status: 500 });
   }
 
-  // La huella perceptual sirve para marcar planos repetidos en la galería. Si el motor
-  // no puede calcularla, el clip entra igual: nunca es un requisito para subir.
-  const phash = await phashOf(destination);
-
   // El alta va **después** de escribir el archivo: el índice nunca enseña algo que no está.
   const item = addLibraryItem({
     id,
@@ -73,7 +68,6 @@ export async function POST(request: Request) {
     bytes: statSync(destination).size,
     // La categoría puede venir con la subida; vacía es «Sin categoría» y se cambia luego.
     category: normalizeCategory(params.get("category")),
-    phash,
   });
   return NextResponse.json({ item, categories: categoriesOf(readLibrary()) }, { status: 201 });
 }
