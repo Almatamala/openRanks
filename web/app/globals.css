@@ -333,7 +333,7 @@ input[type="text"]:focus {
   border-color: var(--focus);
 }
 
-/* Texto + guardado explícito: el botón va a la derecha de la barra. */
+/* Texto del título y del subtítulo: ocupa todo el ancho de la tarjeta. */
 .field-row {
   display: flex;
   gap: 10px;
@@ -345,11 +345,6 @@ input[type="text"]:focus {
   min-width: 0;
 }
 
-.field-row .field-save {
-  padding: 10px 16px;
-  font-size: 14px;
-  white-space: nowrap;
-}
 
 .counter {
   font-size: 13px;
@@ -431,6 +426,20 @@ a.button-link:hover {
 .actions a.button-link {
   padding: 12px 20px;
   font-size: 16px;
+}
+
+/* «Descargar vídeo» sustituye al botón de subida: se ve igual que el primario. */
+a.button-link.primary,
+.actions a.button-link.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+a.button-link.primary:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.08);
 }
 
 select {

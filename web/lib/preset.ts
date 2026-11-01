@@ -56,6 +56,9 @@ export const PRESET_RANGES = {
   yBottom: [0, 1900] as const,
 };
 
+/** Los rangos tal y como los devuelve `/api/preset`: tuplas mutables, listas para el panel. */
+export type PresetRanges = { [K in keyof typeof PRESET_RANGES]: [number, number] };
+
 function clamp(value: unknown, [min, max]: readonly [number, number], fallback: number): number {
   const number = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(number)) return fallback;

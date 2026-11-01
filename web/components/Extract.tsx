@@ -714,7 +714,7 @@ export default function Extract({
               </p>
               <div className="actions">
                 <a
-                  className="button-link"
+                  className="button-link primary"
                   href={`/api/extract/${extraction.id}/source?download=1`}
                   download
                 >
@@ -831,7 +831,6 @@ export default function Extract({
                 inputMode="url"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="https://www.youtube.com/watch?v=…"
                 value={declaration.url}
                 disabled={busy}
                 aria-invalid={shownProblem("url") ? true : undefined}

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { JOBS_DIR } from "./paths";
+import { JOBS_DIR, SAFE_ID_PATTERN } from "./paths";
 import {
   categoriesOf,
   duplicatesByHash,
@@ -32,7 +32,6 @@ interface LibraryIndex {
 
 const INDEX_FILE = path.join(JOBS_DIR, "library.json");
 const LIBRARY_DIR = path.join(JOBS_DIR, "library");
-const ID_PATTERN = /^[a-z0-9-]{6,64}$/;
 const ALLOWED = LIBRARY_EXTENSIONS as readonly string[];
 
 export function libraryDir(): string {
@@ -41,7 +40,7 @@ export function libraryDir(): string {
 
 /** Identificador seguro: solo `[a-z0-9-]`, así que nunca sale del directorio. */
 export function isSafeLibraryId(id: string): boolean {
-  return ID_PATTERN.test(id);
+  return SAFE_ID_PATTERN.test(id);
 }
 
 /** Ruta del archivo original dentro de `library/`. */
@@ -63,7 +62,7 @@ function isLibraryItem(value: unknown): value is LibraryItem {
   const item = value as Record<string, unknown>;
   return (
     typeof item.id === "string" &&
-    ID_PATTERN.test(item.id) &&
+    SAFE_ID_PATTERN.test(item.id) &&
     typeof item.name === "string" &&
     item.name.length > 0 &&
     typeof item.ext === "string" &&

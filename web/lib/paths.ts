@@ -16,6 +16,16 @@ export const PROJECT_ROOT = process.env.OPENRANKS_ROOT
 /** Directorio de trabajos: nada vive fuera de él. */
 export const JOBS_DIR = process.env.OPENRANKS_JOBS_DIR ?? path.join(process.cwd(), ".jobs");
 
+/**
+ * Identificador de un trabajo, una extracción o un clip: solo `[a-z0-9-]`, entre 6 y 64
+ * caracteres. Es la única comprobación del panel: de aquí no se sale del directorio.
+ */
+export const SAFE_ID_PATTERN = /^[a-z0-9-]{6,64}$/;
+
+export function isSafePathSegment(id: string): boolean {
+  return SAFE_ID_PATTERN.test(id);
+}
+
 /** Versión mínima que pide el motor (`requires-python` en `pyproject.toml`). */
 const MIN_PYTHON: readonly [number, number] = [3, 11];
 

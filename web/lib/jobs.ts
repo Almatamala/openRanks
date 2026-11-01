@@ -2,7 +2,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statS
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { JOBS_DIR } from "./paths";
+import { POSITIONS_MIN } from "./limits";
+import { isSafePathSegment, JOBS_DIR } from "./paths";
 import { estimateRemainingSeconds, type ProgressEvent } from "./progress";
 
 export type JobState = "created" | "uploading" | "running" | "done" | "failed";
@@ -65,9 +66,6 @@ export interface JobStatus {
   gallery?: Record<string, string>;
 }
 
-/** Puestos por defecto si un trabajo no dice cuántos (los antiguos siguen valiendo). */
-export const TOTAL_POSITIONS = 5;
-
 export function jobDir(id: string): string {
   return path.join(JOBS_DIR, id);
 }
@@ -90,7 +88,7 @@ export function logPath(id: string): string {
 
 /** Identificador de trabajo: solo `[a-z0-9-]`, así que nunca sale del directorio. */
 export function isSafeId(id: string): boolean {
-  return /^[a-z0-9-]{6,64}$/.test(id);
+  return isSafePathSegment(id);
 }
 
 export function createJob(): JobStatus {
@@ -156,7 +154,7 @@ export function patchJoin(id: string, patch: Partial<JoinStatus>): JobStatus {
 
 /** Puestos que espera este trabajo (los fija el panel al subir el primer clip). */
 export function expectedPositions(status: JobStatus): number {
-  return status.request.positions ?? TOTAL_POSITIONS;
+  return status.request.positions ?? POSITIONS_MIN;
 }
 
 /**

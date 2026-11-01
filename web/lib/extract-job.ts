@@ -30,7 +30,7 @@ import {
   type SourcePlatform,
 } from "./extract";
 import { extensionOf } from "./gallery";
-import { JOBS_DIR, PROJECT_ROOT, resolveEngine } from "./paths";
+import { isSafePathSegment, JOBS_DIR, PROJECT_ROOT, resolveEngine } from "./paths";
 import { resolveDownloader, type DownloaderStatus } from "./ytdlp";
 
 /**
@@ -158,7 +158,7 @@ export function extractionDir(id: string): string {
 }
 
 export function isSafeExtractionId(id: string): boolean {
-  return /^[a-z0-9-]{6,64}$/.test(id);
+  return isSafePathSegment(id);
 }
 
 function jobFile(id: string): string {

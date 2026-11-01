@@ -58,7 +58,7 @@ Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo
 | CLI | `openranks/cli.py` | `prepare`, `join`, `render`, `preview`, `preset` |
 | Panel | `web/` (Next.js) | Flujo completo sin terminal: subir (prepara solo), escribir, montar, ver y descargar el ranking |
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
-| Texto guardable | `web/lib/text-draft.ts`, `web/app/api/text` | Botón **Guardar** junto al título y el subtítulo; respaldo en `text.json` para una sesión sin borrador local |
+| Texto recordado | Borrador del navegador (`localStorage`) | El último título y subtítulo usados vuelven al reabrir el panel; sin botón de guardado ni respaldo en disco |
 | Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
 | Pruebas del panel | `web/test/` | Lógica pura de galería, selección y orden, y contrato de la API de la galería, con `node --test` |
 

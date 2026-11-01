@@ -446,7 +446,6 @@ function Gallery({
                 type="text"
                 list="gallery-categories"
                 value={pendingCategory}
-                placeholder="Sin categoría"
                 aria-label="Categoría de los clips que se suben"
                 autoComplete="off"
                 disabled={uploading !== null}
@@ -576,7 +575,6 @@ function Gallery({
                 type="text"
                 list="gallery-categories"
                 value={batchDraft}
-                placeholder="Sin categoría"
                 autoComplete="off"
                 disabled={batchSaving}
                 onChange={(event) => setBatchDraft(event.target.value)}

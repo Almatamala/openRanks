@@ -23,7 +23,7 @@ from .core.media import probe, validate_normalized
 from .core.manifest import sha256_file, utc_now, write_manifest
 from .core.overlay import build_ass, get_style, overlay_argv, preview_argv
 from .core.progress import SPAN_EDIT_ONLY, Progress, ProgressCallback
-from .core.runner import run, stderr_warnings
+from .core.runner import noop, run, stderr_warnings
 from .core.specs import SpecError, build_spec, labels_from_segments
 
 Logger = Callable[[str], None]
@@ -60,10 +60,6 @@ class OverlayResult:
         for warning in self.warnings:
             lines.append(f"   aviso: {warning}")
         return "\n".join(lines)
-
-
-def _noop(_: str) -> None:
-    return None
 
 
 # Duración sintética de cada tramo en la vista previa: no hay clips, solo hace
@@ -178,7 +174,7 @@ def render(
     ``track`` permite compartir la barra con el ensamblador para que el porcentaje
     no dé un salto atrás; en solitario (`openranks render`) se crea una barra propia.
     """
-    say = log or _noop
+    say = log or noop
     tracker = track or Progress(progress, span=SPAN_EDIT_ONLY)
     cfg = config or Config.from_env()
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")

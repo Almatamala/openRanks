@@ -13,6 +13,9 @@ import {
   textLength,
   titleErrors,
 } from "@/lib/limits";
+import { formatBytes } from "@/lib/extract";
+import type { Artifact, ClipStatus, JobStatus } from "@/lib/jobs";
+import type { EditablePreset, PresetRanges } from "@/lib/preset";
 import { formatDuration } from "@/lib/progress";
 import { swapSlots, type Slot } from "@/lib/slots";
 import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title";
@@ -20,47 +23,13 @@ import Sidebar, { type Section } from "@/components/Sidebar";
 import Gallery from "@/components/Gallery";
 import Extract from "@/components/Extract";
 
-type Artifact = { path: string; bytes: number };
-
-type ProgressEvent = { percent: number; phase: string; label: string; step?: number; total?: number };
-
-/** Estado de un puesto: se prepara al subirlo y su tick es la señal de que está listo. */
-type ClipState = "uploading" | "preparing" | "ready" | "failed";
-
-type ClipStatus = {
-  state: ClipState;
-  error: string | null;
-  percent?: number;
-};
-
-type JoinState = "idle" | "joining" | "ready" | "failed";
-
-interface Job {
-  id: string;
-  state: "created" | "uploading" | "running" | "done" | "failed";
-  phase: string;
-  progress: number;
-  progressDetail: ProgressEvent | null;
+/** El acta del trabajo más lo derivado que añade `/api/jobs/[id]`: ETA, archivos y log. */
+type Job = JobStatus & {
   etaSeconds: number | null;
   elapsedSeconds: number | null;
-  startedAt: string | null;
-  error: string | null;
   artifacts: Artifact[];
   logTail: string;
-  clips: Record<string, ClipStatus>;
-  join: { state: JoinState; error: string | null };
-  /** Puesto → id de galería del clip importado (lo usa «Borrar videos utilizados»). */
-  gallery?: Record<string, string>;
-}
-
-/** La parte de la plantilla que el panel puede ajustar y guardar. */
-interface EditablePreset {
-  font: string;
-  italic: boolean;
-  title: { size: number; y: number };
-  subtitle: { size: number };
-  rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
-}
+};
 
 type StylePatch = {
   font?: string;
@@ -69,16 +38,6 @@ type StylePatch = {
   subtitle?: Partial<EditablePreset["subtitle"]>;
   rank_ladder?: Partial<EditablePreset["rank_ladder"]>;
 };
-
-interface PresetRanges {
-  titleSize: [number, number];
-  titleY: [number, number];
-  subtitleSize: [number, number];
-  ladderSize: [number, number];
-  x: [number, number];
-  yTop: [number, number];
-  yBottom: [number, number];
-}
 
 interface Preset {
   preset: string;
@@ -118,12 +77,6 @@ function retitleForCount(title: string, count: number): string {
   return title.replace(/^(\s*top\s*)\d+/i, (_, head: string) => `${head}${count}`);
 }
 
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function Page() {
   const [section, setSection] = useState<Section>("montar");
   // El menú lateral se puede retraer a una barra para dejar todo el ancho al contenido.
@@ -131,14 +84,7 @@ export default function Page() {
   const [positions, setPositions] = useState(POSITIONS_MIN);
   const [slots, setSlots] = useState<Slot[]>(() => initialSlots(POSITIONS_MIN));
   const [title, setTitle] = useState("Ranking funny moments");
-  const [subtitle, setSubtitle] = useState("You’ll never guess #1 until you see it.");
-  const [savingText, setSavingText] = useState(false);
-  // Texto que el servidor confirmó con el último «Guardar»: mientras coincida, el botón
-  // lo dice sin depender de un aviso de dos segundos que se puede perder de vista.
-  const [savedText, setSavedText] = useState<{ title: string; subtitle: string } | null>(null);
-  const [textSaveError, setTextSaveError] = useState<string | null>(null);
-  // El operador ya tocó el texto: un borrador del servidor no puede pisar lo que escribe.
-  const textTouched = useRef(false);
+  const [subtitle, setSubtitle] = useState("");
   // El borrador local se escribe con retardo: teclear no debe golpear `localStorage`
   // en cada pulsación.
   const draftTimer = useRef<number | undefined>(undefined);
@@ -206,9 +152,8 @@ export default function Page() {
     void cargarPlantilla();
   }, [cargarPlantilla]);
 
-  // RF-9.7: nada del trabajo en curso se pierde al recargar. El texto tiene además un
-  // guardado explícito en el servidor, que se usa como respaldo si este navegador no
-  // tiene borrador local (otro equipo, almacenamiento limpio).
+  // RF-9.7: nada del trabajo en curso se pierde al recargar. El título y el subtítulo se
+  // recuperan del borrador de este navegador, que guarda solo el último texto usado.
   useEffect(() => {
     let savedTitle: string | null = null;
     let savedSubtitle: string | null = null;
@@ -242,25 +187,6 @@ export default function Page() {
     } catch {
       // Un almacén corrupto no puede impedir usar el panel.
     }
-
-    if (savedTitle) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/text", { cache: "no-store" });
-        if (!response.ok) return;
-        const draft = (await response.json()) as { title?: unknown; subtitle?: unknown };
-        if (cancelled || textTouched.current) return;
-        if (!savedTitle && typeof draft.title === "string" && draft.title.trim()) setTitle(draft.title);
-        if (!savedSubtitle && typeof draft.subtitle === "string" && draft.subtitle.trim())
-          setSubtitle(draft.subtitle);
-      } catch {
-        // Sin respaldo en el servidor se sigue con los textos de la sesión.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const guardarBorradorLocal = useCallback(() => {
@@ -268,7 +194,7 @@ export default function Page() {
     try {
       window.localStorage.setItem(STORE_KEY, JSON.stringify({ title, subtitle, positions, labels }));
     } catch {
-      // Sin espacio o en modo privado: seguir, el estado vive en el servidor igual.
+      // Sin espacio o en modo privado: se sigue sin borrador guardado.
     }
   }, [slots, title, subtitle, positions]);
 
@@ -285,29 +211,6 @@ export default function Page() {
       }
     };
   }, [guardarBorradorLocal]);
-
-  // Guardado explícito del texto: primero el borrador de este navegador y después el
-  // respaldo del servidor, que es lo que recupera una sesión limpia.
-  const guardarTexto = useCallback(async () => {
-    if (savingText) return;
-    textTouched.current = true;
-    setSavingText(true);
-    setTextSaveError(null);
-    guardarBorradorLocal();
-    try {
-      const response = await fetch("/api/text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, subtitle }),
-      });
-      if (!response.ok) throw new Error("sin respuesta");
-      setSavedText({ title: title.trim(), subtitle: subtitle.trim() });
-    } catch {
-      setTextSaveError("No se pudo guardar el texto. Vuelve a intentarlo.");
-    } finally {
-      setSavingText(false);
-    }
-  }, [guardarBorradorLocal, savingText, subtitle, title]);
 
   // El render del motor (FFmpeg) **no es instantáneo**: dibuja el overlay sobre negro
   // pero tarda unos segundos, así que se pide con retardo y nunca en vivo. Se descarga
@@ -409,7 +312,6 @@ export default function Page() {
       const nextSlots = positionsFor(count).map(
         (position) => byPosition.get(position) ?? { position, file: null, imported: null, label: "" },
       );
-      textTouched.current = true;
       setPositions(count);
       setSlots(nextSlots);
       // Un puesto nuevo no hereda el tick de un montaje anterior; los que conservan su
@@ -576,9 +478,6 @@ export default function Page() {
 
   // Hay cambios en pantalla que el montaje todavía no usaría: se avisa.
   const dirty = savedStyle !== null && style !== null && styleKey(style) !== styleKey(savedStyle);
-  // El botón solo vuelve a «Guardar» cuando el texto cambia de verdad.
-  const textDirty =
-    savedText === null || savedText.title !== title.trim() || savedText.subtitle !== subtitle.trim();
 
   // El deslizador de altura solo recorre el hueco donde el motor mueve el título.
   const titleYBounds: [number, number] = titleYRange ?? preset?.ranges?.titleY ?? [96, 900];
@@ -724,7 +623,6 @@ export default function Page() {
           clips.map((clip) => [clip.position, { state: "uploading" as const, error: null }]),
         ),
       );
-      textTouched.current = true;
       setTitle((current) => retitleForCount(current, count));
       setPollNonce((value) => value + 1);
       setSection("montar");
@@ -1015,19 +913,9 @@ export default function Page() {
                 maxLength={LIMITS.titleLayerChars * 2}
                 disabled={running}
                 onChange={(event) => {
-                  textTouched.current = true;
                   setTitle(event.target.value);
                 }}
               />
-              <button
-                className="secondary field-save"
-                type="button"
-                disabled={running || savingText}
-                aria-label="Guardar el título y el subtítulo actuales"
-                onClick={() => void guardarTexto()}
-              >
-                {savingText ? "Guardando…" : textDirty ? "Guardar" : "Guardado"}
-              </button>
             </div>
             <div className={`counter ${visibleLength(title) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {visibleLength(title)}/{LIMITS.titleLayerChars} caracteres
@@ -1041,31 +929,15 @@ export default function Page() {
                 type="text"
                 value={subtitle}
                 maxLength={LIMITS.titleLayerChars * 2}
-                placeholder="p. ej. LOS MOMENTOS MÁS LOCOS"
                 disabled={running}
                 onChange={(event) => {
-                  textTouched.current = true;
                   setSubtitle(event.target.value);
                 }}
               />
-              <button
-                className="secondary field-save"
-                type="button"
-                disabled={running || savingText}
-                aria-label="Guardar el título y el subtítulo actuales"
-                onClick={() => void guardarTexto()}
-              >
-                {savingText ? "Guardando…" : textDirty ? "Guardar" : "Guardado"}
-              </button>
             </div>
             <div className={`counter ${textLength(subtitle.trim()) > LIMITS.titleLayerChars ? "over" : ""}`}>
               {textLength(subtitle.trim())}/{LIMITS.titleLayerChars} caracteres
             </div>
-            {textSaveError ? (
-              <div className="alert error" role="alert">
-                {textSaveError}
-              </div>
-            ) : null}
             <p className="hint" style={{ marginTop: 12 }}>
               Toca una palabra para cambiar su color: blanco → <strong>amarillo</strong> → <strong>azul</strong>. En
               el texto se marca con <code>*amarillo*</code> y <code>_azul_</code>.
@@ -1079,7 +951,6 @@ export default function Page() {
                   disabled={running}
                   aria-label={`${word.text}: cambiar color (ahora ${word.color})`}
                   onClick={() => {
-                    textTouched.current = true;
                     const words = titleWords(title);
                     words[index] = { ...words[index], color: cycleColor(words[index].color) };
                     setTitle(wordsToTitle(words));
@@ -1188,11 +1059,11 @@ export default function Page() {
                     {/* Dos descargas lado a lado; el borrado va debajo. */}
                     <div className="download-actions">
                       <a className="button-link" href={fileUrl(ranking.path)} download>
-                        Descargar el ranking ({humanSize(ranking.bytes)})
+                        Descargar el ranking ({formatBytes(ranking.bytes)})
                       </a>
                       {union ? (
                         <a className="button-link" href={fileUrl(union.path)} download>
-                          Descargar sin edición ({humanSize(union.bytes)})
+                          Descargar sin edición ({formatBytes(union.bytes)})
                         </a>
                       ) : null}
                     </div>
@@ -1569,7 +1440,6 @@ const SlotRow = memo(function SlotRow({
                       type="text"
                       value={slot.label}
                       maxLength={LIMITS.labelChars}
-                      placeholder="p. ej. GATO VOLADOR"
                       onChange={(event) => onSetSlot(slot.position, { label: event.target.value })}
                     />
                     <div className={`counter ${slot.label.length >= LIMITS.labelChars ? "over" : ""}`}>

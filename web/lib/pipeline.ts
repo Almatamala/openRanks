@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { clampPositions } from "./limits";
+import { clampPositions, POSITIONS_MIN } from "./limits";
 import {
   allClipsReady,
   appendLog,
@@ -17,7 +17,6 @@ import {
   renderDir,
   type JobRequest,
   type JobStatus,
-  TOTAL_POSITIONS,
   uploadedPositions,
 } from "./jobs";
 import { PROJECT_ROOT, resolveEngine } from "./paths";
@@ -113,7 +112,7 @@ export async function prepareClip(id: string, position: number, positions?: numb
   const relative = clipFile(id, position);
   if (!relative) throw new JobError(`No se encontró el archivo del puesto #${position}.`);
 
-  const count = clampPositions(positions ?? status.request.positions ?? TOTAL_POSITIONS);
+  const count = clampPositions(positions ?? status.request.positions ?? POSITIONS_MIN);
   const key = `${id}:${position}`;
   // Reemplazar un clip mientras se preparaba el anterior: el viejo ya no manda.
   preparing.get(key)?.kill();
@@ -416,7 +415,7 @@ export async function startJob(id: string, request: JobRequest): Promise<JobStat
 
   const status = readStatus(id);
   if (!status) throw new JobError("Ese trabajo ya no existe.");
-  const expected = clampPositions(request.positions ?? TOTAL_POSITIONS);
+  const expected = clampPositions(request.positions ?? POSITIONS_MIN);
   // La comprobación es contra el tamaño **pedido ahora**: el selector de puestos puede
   // cambiar después de generar el montaje, sin pasar antes por el servidor.
   if (!allClipsReady(status, expected))

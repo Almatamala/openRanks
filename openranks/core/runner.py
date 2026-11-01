@@ -30,6 +30,11 @@ def tail_lines(text: str, limit: int = 20) -> str:
     return "\n".join(lines[-limit:])
 
 
+def noop(_: str) -> None:
+    """Logger que no hace nada, para las capas que admiten ``log`` opcional."""
+    return None
+
+
 # Avisos de FFmpeg que no rompen el resultado. La unión por copia de streams reetiqueta
 # el DTS del AAC (+1 tick) y no queremos repetir esa línea por cada tramo.
 BENIGN_FFMPEG_MARKERS: tuple[str, ...] = ("Non-monotonic DTS",)

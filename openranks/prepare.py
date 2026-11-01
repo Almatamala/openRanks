@@ -23,7 +23,7 @@ from .core.framing import FramingDecision, FramingError, fallback_decision
 from .core.manifest import sha256_file, utc_now, write_manifest
 from .core.media import MediaInfo, probe, validate_normalized, validate_ready_clip
 from .core.plan import prepared_name
-from .core.runner import run, stderr_warnings
+from .core.runner import noop, run, stderr_warnings
 from .framing import analyze
 
 Logger = Callable[[str], None]
@@ -79,10 +79,6 @@ class PreparedClip:
         }
 
 
-def _noop(_: str) -> None:
-    return None
-
-
 def _measure_loudness(ffmpeg_bin: str, path: Path, cfg: Config) -> dict | None:
     """Primera pasada de ``loudnorm``: mide y no escribe salida."""
     completed = run(ff.measure_loudness_argv(ffmpeg_bin, path, cfg), check=False)
@@ -108,7 +104,7 @@ def prepare_clip(
     que ya hizo el llamador (el ensamblador completo los necesita antes de planificar),
     y así no se paga dos veces el ``ffprobe`` ni el muestreo de FFmpeg.
     """
-    say = log or _noop
+    say = log or noop
     cfg = config or Config.from_env()
     fit = fit or cfg.fit
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")

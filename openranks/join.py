@@ -25,7 +25,7 @@ from .core.manifest import build_manifest, sha256_file, utc_now, write_manifest
 from .core.media import MediaInfo, probe, validate_normalized
 from .core.plan import AssemblyPlan, PlanError, PreparedInput, plan_from_prepared
 from .core.progress import SPAN_JOIN, Progress, ProgressCallback
-from .core.runner import run, stderr_warnings, version_of
+from .core.runner import noop, run, stderr_warnings, version_of
 from .prepare import PrepareError, prepared_file, read_metadata
 
 Logger = Callable[[str], None]
@@ -71,10 +71,6 @@ class JoinResult:
         for warning in self.warnings:
             lines.append(f"   aviso: {warning}")
         return "\n".join(lines)
-
-
-def _noop(_: str) -> None:
-    return None
 
 
 def _output_entry(path: Path, info: MediaInfo, *, kind: str) -> dict:
@@ -135,7 +131,7 @@ def join_clips(
     ``plan.segments`` da el orden (#5 → #1) y ``staged`` aporta los archivos ya
     normalizados.
     """
-    say = log or _noop
+    say = log or noop
     tracker = track or Progress()
     out_dir = Path(out_dir)
     work_dir = out_dir / "work"
@@ -224,7 +220,7 @@ def join(
     No normaliza nada ni mira los videos originales: si un puesto no tiene su tick, la
     unión falla con un mensaje que el panel puede enseñar tal cual.
     """
-    say = log or _noop
+    say = log or noop
     cfg = config or Config.from_env()
     ffmpeg_bin = ff.resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")
     ffprobe_bin = ff.resolve_binary(ffprobe, "OPENRANKS_FFPROBE", "ffprobe")
