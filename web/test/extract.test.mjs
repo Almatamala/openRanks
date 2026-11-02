@@ -21,7 +21,7 @@ const complete = { url: "https://www.youtube.com/watch?v=abc123", terms: true };
 const fieldsOf = (problems) => problems.map((problem) => problem.field);
 const messagesOf = (problems) => problems.map((problem) => problem.message).join(" | ");
 
-test("lee los enlaces de YouTube y de TikTok, también sin https", () => {
+test("lee los enlaces de YouTube, de TikTok y de Instagram, también sin https", () => {
   for (const [link, platform] of [
     ["https://www.youtube.com/watch?v=abc123", "youtube"],
     ["https://youtu.be/abc123", "youtube"],
@@ -29,6 +29,9 @@ test("lee los enlaces de YouTube y de TikTok, también sin https", () => {
     ["youtube.com/watch?v=abc123", "youtube"],
     ["https://www.tiktok.com/@canal/video/123", "tiktok"],
     ["https://vm.tiktok.com/ZM12345/", "tiktok"],
+    ["https://www.instagram.com/p/Cabc123/", "instagram"],
+    ["https://instagram.com/reel/Cabc123/", "instagram"],
+    ["instagram.com/p/Cabc123/", "instagram"],
   ]) {
     const parsed = parseLink(link);
     assert.equal(parsed.problem, null, `${link} debería valer`);
@@ -41,7 +44,7 @@ test("plataforma no admitida: se explica cuáles sí", () => {
   const parsed = parseLink("https://vimeo.com/123456");
 
   assert.equal(parsed.platform, null);
-  assert.match(parsed.problem, /Solo se admiten enlaces de YouTube y TikTok/);
+  assert.match(parsed.problem, /Solo se admiten enlaces de YouTube, TikTok e Instagram/);
 });
 
 test("el host se compara por sufijo completo, no por prefijo ni por parecido", () => {
@@ -49,6 +52,8 @@ test("el host se compara por sufijo completo, no por prefijo ni por parecido", (
   assert.equal(platformOf("music.youtube.com."), "youtube", "un punto final no cambia el host");
   assert.equal(platformOf("notyoutube.com"), null);
   assert.equal(platformOf("youtube.com.evil.example"), null);
+  assert.equal(platformOf("notinstagram.com"), null, "sin prefijos pegados");
+  assert.equal(platformOf("instagram.com.evil.example"), null, "el sufijo no cuela un host ajeno");
   assert.equal(platformOf(""), null);
 });
 
@@ -82,11 +87,12 @@ test("la casilla sola no basta: hace falta el enlace", () => {
 
   const notAdmitted = sourceProblems({ url: "https://vimeo.com/1", terms: true });
   assert.deepEqual(fieldsOf(notAdmitted), ["url"]);
-  assert.match(notAdmitted[0].message, /YouTube y TikTok/);
+  assert.match(notAdmitted[0].message, /YouTube, TikTok e Instagram/);
 });
 
 test("nombres visibles de plataforma", () => {
   assert.equal(platformLabel("youtube"), "YouTube");
   assert.equal(platformLabel("tiktok"), "TikTok");
+  assert.equal(platformLabel("instagram"), "Instagram");
   assert.equal(platformLabel(null), null);
 });

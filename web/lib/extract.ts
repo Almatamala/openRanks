@@ -11,6 +11,8 @@
 export const SOURCE_PLATFORMS = [
   { id: "youtube", label: "YouTube", hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"] },
   { id: "tiktok", label: "TikTok", hosts: ["tiktok.com"] },
+  // Una publicación (`/p/`), un reel (`/reel/`) y un IGTV (`/tv/`) viven en el mismo host.
+  { id: "instagram", label: "Instagram", hosts: ["instagram.com", "instagr.am"] },
 ] as const;
 
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number]["id"];
@@ -54,9 +56,14 @@ export function platformLabel(platform: SourcePlatform | null): string | null {
   return SOURCE_PLATFORMS.find((entry) => entry.id === platform)?.label ?? null;
 }
 
-/** «YouTube y TikTok», para los mensajes de admisión. */
+/** «YouTube, TikTok e Instagram», para los mensajes de admisión. */
 export function admissionLabel(): string {
-  return SOURCE_PLATFORMS.map((platform) => platform.label).join(" y ");
+  const labels: string[] = SOURCE_PLATFORMS.map((platform) => platform.label);
+  if (labels.length <= 1) return labels[0] ?? "";
+  const last = labels[labels.length - 1];
+  // En español la conjunción es «e» ante palabra que empieza por i- o hi- («e Instagram»).
+  const conjunction = /^(i|hi)/i.test(last) ? "e" : "y";
+  return `${labels.slice(0, -1).join(", ")} ${conjunction} ${last}`;
 }
 
 /** Plataforma de un `hostname` (`www.youtube.com` → `youtube`), o `null` si no se admite. */

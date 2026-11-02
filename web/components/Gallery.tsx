@@ -29,6 +29,21 @@ const FORMATS = LIBRARY_EXTENSIONS.map((ext) => ext.slice(1).toUpperCase()).join
 /** Tarjetas que se montan de una vez: con muchas más, la galería se arrastra. */
 const PAGE_SIZE = 24;
 
+/**
+ * `12.345` → `0:12.345`: el divisor corta por milisegundos, así que la línea de tiempo
+ * enseña las tres cifras y no redondea a segundos como el resto de duraciones del panel.
+ */
+function formatTimecode(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds * 1000));
+  const hours = Math.floor(total / 3_600_000);
+  const minutes = Math.floor((total % 3_600_000) / 60_000);
+  const secs = Math.floor((total % 60_000) / 1000);
+  const millis = String(total % 1000).padStart(3, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${millis}`
+    : `${minutes}:${String(secs).padStart(2, "0")}.${millis}`;
+}
+
 /** Origen reproducible de un original de la galería. */
 function fileUrl(id: string): string {
   return `/api/library/${id}/file`;
@@ -78,6 +93,18 @@ function Gallery({
   const [batchDraft, setBatchDraft] = useState("");
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  // Divisor manual: el clip elegido y el segundo por el que se parte en dos escenas.
+  const [splitTarget, setSplitTarget] = useState<LibraryItem | null>(null);
+  const [splitDuration, setSplitDuration] = useState<number | null>(null);
+  const [splitAt, setSplitAt] = useState(0);
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const splitVideo = useRef<HTMLVideoElement | null>(null);
+  // Vista previa de la barra: se guarda el último punto pedido y se pide en cuanto el
+  // vídeo termina de mostrar el anterior. Así la imagen sigue el arrastre en vez de
+  // encolar un salto por cada evento y quedarse congelada hasta soltar.
+  const splitPreview = useRef(0);
+  const splitSeeking = useRef(false);
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -297,6 +324,82 @@ function Gallery({
       setGenerating(false);
     }
   }, [generating, hasMontage, montageBusy, onGenerate, selected]);
+
+  // Divisor manual: el automático no siempre separa dos escenas que van en el mismo
+  // archivo, así que el punto de corte lo marca el operador.
+  const openSplit = useCallback((item: LibraryItem) => {
+    const known = item.duration_s ?? null;
+    setSplitTarget(item);
+    setSplitDuration(known);
+    setSplitAt(known ? Math.round((known / 2) * 1000) / 1000 : 0);
+    setSplitError(null);
+    splitPreview.current = 0;
+    splitSeeking.current = false;
+  }, []);
+
+  const closeSplit = useCallback(() => {
+    splitVideo.current?.pause();
+    splitPreview.current = 0;
+    splitSeeking.current = false;
+    setSplitTarget(null);
+    setSplitDuration(null);
+    setSplitError(null);
+  }, []);
+
+  /** Lleva el vídeo al fotograma de `seconds` sin encolar saltos sobre el anterior. */
+  const seekSplitPreview = useCallback((seconds: number) => {
+    const video = splitVideo.current;
+    if (!video) return;
+    splitPreview.current = seconds;
+    // Arrastrar la barra manda sobre la reproducción: si venía sonando, se pausa para que
+    // la imagen no se escape del fotograma que anuncia la leyenda.
+    if (!video.paused) video.pause();
+    if (splitSeeking.current || video.seeking) return;
+    // Si el vídeo ya está en ese fotograma no hay salto que pedir: no llegaría el
+    // `seeked` que desbloquea la cadena y la barra dejaría de actualizar la imagen.
+    if (Math.abs(video.currentTime - seconds) < 0.001) return;
+    splitSeeking.current = true;
+    video.currentTime = seconds;
+  }, []);
+
+  /** Terminado un salto: si la barra siguió moviéndose, se va al último punto pedido. */
+  const handleSplitSeeked = useCallback(() => {
+    splitSeeking.current = false;
+    const video = splitVideo.current;
+    if (!video || !video.paused) return;
+    const target = splitPreview.current;
+    if (Math.abs(video.currentTime - target) > 0.002) {
+      splitSeeking.current = true;
+      video.currentTime = target;
+    }
+  }, []);
+
+  const confirmSplit = useCallback(async () => {
+    if (!splitTarget || splitBusy) return;
+    setSplitBusy(true);
+    setSplitError(null);
+    const removedId = splitTarget.id;
+    try {
+      const response = await fetch(`/api/library/${removedId}/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ at: splitAt }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error ?? "No se pudo dividir el clip.");
+      setSelected((current) => current.filter((id) => id !== removedId));
+      closeSplit();
+      await load();
+    } catch (failure) {
+      setSplitError(failure instanceof Error ? failure.message : "No se pudo dividir el clip.");
+    } finally {
+      setSplitBusy(false);
+    }
+  }, [closeSplit, load, splitAt, splitBusy, splitTarget]);
+
+  // El divisor trabaja con **un** clip: el único seleccionado.
+  const splitCandidate =
+    selected.length === 1 && items ? (items.find((item) => item.id === selected[0]) ?? null) : null;
 
   // `undefined` es «Todas» y `null` es «Sin categoría»: filtrar nunca toca la selección.
   const filterValue = filter === ALL ? undefined : filter === NONE ? null : filter;
@@ -532,6 +635,22 @@ function Gallery({
               <button
                 className="gallery-tool"
                 type="button"
+                disabled={!splitCandidate || splitBusy || deletingSelection || batchSaving}
+                aria-label="Dividir el clip seleccionado en dos escenas"
+                title={
+                  splitCandidate
+                    ? "Dividir el clip seleccionado en dos escenas"
+                    : "Selecciona un solo clip para dividirlo"
+                }
+                onClick={() => {
+                  if (splitCandidate) openSplit(splitCandidate);
+                }}
+              >
+                <GalleryToolIcon name="scissors" />
+              </button>
+              <button
+                className="gallery-tool"
+                type="button"
                 disabled={selected.length === 0 || batchSaving || deletingSelection}
                 aria-label="Cambiar la categoría de los clips seleccionados"
                 title="Cambiar la categoría de los seleccionados"
@@ -611,6 +730,119 @@ function Gallery({
           </div>
         ) : null}
 
+        {splitTarget ? (
+          <div className="split-layer">
+            <div className="split-backdrop" onClick={closeSplit} />
+            <div
+              className="split-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Dividir ${splitTarget.name} en dos escenas`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") closeSplit();
+              }}
+            >
+              <header className="split-head">
+                <h3>Dividir «{splitTarget.name}» en dos escenas</h3>
+                <button
+                  className="secondary small split-close"
+                  type="button"
+                  aria-label="Cerrar el divisor de escenas"
+                  title="Cerrar"
+                  onClick={closeSplit}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </header>
+              <video
+                ref={splitVideo}
+                className="split-video"
+                src={fileUrl(splitTarget.id)}
+                controls
+                playsInline
+                preload="auto"
+                aria-label={`Vídeo de ${splitTarget.name}`}
+                onLoadedMetadata={(event) => {
+                  const value = event.currentTarget.duration;
+                  if (!Number.isFinite(value) || value <= 0) return;
+                  setSplitDuration(value);
+                  const target =
+                    splitAt > 0 && splitAt < value ? splitAt : Math.round((value / 2) * 1000) / 1000;
+                  setSplitAt(target);
+                  // La imagen que se ve al abrir es la del punto marcado, no el primer
+                  // fotograma: la leyenda y el vídeo cuentan lo mismo desde el principio.
+                  seekSplitPreview(target);
+                }}
+                onSeeked={handleSplitSeeked}
+                onTimeUpdate={(event) => {
+                  // Mientras la barra está buscando, el fotograma va por detrás del punto
+                  // pedido: devolver ese valor a la barra la hacía ir y volver.
+                  if (splitSeeking.current) return;
+                  const value = Math.round(event.currentTarget.currentTime * 1000) / 1000;
+                  setSplitAt(value);
+                  // Si el fotograma lo pidió el vídeo (reproducción o sus propios
+                  // controles), ese pasa a ser el punto de la barra.
+                  splitPreview.current = value;
+                }}
+              />
+              <div className="split-timeline">
+                <input
+                  type="range"
+                  min={0}
+                  max={splitDuration ?? 0}
+                  step={0.001}
+                  value={splitAt}
+                  aria-label="Punto de corte en la línea de tiempo"
+                  onChange={(event) => {
+                    const value = Math.round(Number(event.target.value) * 1000) / 1000;
+                    setSplitAt(value);
+                    // La barra es la línea de tiempo: moverla lleva el vídeo a ese fotograma,
+                    // también a mitad del arrastre (la imagen no espera a que se suelte).
+                    seekSplitPreview(value);
+                  }}
+                />
+                <div className="split-legend">
+                  <span>
+                    Escena 1 · {formatTimecode(0)}–{formatTimecode(splitAt)}
+                  </span>
+                  <strong>{formatTimecode(splitAt)}</strong>
+                  <span>
+                    Escena 2 · {formatTimecode(splitAt)}–{" "}
+                    {splitDuration === null ? "—" : formatTimecode(splitDuration)}
+                  </span>
+                </div>
+              </div>
+              <div className="actions split-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={splitBusy || splitDuration === null}
+                  onClick={() => void confirmSplit()}
+                >
+                  {splitBusy ? "Dividiendo…" : "Dividir en dos"}
+                </button>
+              </div>
+              {splitError ? (
+                <div className="alert error" role="alert">
+                  {splitError}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {/* Autocompletado de categorías: las existentes, sin pantalla de administración. */}
         <datalist id="gallery-categories">
           {categories.map((category) => (
@@ -659,7 +891,7 @@ function Gallery({
 }
 
 /** Iconos de la barra de la galería (trazos de Lucide, sin dependencia extra). */
-function GalleryToolIcon({ name }: { name: "pen" | "trash" }) {
+function GalleryToolIcon({ name }: { name: "pen" | "trash" | "scissors" }) {
   return (
     <svg
       aria-hidden="true"
@@ -676,6 +908,14 @@ function GalleryToolIcon({ name }: { name: "pen" | "trash" }) {
         <>
           <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
           <path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+        </>
+      ) : name === "scissors" ? (
+        <>
+          <circle cx="6" cy="6" r="3" />
+          <path d="M8.12 8.12 12 12" />
+          <path d="M20 4 8.12 15.88" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M14.8 14.8 20 20" />
         </>
       ) : (
         <>

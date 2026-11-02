@@ -1,9 +1,9 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 
+import { cutClip, CutError } from "./cut";
 import { extractionDir, readExtraction } from "./extract-job";
 import {
   addLibraryItem,
@@ -13,7 +13,7 @@ import {
   removeLibraryItem,
   type LibraryItem,
 } from "./library";
-import { PROJECT_ROOT, resolveEngine } from "./paths";
+import { resolveEngine } from "./paths";
 import { phashOf } from "./phash";
 
 /**
@@ -41,73 +41,6 @@ export interface ApproveResult {
   items: LibraryItem[];
   /** Cuántos ya estaban en la galería y se reutilizaron en vez de duplicar. */
   reused: number;
-}
-
-type Engine = Awaited<ReturnType<typeof resolveEngine>>;
-
-function runCut(
-  engine: Engine,
-  source: string,
-  destination: string,
-  start: number,
-  end: number,
-): Promise<void> {
-  const python = engine.python;
-  if (!python) {
-    return Promise.reject(new ApproveError("No hay un motor con el que recortar las escenas.", 503));
-  }
-  const argv = [
-    ...python.args,
-    "-m",
-    "openranks",
-    "cut",
-    "--input",
-    source,
-    "--out",
-    destination,
-    "--start",
-    start.toFixed(3),
-    "--end",
-    end.toFixed(3),
-    "--json",
-    "--quiet",
-  ];
-  if (engine.ffmpeg) argv.push("--ffmpeg", engine.ffmpeg);
-  if (engine.ffprobe) argv.push("--ffprobe", engine.ffprobe);
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(python.command, argv, {
-      cwd: PROJECT_ROOT,
-      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
-      windowsHide: true,
-    });
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
-    });
-    child.on("error", (error) => {
-      reject(new ApproveError(`No se pudo recortar la escena (${error.message}).`, 500));
-    });
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      const detail = stderr
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("Traceback") && !line.startsWith('File "'))
-        .pop();
-      reject(
-        new ApproveError(
-          detail
-            ? `No se pudo recortar la escena. ${detail.replace(/^fallo el recorte:\s*/i, "").slice(0, 160)}`
-            : "No se pudo recortar la escena.",
-          500,
-        ),
-      );
-    });
-  });
 }
 
 /** SHA-256 del clip recién recortado, para no duplicar el mismo tramo. */
@@ -151,7 +84,7 @@ export async function approveCandidates(id: string): Promise<ApproveResult> {
     for (const candidate of approved) {
       const { id: clipId, destination } = newLibraryFile(".mp4");
       written.push(destination);
-      await runCut(engine, source, destination, candidate.start, candidate.end);
+      await cutClip({ engine, source, destination, start: candidate.start, end: candidate.end });
 
       const sha256 = await sha256File(destination);
       // La huella permite marcar planos repetidos aunque el recorte cambie unos bytes.
@@ -191,9 +124,9 @@ export async function approveCandidates(id: string): Promise<ApproveResult> {
     for (const file of written) {
       if (existsSync(file)) rmSync(file, { force: true });
     }
-    throw error instanceof ApproveError
-      ? error
-      : new ApproveError("No se pudieron añadir las escenas a la galería. Vuelve a intentarlo.", 500);
+    if (error instanceof ApproveError) throw error;
+    if (error instanceof CutError) throw new ApproveError(error.message, error.status);
+    throw new ApproveError("No se pudieron añadir las escenas a la galería. Vuelve a intentarlo.", 500);
   }
 
   // Revisión cerrada: el original y las miniaturas no se guardan (RF-20.4).

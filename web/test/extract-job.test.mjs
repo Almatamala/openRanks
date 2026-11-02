@@ -212,7 +212,7 @@ test("no arranca sin enlace admitido, sin declaración ni sin yt-dlp", async () 
 
   await assert.rejects(
     () => job.startExtraction({ ...DECLARATION, url: "https://vimeo.com/123" }, deps),
-    (error) => error.status === 400 && /YouTube y TikTok/.test(error.message),
+    (error) => error.status === 400 && /YouTube, TikTok e Instagram/.test(error.message),
   );
   await assert.rejects(
     () => job.startExtraction({ ...DECLARATION, terms: false }, deps),

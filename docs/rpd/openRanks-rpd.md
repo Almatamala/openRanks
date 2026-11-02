@@ -548,8 +548,9 @@ API.
 
 ### RF-16 — Ingesta multi-fuente · **diseñada, no activa (Fase 3)**
 
-1. Tres formas de entrada: **enlace** de YouTube, de TikTok u otra plataforma de la lista admitida,
-   y **archivo local** (la subida que ya existe en la Fase 2). Una URL por extracción.
+1. Tres formas de entrada: **enlace** de YouTube, de TikTok, de Instagram (publicación, reel o
+   IGTV) u otra plataforma de la lista admitida, y **archivo local** (la subida que ya existe en
+   la Fase 2). Una URL por extracción.
 2. La descarga la hace `yt-dlp` como **herramienta externa**, resuelta como FFmpeg
    (`OPENRANKS_YTDLP` → `.venv` del repo → `PATH` → error accionable en el panel). Sin DRM, sin
    muros de pago y sin contenido privado: los enlaces que exigen sesión o cookies no forman parte
@@ -563,8 +564,8 @@ API.
    nada: ni temporal ni entrada en la galería.
 6. Límites de la fuente: 60 min y 2 GB (ajustables por entorno) y **una descarga a la vez**.
 
-**Criterio de aceptación.** Con un enlace válido de YouTube y otro de TikTok (contenido propio) se
-obtiene el archivo y la parrilla de candidatos. Sin `yt-dlp` el panel dice qué instalar y no crea
+**Criterio de aceptación.** Con un enlace válido de YouTube, otro de TikTok y una publicación de
+Instagram (contenido propio) se obtiene el archivo y la parrilla de candidatos. Sin `yt-dlp` el panel dice qué instalar y no crea
 trabajo; sin la casilla marcada el botón está deshabilitado; una URL inválida, privada o de una
 plataforma no admitida falla con mensaje legible y **0 archivos**; al cancelar no quedan restos
 en disco.

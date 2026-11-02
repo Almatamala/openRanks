@@ -68,7 +68,7 @@ test("sin yt-dlp la descarga no arranca y dice qué instalar", async () => {
 test("un enlace no admitido o sin la casilla se rechazan antes de nada", async () => {
   const other = await create({ ...DECLARATION, url: "https://vimeo.com/123" });
   assert.equal(other.response.status, 400);
-  assert.match(other.payload.error, /YouTube y TikTok/);
+  assert.match(other.payload.error, /YouTube, TikTok e Instagram/);
 
   const noTerms = await create({ ...DECLARATION, terms: false });
   assert.equal(noTerms.response.status, 400);

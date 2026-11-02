@@ -734,12 +734,18 @@ footer.note {
 
 .drawer-controls {
   display: grid;
-  gap: 16px;
+  gap: 8px;
 }
 
 .control {
   display: grid;
   gap: 6px;
+}
+
+/* En un deslizador la pista va pegada a su cabecera: el aire de arriba ya lo pone
+   `drawer-controls`, y aquí separaba el número del control que lo mueve. */
+.control:has(input[type="range"]) {
+  gap: 0;
 }
 
 /* Etiqueta a la izquierda y valor editable a la derecha. */
@@ -761,9 +767,81 @@ footer.note {
   font-size: 15px;
 }
 
-.control input[type="range"] {
+/* Deslizadores del panel: tirador redondo y grande, cómodo de agarrar con ratón o dedo,
+   en vez del cuadrado fino del control nativo. Lo comparten los controles de la plantilla
+   (siempre enteros, con paso de 1) y la línea de tiempo del divisor (milisegundos). */
+.control input[type="range"],
+.split-timeline input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
-  accent-color: var(--accent);
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.control input[type="range"]::-webkit-slider-runnable-track,
+.split-timeline input[type="range"]::-webkit-slider-runnable-track {
+  box-sizing: border-box;
+  height: 8px;
+  border-radius: 999px;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+}
+
+.control input[type="range"]::-webkit-slider-thumb,
+.split-timeline input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 17px;
+  height: 17px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.3), 0 4px 10px rgba(0, 0, 0, 0.55);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.control input[type="range"]:hover::-webkit-slider-thumb,
+.control input[type="range"]:focus-visible::-webkit-slider-thumb,
+.control input[type="range"]:active::-webkit-slider-thumb,
+.split-timeline input[type="range"]:hover::-webkit-slider-thumb,
+.split-timeline input[type="range"]:focus-visible::-webkit-slider-thumb,
+.split-timeline input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px rgba(255, 214, 10, 0.45), 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.control input[type="range"]::-moz-range-track,
+.split-timeline input[type="range"]::-moz-range-track {
+  box-sizing: border-box;
+  height: 8px;
+  border-radius: 999px;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+}
+
+.control input[type="range"]::-moz-range-progress,
+.split-timeline input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.control input[type="range"]::-moz-range-thumb,
+.split-timeline input[type="range"]::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.3), 0 4px 10px rgba(0, 0, 0, 0.55);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 /* Valor numérico editable: se clica, se escribe y se ajusta al rango al salir. */
@@ -1373,6 +1451,89 @@ code {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-2);
+}
+
+/* Divisor manual: ventana con el vídeo y su línea de tiempo. */
+.split-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.split-backdrop {
+  position: absolute;
+  inset: 0;
+  background: #04060ac2;
+}
+
+.split-dialog {
+  position: relative;
+  width: min(720px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 24px 60px #000000a6;
+}
+
+.split-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.split-head h3 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* Cerrar el divisor: una X compacta, sin el texto «Cerrar» que le robaba ancho al título. */
+.split-head .split-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+}
+
+/* La única acción del divisor («Dividir en dos») va a la derecha de la ventana. */
+.split-actions {
+  justify-content: flex-end;
+}
+
+.split-video {
+  max-height: 46vh;
+}
+
+.split-timeline {
+  display: grid;
+  gap: 6px;
+}
+
+.split-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-legend strong {
+  color: var(--accent);
+  font-size: 14px;
 }
 
 /* Extraer clips (F3 · P3-1): origen, declaración de derechos y herramienta de descarga.

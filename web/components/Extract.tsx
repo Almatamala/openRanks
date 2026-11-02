@@ -75,7 +75,7 @@ function durationLabel(seconds: number): string {
 }
 
 const MODES = [
-  { id: "link", label: "Enlace de YouTube o TikTok" },
+  { id: "link", label: "Enlace del vídeo" },
   { id: "file", label: "Archivo local" },
 ] as const;
 

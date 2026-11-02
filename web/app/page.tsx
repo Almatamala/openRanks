@@ -1599,8 +1599,9 @@ function RangeControl({
         type="range"
         min={range[0]}
         max={range[1]}
+        step={1}
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => onChange(Math.round(Number(event.target.value)))}
       />
     </div>
   );
