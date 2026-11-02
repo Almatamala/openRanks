@@ -3,8 +3,8 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada; solo queda pasar el checklist E2E de §13.3 en el navegador.** **Fase 3 (L3 · Extractora) diseñada y desglosada (P3-1 a P3-8, §12) con su verificación (§13.4); P3-1 y P3-2 construidas** |
-| **Fecha** | 28-oct-2026 |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada; solo queda pasar el checklist E2E de §13.3 en el navegador.** **Fase 3 (L3 · Extractora) diseñada y desglosada (P3-1 a P3-8, §12) con su verificación (§13.4); P3-1 a P3-4 construidas, P3-5 a P3-8 pendientes** |
+| **Fecha** | 2-nov-2026 |
 | **Alcance** | **Plan**: en qué orden se construye, qué entrega cada capa, qué está hecho, cómo se verifica y qué falta. El **qué y el por qué** están en el RPD (`docs/rpd/openRanks-rpd.md`) |
 | **Documentos** | **RPD** + **plan** (este). La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven en el RPD; §12–§13 viven aquí |
 
@@ -24,7 +24,7 @@ navegación).
 | **1** | **L1 · Ensamblador** | Los clips ya listos (normalizados, 9:16, 30 fps, audio a −14 LUFS) **y su unión en un solo vídeo vertical en corte seco** | **Hecho** |
 | **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, subtítulo opcional, escalera de rangos, rótulo por puesto, medallas del podio y atenuado de lo que no tiene el turno. **Render automático y estilo bloqueado** | **Hecho** |
 | **3** | **Fase 2 · Galería y navegación (panel)** | Menú lateral, galería persistente con categorías, selección ordenada de 5 a 10, generación manual, reordenación por arrastre y borrado de los usados | **Hecho (checklist E2E manual pendiente)** |
-| **4** | **Fase 3 · Extractora (L3)** | Ingesta multi-fuente (YouTube, TikTok y archivos locales), segmentación en escenas con revisión, score de viralidad de 0 a 100, selección manual o automática y aterrizaje en la galería | **En construcción: P3-1 y P3-2 hechas (entrada con casilla de cumplimiento y descarga al área temporal); faltan análisis, score y automático** |
+| **4** | **Fase 3 · Extractora (L3)** | Ingesta multi-fuente (YouTube, TikTok, Instagram y archivos locales), segmentación en escenas con revisión, score de viralidad de 0 a 100, selección manual o automática y aterrizaje en la galería | **En construcción: P3-1 a P3-4 hechas (entrada, descarga, segmentación y aterrizaje con revisión); faltan score y automático (P3-5 a P3-8)** |
 
 **Contrato entre capas.** Cada capa consume la salida de la anterior como **archivos +
 manifiesto**, nunca como llamadas acopladas. L1 produce `prepared/NN.mp4` + `union.mp4` +
@@ -32,15 +32,16 @@ manifiesto**, nunca como llamadas acopladas. L1 produce `prepared/NN.mp4` + `uni
 
 La **Fase 3 (L3 · Extractora)** está **diseñada en el RPD** (§4.4, §5.5 y RF-16 a RF-20),
 **desglosada** en tareas (P3-1 a P3-8, §12) con su verificación (§13.4) y **en construcción**:
-P3-1 —sección «Extraer clips», casilla de cumplimiento y detección de `yt-dlp`— y P3-2 —descarga
-al área temporal con progreso, límites y cancelación— ya están en el panel; lo que sigue es el
-análisis en escenas (P3-3). La **publicación (L4) sigue fuera del alcance**. La
+P3-1 —sección «Extraer clips», casilla de cumplimiento y detección de `yt-dlp`—, P3-2 —descarga
+al área temporal con progreso, límites y cancelación—, P3-3 —análisis y segmentación en escenas—
+y P3-4 —parrilla de revisión y aterrizaje en la galería con deduplicación— ya están en el panel;
+lo que sigue es el score (P3-5). La **publicación (L4) sigue fuera del alcance**. La
 generación automática del panel (RF-15) se activa con la Fase 3 y su criterio ya está fijado en
 RF-19: score 0-100 y el mejor clip al final (#1).
 
 ---
 
-## Estado de implementación (28-oct-2026)
+## Estado de implementación (2-nov-2026)
 
 Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo):
 
@@ -55,7 +56,10 @@ Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo
 | Progreso | `openranks/core/progress.py` | Porcentaje medido, fase con nombre humano y ETA honesto en el panel |
 | Orquestación L2 | `openranks/overlay.py` | Editar y verificar, con manifiesto |
 | Etapas de L1 | `openranks/prepare.py`, `openranks/join.py` | Preparar **un** puesto al subirlo (el tick) y unir los preparados al pulsar «Montar», antes del render |
-| CLI | `openranks/cli.py` | `prepare`, `join`, `render`, `preview`, `preset` |
+| CLI | `openranks/cli.py` | `prepare`, `join`, `render`, `preview`, `preset`, `analyze`, `phash`, `cut` |
+| Segmentación en escenas | `openranks/core/scenes.py`, `openranks/scenes.py` | Una pasada sin recodificar (`scdet`, `signalstats`, `blackdetect`), umbral adaptativo, fusión y partición a 1-30 s, cortes exactos y miniaturas |
+| Revisión y aterrizaje | `web/lib/extract-approve.ts`, `openranks/cut.py`, `web/lib/phash.ts` | Recorta solo los tramos aprobados, calcula SHA-256 y pHash, deduplica contra la galería y borra el temporal al cerrar |
+| Divisor manual de la galería | `web/lib/library-split.ts` | Parte un clip por un punto con precisión de milisegundos y conserva categoría y procedencia |
 | Panel | `web/` (Next.js) | Flujo completo sin terminal: subir (prepara solo), escribir, montar, ver y descargar el ranking |
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
 | Texto recordado | Borrador del navegador (`localStorage`) | El último título y subtítulo usados vuelven al reabrir el panel; sin botón de guardado ni respaldo en disco |
@@ -65,7 +69,7 @@ Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo
 **Estado — Fase 2.** La galería (`library/` + `library.json`), el menú lateral, la selección
 ordenada, la generación manual, el arrastre de puestos y el borrado de usados están
 implementados en el panel, más la descarga opcional de la unión sin edición (**P2-9**).
-**P2-8 está cerrada en su parte automática**: 20 pruebas `node --test` (`web/test/`) de la
+**P2-8 está cerrada en su parte automática**: la suite `node --test` (`web/test/`) de la
 lógica pura y del contrato de la API de la galería, en CI. Lo único que queda de la fase es
 pasar el checklist E2E de §13.3 en un navegador, que no se puede automatizar.
 
@@ -96,7 +100,7 @@ exigir tocar esas reglas, se cambia el RPD/ADR primero, no el código por detrá
 | **L1** — Clips listos y unión vertical | normalización 9:16 por clip, unión en corte seco, audio a −14 LUFS | **Hecho** |
 | **L2** — Edición del estándar | overlay ASS, escalera, rótulos, spec, preset editable | **Hecho** |
 | **F2** — Galería y navegación (panel) | menú lateral, galería persistente, categorías, selección 5-10, generación manual, arrastre y borrado de usados | **Hecho (checklist E2E manual pendiente)** |
-| **F3** — Extractora (L3) | ingesta multi-fuente, segmentación en escenas, score de viralidad 0-100, selección manual o automática | **En construcción (P3-1 y P3-2 hechas, P3-3 a P3-8 pendientes)** |
+| **F3** — Extractora (L3) | ingesta multi-fuente, segmentación en escenas, score de viralidad 0-100, selección manual o automática | **En construcción (P3-1 a P3-4 hechas, P3-5 a P3-8 pendientes)** |
 
 ### 12.1 Entorno local: Python, venv y FFmpeg
 
@@ -184,15 +188,11 @@ siendo los mismos.
 | **P2-8** | Pruebas y documentación de la fase: lógica pura de galería, selección, orden e intercambio de puestos con `node --test`, contrato de la API de la galería, typecheck/build y checklist E2E del flujo completo. | Todas | CI en verde (pytest, `node --test`, typecheck, build); el checklist de §13.3 se pasa entero; RPD/plan actualizados si cambia una decisión. |
 | **P2-9** | **Descarga sin edición**: botón extra en Resultado que sirve `union.mp4`; las dos descargas van juntas y «Borrar videos utilizados» queda debajo, en rojo difuminado. | P2-4, P2-5 | `union.mp4` se descarga y se reproduce sin overlay; el ranking sigue siendo el entregable principal; el borrado conserva su confirmación. |
 
-**Estado (28-oct-2026):** P2-1 a P2-9 implementados en el panel, y **P2-8 cerrada en su
+**Estado (2-nov-2026):** P2-1 a P2-9 implementados en el panel, y **P2-8 cerrada en su
 parte automática**: pruebas `node --test` de la lógica pura y del contrato de la API de la
 galería, en CI. Falta pasar el checklist E2E de §13.3 en el navegador.
 
-**Orden recomendado:** P2-1 → P2-2 → P2-3 → P2-4 → P2-5 → P2-6. P2-7 puede hacerse en
-cuanto exista la galería; P2-8 se cierra al final de la fase, con las pruebas de cada tarea ya
-verdes.
-
-### F3 — Extractora (L3) · **en construcción: P3-1 y P3-2 hechas, P3-3 a P3-8 pendientes**
+### F3 — Extractora (L3) · **en construcción: P3-1 a P3-4 hechas, P3-5 a P3-8 pendientes**
 
 Diseñada en el RPD (RF-16 a RF-20, ADR-17 a ADR-20, §5.5 y §7.8). **No toca el montaje**: los
 clips aprobados aterrizan en la galería de la Fase 2 y el flujo sigue siendo seleccionar →
@@ -225,11 +225,11 @@ ingesta es **una URL por extracción** (11), ya cerrado en RF-16.
 **Orden recomendado:** P3-1 → P3-2 → P3-3 → P3-4 → P3-5 → P3-6 → P3-7 → P3-8. Cada tarea deja el
 panel usable sin la siguiente: se puede montar un ranking con score heurístico y selección manual
 antes de que exista el LLM, y P3-6 y P3-7 se pueden intercambiar (el automático solo necesita
-scores). Las variables de P3-1 y P3-2 (`OPENRANKS_YTDLP`, `OPENRANKS_SOURCE_MAX_MINUTES` y
+scores). Las variables de P3-1 a P3-4 (`OPENRANKS_YTDLP`, `OPENRANKS_SOURCE_MAX_MINUTES` y
 `OPENRANKS_SOURCE_MAX_MB`) ya están en el anexo §17.1 del RPD; las `OPENRANKS_LLM_*` se añaden
 con P3-6.
 
-**Estado (28-oct-2026): P3-1 y P3-2 construidas y probadas.**
+**Estado (2-nov-2026): P3-1 a P3-4 construidas y probadas.**
 
 - **P3-1**: la sección «Extraer clips» está en el menú lateral con las dos entradas (enlace o
   archivo local), valida el enlace contra las plataformas admitidas, exige la **casilla de
@@ -245,6 +245,15 @@ con P3-6.
   panel se reinicia a mitad, la descarga se marca interrumpida y el temporal se borra. Pruebas:
   `web/test/download.test.mjs`, `web/test/extract-job.test.mjs` (proceso simulado) y
   `web/test/extract-api.test.mjs`.
+- **P3-3**: `openranks analyze` analiza el vídeo en **una pasada sin recodificar**
+  (`scdet` fotograma a fotograma, `signalstats` y `blackdetect`), decide los cortes con umbral
+  adaptativo, ignora destellos, fusiona los tramos de <1 s, parte los de >30 s y deja
+  `extract.json` determinista con las miniaturas en `candidates/`. Pruebas:
+  `tests/test_scenes.py` (puro) y `tests/test_scenes_e2e.py` (FFmpeg real).
+- **P3-4**: la parrilla de revisión aprueba y descarta candidatos; los aprobados se recortan del
+  temporal con `openranks cut`, entran en `library/` con procedencia y duración, se deduplican
+  por SHA-256 y pHash, y al cerrar la revisión la fuente y las miniaturas desaparecen. Pruebas:
+  `tests/test_cut.py`, `tests/test_phash.py` y `web/test/extract-approve.test.mjs`.
 
 **Relación con §12.3.** P3-6 y P3-7 construyen el mínimo que ya fijan RF-18 y RF-19: score
 heurístico, **una** llamada al LLM por trabajo y orden ascendente por score. No necesitan
@@ -383,19 +392,20 @@ nunca contra el proveedor.
   temporal, corte por tamaño y descarga interrumpida); `web/test/extract-api.test.mjs` el
   contrato de la API (503 sin `yt-dlp`, 400 de enlace y declaración, 404) y que el ejecutable
   resuelto no sale en la respuesta.
-- **Núcleo puro del extractor**: fusión de los tramos de <1 s, partición de los de >30 s, corte
-  exacto y ventanas de los candidatos, features del score heurístico, normalización a 0-100 con sus
-  razones, orden ascendente con el mejor al final, deduplicación por hash, estimación de coste y
-  validación del JSON del LLM. Nombres de referencia: `tests/test_extract_plan.py`,
-  `tests/test_score.py` y `tests/test_extract_ai.py`.
-- **Integración** (`integration`, FFmpeg de verdad): `tests/test_extract_e2e.py` sobre un compilado
+- **Núcleo puro del extractor (P3-3 y P3-4, ya en CI)**: umbral adaptativo, destellos, fundidos,
+  fusión de los tramos de <1 s, partición de los de >30 s y corte exacto (`tests/test_scenes.py`);
+  recorte del tramo aprobado (`tests/test_cut.py`) y huella perceptual (`tests/test_phash.py`).
+  El score heurístico y el cliente LLM añadirán las pruebas de `tests/test_score.py` y
+  `tests/test_extract_ai.py` con P3-5 y P3-6.
+- **Integración** (`integration`, FFmpeg de verdad): `tests/test_scenes_e2e.py` sobre un compilado
   sintético con cortes conocidos —**≥80 %** de cortes recuperados, **≤20 %** de falsos positivos,
-  ningún candidato fuera de 1-30 s, y extracción de un tramo en keyframe y de otro fuera de
-  keyframe— más el score heurístico sobre clips reales de 2 s.
-- **Contrato con el panel**: `node --test` de la parrilla (aprobar/descartar, deduplicación,
-  procedencia visible) y de la API de la extracción con `Request` normales y el índice en un
-  directorio temporal, como `web/test/library-api.test.mjs`. El typecheck comprueba que el panel no
-  ofrece plataformas, límites ni acciones que el motor rechaza.
+  ningún candidato fuera de 1-30 s— y `tests/test_cut.py` con un tramo en keyframe y otro fuera de
+  keyframe. Con P3-5 se suma el score heurístico sobre clips reales de 2 s.
+- **Contrato con el panel**: `node --test` de la parrilla (aprobar/descartar, deduplicación por
+  hash, procedencia y duración, borrado del temporal en `web/test/extract-approve.test.mjs`) y de
+  la API de la extracción con `Request` normales y el índice en un directorio temporal, como
+  `web/test/library-api.test.mjs`. El typecheck comprueba que el panel no ofrece plataformas,
+  límites ni acciones que el motor rechaza.
 
 | RF | Cómo se verifica |
 | --- | --- |
@@ -449,8 +459,9 @@ y se revisa antes de cerrar la fase.
   pero **no está activo**. Antes de implementar cada tarea se define su RF/ADR en el RPD.
 - **La Fase 3 (L3 · Extractora)** está **diseñada en el RPD** —fuentes, segmentación al estilo
   CapCut, score 0-100 y orden con el mejor al final—, desglosada en tareas (P3-1 a P3-8) con su
-  verificación (§13.4) y **en construcción**: **P3-1 y P3-2 ya están hechas** (entrada con
-  casilla de cumplimiento y descarga al área temporal con progreso, límites y cancelación) y el siguiente paso
-  es P3-3 (análisis y segmentación en escenas). No toca el montaje de L1/L2.
+  verificación (§13.4) y **en construcción**: **P3-1 a P3-4 ya están hechas** (entrada con
+  casilla de cumplimiento, descarga al área temporal, segmentación en escenas y revisión con
+  aterrizaje en la galería) y el siguiente paso es P3-5 (score heurístico). No toca el montaje de
+  L1/L2.
 - **L4 sigue fuera del alcance** (ADR-7): no se construye ni se documenta con más detalle hasta
   que se retome.

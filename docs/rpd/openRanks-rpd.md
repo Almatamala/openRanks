@@ -3,8 +3,8 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada**; solo queda el checklist E2E en el navegador. **Fase 3 (L3 · Extractora) diseñada y en construcción: P3-1 y P3-2 hechas** (entrada con casilla de cumplimiento y descarga del enlace al área temporal), **sin análisis ni score todavía** (§4.4, §5.5, RF-16 a RF-20) |
-| **Fecha** | 28-oct-2026 |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada**; solo queda el checklist E2E en el navegador. **Fase 3 (L3 · Extractora) en construcción: P3-1 a P3-4 hechas** (entrada con casilla de cumplimiento, descarga al área temporal, segmentación en escenas y revisión con aterrizaje en la galería), **sin score ni automático todavía** (§4.4, §5.5, RF-16 a RF-20) |
+| **Fecha** | 2-nov-2026 |
 | **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado y verificación) vive en `docs/plan/openRanks-plan.md` |
 | **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
 | **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada hasta la Fase 3** (ADR-16, ADR-19); (9) **extractora con fuentes múltiples y casilla de cumplimiento** (ADR-17, ADR-21); (10) **escenas al estilo CapCut, con revisión humana** (ADR-18); (11) **score de viralidad 0-100 y el mejor clip al final (#1)** (ADR-19); (12) **score con Claude Haiku 5.5 y cliente intercambiable** (ADR-20); (13) **divisor manual de escenas en la galería** (ADR-22) |
@@ -12,11 +12,13 @@
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
 
-Este documento describe **lo que el producto hace hoy**, incluida la **Fase 2** ya implementada
-en el panel, y **diseña la Fase 3 (L3 · Extractora) sin construirla**: sus requisitos (RF-16 a
-RF-20) y sus criterios de aceptación quedan cerrados aquí, pero no hay código. Lo que sigue
-siendo futuro se marca como tal; lo que aún no tiene diseño cerrado está en §16. La publicación
-(L4) sigue **fuera del alcance** (§4.2).
+Este documento describe **lo que el producto hace hoy**, incluida la **Fase 2** y lo ya
+construido de la **Fase 3 (L3 · Extractora)**: la ingesta, la descarga, la segmentación en
+escenas y la parrilla de revisión con aterrizaje en la galería (P3-1 a P3-4). El **score de
+viralidad** y la **selección automática** (P3-5 a P3-7) tienen sus requisitos (RF-18 y RF-19)
+y criterios cerrados aquí, pero todavía no hay código. Lo que sigue siendo futuro se marca como
+tal; lo que aún no tiene diseño cerrado está en §16. La publicación (L4) sigue **fuera del
+alcance** (§4.2).
 
 ---
 
@@ -56,18 +58,19 @@ Objetivos de la Fase 2:
 5. **Dejar preparada** la generación automática sin prometer un comportamiento que aún no
    existe.
 
-**Fase 3 — extractora (diseñada, no construida).** El operador pega un enlace (YouTube, TikTok,
-Instagram u otra plataforma admitida) o elige un archivo local; openRanks detecta los cortes de escena y de
-sonido, propone los tramos dentro de la banda del producto y el operador aprueba los que valen.
-Cada clip entra en la **galería actual** con su procedencia, su categoría y un **score de
-viralidad de 0 a 100**. Con esos scores la selección puede ser manual o automática (LLM), y el
-orden sigue el criterio de retención: el vídeo **abre con el clip más flojo y cierra con el
-mejor**, que ocupa el #1.
+**Fase 3 — extractora (en construcción).** El operador pega un enlace (YouTube, TikTok,
+Instagram u otra plataforma admitida) o elige un archivo local; openRanks detecta los cortes de
+imagen, propone los tramos dentro de la banda del producto y el operador aprueba los que valen.
+Cada clip entra en la **galería actual** con su procedencia, su categoría y su procedencia
+visible. El **score de viralidad de 0 a 100** y la selección automática (LLM) están diseñados
+pero aún no construidos (P3-5 a P3-7): mientras tanto la selección es manual y el orden sigue el
+criterio de retención ya fijado: el vídeo **abrirá con el clip más flojo y cerrará con el
+mejor**, que ocupará el #1.
 
 Las fases 1 y 2 son **CPU-only**: motor Python de stdlib pura y FFmpeg/libass, sin ASR ni modelos
 locales. La Fase 3 añade **dos dependencias externas opcionales**: `yt-dlp` para la descarga y un
-**LLM por API** para el score y la selección automática. Sin ellas, la extracción de archivos
-locales y el score heurístico siguen funcionando.
+**LLM por API** para el score y la selección automática. Sin la primera sigue funcionando la
+extracción de archivos locales; el score heurístico y el LLM llegan con P3-5 y P3-6.
 
 ---
 
@@ -152,6 +155,10 @@ Reglas de composición:
 | 12 | **Reordenación por arrastrar y soltar** desde el borde izquierdo de cada casilla | **Hecho** |
 | 13 | **Borrado de los videos utilizados** tras un render correcto, con confirmación | **Hecho** |
 | 14 | **Generación automática** del ranking a partir de una selección | **Fase 3**: criterio definido en RF-19 (score 0-100 y el mejor clip al final); hoy el botón está visible y deshabilitado (ADR-16) |
+| 15 | **Divisor manual de escenas** de un clip de la galería, con precisión de milisegundos | **Hecho** (RF-11.8, ADR-22) |
+| 16 | **Ingesta por enlace** (YouTube, TikTok, Instagram) o archivo local, con cumplimiento declarado | **Hecho** (RF-16, P3-1 y P3-2) |
+| 17 | **Segmentación en escenas y parrilla de revisión**, con aterrizaje en la galería y deduplicación | **Hecho** (RF-17 y RF-20, P3-3 y P3-4) |
+| 18 | **Score de viralidad 0-100** y **selección automática** por score | **Fase 3**, pendiente (RF-18 y RF-19, P3-5 a P3-7) |
 
 ### 4.2 Fuera del alcance actual
 
@@ -166,19 +173,21 @@ Reglas de composición:
   a segundo.
 - Garantizar monetización: es una decisión de la plataforma (ver §11).
 
-### 4.4 Fase 3 — L3 · Extractora (**diseñada, no construida**)
+### 4.4 Fase 3 — L3 · Extractora (**en construcción: P3-1 a P3-4 hechas**)
 
 Diseño cerrado (ADR-17 a ADR-20) y **en construcción**: el panel ya tiene la sección **«Extraer
-clips»**, la casilla de cumplimiento (P3-1) y la **descarga al área temporal** con
-progreso, límites y cancelación (P3-2); faltan el detector de escenas y el cliente de LLM.
+clips»**, la casilla de cumplimiento (P3-1), la **descarga al área temporal** con progreso,
+límites y cancelación (P3-2), la **segmentación en escenas** (P3-3) y la **parrilla de revisión
+con aterrizaje en la galería** y deduplicación (P3-4). Faltan el score de viralidad (P3-5/P3-6),
+la selección automática (P3-7) y su verificación con el set dorado (P3-8).
 
 | # | Capacidad | Estado |
 | --- | --- | --- |
-| 15 | **Ingesta multi-fuente**: enlace de YouTube, TikTok u otra plataforma admitida, o archivo local; descarga con `yt-dlp` | Diseñada (RF-16) |
-| 16 | **Segmentación en escenas** por cambio de imagen y de sonido, filtrada a la banda 1-30 s y revisada por el operador | Diseñada (RF-17) |
-| 17 | **Score de viralidad 0-100** visible en cada clip, con razones: heurístico y, opcionalmente, LLM | Diseñada (RF-18) |
-| 18 | **Selección manual o automática** de 5 a 10 puestos y **orden con el mejor clip al final (#1)** | Diseñada (RF-19) |
-| 19 | **Aterrizaje en la galería actual** con categoría, procedencia y score; reutiliza selección, generación y borrado de la Fase 2 | Diseñada (RF-20) |
+| 15 | **Ingesta multi-fuente**: enlace de YouTube, TikTok, Instagram u otra plataforma admitida, o archivo local; descarga con `yt-dlp` | Hecha (RF-16, P3-1 y P3-2) |
+| 16 | **Segmentación en escenas** solo por cambio de imagen, filtrada a la banda 1-30 s y revisada por el operador | Hecha (RF-17, P3-3) |
+| 17 | **Score de viralidad 0-100** visible en cada clip, con razones: heurístico y, opcionalmente, LLM | Diseñada (RF-18, P3-5 y P3-6) |
+| 18 | **Selección manual o automática** de 5 a 10 puestos y **orden con el mejor clip al final (#1)** | Diseñada (RF-19, P3-7) |
+| 19 | **Aterrizaje en la galería actual** con categoría y procedencia; reutiliza selección, generación y borrado de la Fase 2; el score se suma con P3-5 | Hecha salvo el score (RF-20, P3-4) |
 
 ---
 
@@ -280,7 +289,7 @@ Historias de usuario:
 | Clip con dos escenas pegadas | El divisor manual lo parte por el fotograma marcado, con precisión de milisegundos: quedan dos clips con la categoría y la procedencia del original y el original se borra. |
 | Punto de corte fuera de los límites | Si una de las dos partes duraría menos de medio segundo, el divisor lo explica y no toca el original. |
 
-### 5.5 Flujo de la Fase 3 (L3 · Extractora) — diseñado, no activo
+### 5.5 Flujo de la Fase 3 (L3 · Extractora) — construido hasta la revisión; score y automático pendientes
 
 1. El operador abre **Extraer clips** (sección nueva del menú lateral, junto a «Montar ranking» y
    «Galería de videos»),   pega el enlace del compilado (YouTube, TikTok, Instagram u otra plataforma
@@ -290,13 +299,13 @@ Historias de usuario:
    está deshabilitado: es §11.7.
 3. Pulsa **Extraer**. El panel descarga el vídeo con `yt-dlp` (progreso por fase, cancelable) y lo
    analiza **sin recodificar**: solo la imagen (cortes de escena) y los negros.
-4. openRanks propone los **tramos candidatos** dentro de la banda de 1-30 s, con miniatura,
-   duración y score. Los tramos demasiado cortos se fusionan con el vecino; los demasiado largos
-   se parten.
+4. openRanks propone los **tramos candidatos** dentro de la banda de 1-30 s, con miniatura y
+   duración (el score se suma con P3-5). Los tramos demasiado cortos se fusionan con el vecino;
+   los demasiado largos se parten.
 5. El operador **aprueba o descarta** candidatos en una parrilla. Aprobar un candidato crea su clip
    en la **galería actual**, con procedencia, categoría y score; descartarlo no deja nada.
-6. Con los clips en la galería, el flujo es el de la Fase 2: seleccionar 5-10 y **Generar manual**,
-   o dejar que **Generar automático** elija y ordene por score (RF-19).
+6. Con los clips en la galería, el flujo es el de la Fase 2: seleccionar 5-10 y **Generar manual**.
+   «Generar automático» sigue deshabilitado hasta P3-7, que elegirá y ordenará por score (RF-19).
 7. El orden de reproducción es ascendente en score: **el vídeo abre con el clip más flojo y cierra
    con el mejor**, que ocupa el #1.
 
@@ -418,7 +427,7 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
 - **Cobertura**: toda operación de L1/L2 que el operador deba ejecutar tiene su control en el
   panel.
 
-### RF-10 — Navegación lateral · **Fase 2**
+### RF-10 — Navegación lateral · **hecha (Fase 2)**
 
 1. El panel tiene un **menú lateral izquierdo persistente** con dos secciones: **Montar
    ranking** (vista principal) y **Galería de videos** (nueva). No es el cajón de la plantilla
@@ -437,7 +446,7 @@ panel, el entregable no está terminado. La UI es propia (`web/`, Next.js App Ro
 la activa está marcada, un montaje en marcha sigue vivo al ir a la galería y volver, y el menú
 funciona con teclado y con lector de pantalla.
 
-### RF-11 — Galería de clips y categorías · **Fase 2**
+### RF-11 — Galería de clips y categorías · **hecha (Fase 2)**
 
 1. **Repositorio persistente.** La galería guarda los clips originales en el directorio de
    trabajos (`library/` + `library.json`) y sobrevive a reinicios y a cerrar el navegador. No
@@ -472,7 +481,7 @@ categoría. La API y la UI no exponen rutas ni ids internos. Un clip con dos esc
 parte por el punto exacto: quedan dos clips con su categoría y procedencia y el original
 desaparece.
 
-### RF-12 — Selección ordenada y generación manual · **Fase 2**
+### RF-12 — Selección ordenada y generación manual · **hecha (Fase 2)**
 
 1. **Seleccionar/deseleccionar** un clip con un clic. El **orden de selección** asigna los
    puestos de forma consecutiva: el primero seleccionado es el **#1** (el mejor, cierra el
@@ -505,7 +514,7 @@ seleccionar el 11.º; cancelar la confirmación deja intacto el montaje anterior
 creado desde la galería, el selector de la Fase 1 **sigue activo**: al ampliar aparecen casillas
 vacías y al reducir se dejan de usar las sobrantes.
 
-### RF-13 — Reordenación por arrastrar y soltar · **Fase 2**
+### RF-13 — Reordenación por arrastrar y soltar · **hecha (Fase 2)**
 
 1. El **control de arrastre es el borde izquierdo** de cada casilla de puesto; el resto de la
    casilla no inicia el arrastre.
@@ -524,7 +533,7 @@ vacías y al reducir se dejan de usar las sobrantes.
 números y el vídeo resultante reproduce el nuevo orden; la unión y el ranking anteriores dejan
 de estar disponibles; el mismo intercambio se puede hacer con el teclado.
 
-### RF-14 — Borrar los videos utilizados · **Fase 2**
+### RF-14 — Borrar los videos utilizados · **hecha (Fase 2)**
 
 1. El botón **Borrar videos utilizados** aparece **solo cuando el ranking se ha generado
    correctamente**, junto a **Descargar**.
@@ -543,7 +552,7 @@ de estar disponibles; el mismo intercambio se puede hacer con el teclado.
 desaparecido de la galería y del disco, las casillas están vacías y el `ranking.mp4` se sigue
 pudiendo descargar. Cancelar deja los N clips, las casillas y el ranking como estaban.
 
-### RF-15 — Generación automática (futura) · **no activa en la Fase 2**
+### RF-15 — Generación automática (futura) · **no activa; llega con P3-7**
 
 1. El botón **Generar automático** está visible en la galería, deshabilitado y acompañado de
    «Próximamente».
@@ -556,7 +565,7 @@ pudiendo descargar. Cancelar deja los N clips, las casillas y el ranking como es
 ninguna petición ni cambio de estado y no aparece ninguna ruta de generación automática en la
 API.
 
-### RF-16 — Ingesta multi-fuente · **diseñada, no activa (Fase 3)**
+### RF-16 — Ingesta multi-fuente · **hecha (Fase 3)**
 
 1. Tres formas de entrada: **enlace** de YouTube, de TikTok, de Instagram (publicación, reel o
    IGTV) u otra plataforma de la lista admitida, y **archivo local** (la subida que ya existe en
@@ -580,7 +589,7 @@ trabajo; sin la casilla marcada el botón está deshabilitado; una URL inválida
 plataforma no admitida falla con mensaje legible y **0 archivos**; al cancelar no quedan restos
 en disco.
 
-### RF-17 — Segmentación en escenas (estilo CapCut) · **diseñada, no activa (Fase 3)**
+### RF-17 — Segmentación en escenas (estilo CapCut) · **hecha (Fase 3)**
 
 1. Detección **solo de imagen**: `scdet` da el score de **cada** fotograma y el corte lo decide un
    umbral **adaptativo** a la media local, con suelo absoluto en el preset del extractor;
@@ -608,7 +617,7 @@ de 1-30 s. Aprobar 6 candidatos deja exactamente **6 clips** en la galería, con
 su duración dentro de la banda, y el temporal se borra; descartarlos todos no deja nada. Cambiar el
 umbral del preset cambia la propuesta sin tocar código.
 
-### RF-18 — Score de viralidad 0-100 · **diseñada, no activa (Fase 3)**
+### RF-18 — Score de viralidad 0-100 · **diseñada; pendiente (P3-5 y P3-6)**
 
 1. Todo clip tiene un **score de 0 a 100** visible en su tarjeta (parrilla de revisión, galería y
    montaje), con **2 o 3 razones** cortas y la fuente del score (`heurístico` o `llm`).
@@ -633,7 +642,7 @@ clip procesado dos veces da el mismo score heurístico. Con el LLM caído el flu
 scores quedan marcados como heurísticos. El coste medido por trabajo no pasa de **0,002 USD** con
 el modelo por defecto y nunca del tope de **0,02 USD**.
 
-### RF-19 — Selección y orden por score · **diseñada, no activa (Fase 3)**
+### RF-19 — Selección y orden por score · **diseñada; pendiente (P3-7)**
 
 1. Dos caminos, con el score siempre a la vista: **manual** (el operador selecciona en la galería,
    como RF-12) y **automático** (con LLM decide a partir de los scores y la diversidad; sin LLM
@@ -654,13 +663,14 @@ repite clip y su elección cabe en 30-58 s. Aceptar la propuesta deja casillas y
 camino manual. Sin scores, «Generar automático» está deshabilitado y explica por qué; «Generar
 manual» sigue igual.
 
-### RF-20 — Galería, procedencia y deduplicación · **diseñada, no activa (Fase 3)**
+### RF-20 — Galería, procedencia y deduplicación · **hecha salvo el score (Fase 3)**
 
 1. Los clips aprobados entran en la **galería actual** (`library/` + `library.json`) y se comportan
    como cualquier otro: filtro por categoría, selección 5-10, generar y borrar usados (RF-11 a
    RF-14).
 2. Cada clip guarda **procedencia** (plataforma y URL de la fuente, sin campos que teclear) y su
-   **score**; la tarjeta lo muestra sin enseñar rutas del host (§10.3).
+   **score** (este último llega con P3-5); la tarjeta los muestra sin enseñar rutas del host
+   (§10.3).
 3. **Deduplicación por hash**: si el tramo ya está en la galería, se avisa y se reutiliza la
    entrada en vez de duplicar el archivo.
 4. El archivo de la fuente es **temporal**: se borra al cerrar la revisión (o según la retención
@@ -682,10 +692,10 @@ videos utilizados» sigue borrando solo los clips de ese ranking.
 El código implementa **L1, L2 y el panel**. La **Fase 2** añade a esa misma arquitectura una
 galería persistente y la navegación lateral; **el motor no cambia**: la galería guarda
 originales y, al generar, los copia al `input/` del trabajo para que `prepare` → `join` →
-`render` sigan siendo los mismos. La **Fase 3** está diseñada (§7.8) y **no construida**; la
+`render` sigan siendo los mismos. La **Fase 3** está construida hasta la revisión (§7.8, P3-1 a P3-4); la
 publicación (L4) sigue fuera del alcance y no hay módulos de cola, almacenamiento objeto ni
-publicación. La extracción se documentó primero y se implementará después, con sus propias tareas
-en el plan.
+publicación. La extracción se documentó primero y se construye por tareas propias en el plan
+(§12, F3).
 
 ### 7.5 Arquitectura de componentes
 
@@ -767,7 +777,7 @@ contenedor manda el de apt). El panel fija `OPENRANKS_PRESET_FILE` en el directo
 La galería de la Fase 2 queda dentro del **mismo volumen** (`/data/jobs/library/`), así que
 sobrevive a reinicios y despliegues sin configuración adicional.
 
-### 7.8 Fase 3 — diseño técnico (no construido)
+### 7.8 Fase 3 — diseño técnico (construido hasta la revisión: P3-1 a P3-4)
 
 ```
 enlace ──► yt-dlp ──► temporal ──► análisis (ffprobe + scdet / blackdetect)
@@ -785,8 +795,8 @@ enlace ──► yt-dlp ──► temporal ──► análisis (ffprobe + scdet 
   externa, detectada como FFmpeg) y un **cliente LLM por HTTP** (chat completions con imagen,
   sin SDK); ninguno es obligatorio para L1/L2. Proveedor, modelo y coste: §7.9.
 - **Un trabajo por extracción** en el mismo directorio de trabajos: `extract/source.*` (temporal),
-  `extract.json` (cortes, umbrales, versiones y scores) y `candidates/` (miniaturas). Los clips
-  aprobados se copian a `library/`, así que la Fase 2 no cambia.
+  `extract.json` (cortes, umbrales y versiones; los scores se suman con P3-5) y `candidates/`
+  (miniaturas). Los clips aprobados se copian a `library/`, así que la Fase 2 no cambia.
 - **Sin cola ni base de datos**: una extracción a la vez por panel y progreso por fase con el mismo
   mecanismo que L1/L2.
 - **Determinismo y trazabilidad**: mismo archivo + mismos umbrales ⇒ mismos cortes. El manifiesto
@@ -1127,8 +1137,9 @@ capa.
     remate y el contexto, o el score se queda en imagen + audio? Cambia el coste y el alcance.
 13. **Umbrales de segmentación**: los valores de partida (≈10 de `scdet`, ≈0,35 de `select scene`)
     hay que calibrarlos por tipo de contenido (vlog, gameplay, animación).
-14. **Retención del original descargado**: ¿se borra al cerrar la revisión o se conserva N días
-    para re-extraer sin volver a descargar? Afecta a espacio y a derechos.
+14. **Retención del original descargado**: resuelto de momento en P3-4 (se borra al cerrar la
+    revisión, junto con las miniaturas). Si se prefiere conservarlo N días para re-extraer sin
+    volver a descargar, se decide antes de P3-8: afecta a espacio y a derechos.
 15. **LLM**: resuelto en ADR-20 y §7.9 (Claude Haiku 5.5 por defecto, ≈0,0011 USD por trabajo de
     10 clips, tope de 0,02 USD por trabajo y cliente intercambiable).
 16. **Presupuesto y titularidad de la clave del LLM**: quién la paga y qué tope mensual; el diseño
@@ -1167,7 +1178,7 @@ capa.
 La Fase 2 **no añade variables de entorno**: la galería vive en `OPENRANKS_JOBS_DIR/library/` y
 la sirve el propio panel. El arranque local, la utilidad del venv y el orden de resolución de
 Python/FFmpeg están en el plan, §12.1. La Fase 3 **ya usa `OPENRANKS_YTDLP` y los dos límites de la fuente**
-(P3-1 y P3-2) y añadirá las del score cuando construya esa capa.
+(P3-1 a P3-4); las `OPENRANKS_LLM_*` están previstas y el motor todavía no las lee (P3-6).
 
 ### 17.2 Referencias de la Fase 3
 
