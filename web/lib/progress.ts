@@ -5,7 +5,7 @@
  * **stderr**, con este prefijo, para no mezclarse con el resultado (stdout) ni con
  * los avisos de FFmpeg. Aquí solo se lee y se convierte en tiempo restante.
  */
-export const PROGRESS_PREFIX = "OPENRANKS_PROGRESS ";
+const PROGRESS_PREFIX = "OPENRANKS_PROGRESS ";
 
 export interface ProgressEvent {
   percent: number;

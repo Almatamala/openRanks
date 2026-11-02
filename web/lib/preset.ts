@@ -18,7 +18,7 @@ export interface EditablePreset {
   rank_ladder: { size: number; x: number; y_top: number; y_bottom: number };
 }
 
-export const PRESET_PATH = path.join(JOBS_DIR, "preset.json");
+const PRESET_PATH = path.join(JOBS_DIR, "preset.json");
 
 /**
  * Entorno común de los procesos del motor que leen o dibujan el preset.

@@ -130,7 +130,7 @@ export function canGenerate(selected: string[]): boolean {
 }
 
 /** Distancia de Hamming con la que dos pHash son el mismo plano (huella de 64 bits). */
-export const PHASH_DUPLICATE_DISTANCE = 8;
+const PHASH_DUPLICATE_DISTANCE = 8;
 
 const PHASH_PATTERN = /^[0-9a-f]{16}$/;
 

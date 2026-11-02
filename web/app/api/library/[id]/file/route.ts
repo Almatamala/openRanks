@@ -37,12 +37,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Ese clip ya no está en la galería." }, { status: 404 });
   }
 
-  const size = statSync(file).size;
+  const stat = statSync(file);
+  const size = stat.size;
+  // ETag y fecha son lo que permite al navegador revalidar con 304: sin validador,
+  // `must-revalidate` le obliga a pedir el archivo entero aunque no haya cambiado.
+  const etag = `"${size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
   const headers = {
     "Content-Type": CONTENT_TYPES[item.ext] ?? "application/octet-stream",
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=0, must-revalidate",
+    ETag: etag,
+    "Last-Modified": stat.mtime.toUTCString(),
   };
+
+  // `If-None-Match` manda sobre la fecha (RFC 9110); sin él, se compara la fecha.
+  const ifNoneMatch = request.headers.get("if-none-match");
+  const ifModifiedSince = request.headers.get("if-modified-since");
+  const notModified = ifNoneMatch
+    ? ifNoneMatch.split(",").some((tag) => tag.trim() === etag || tag.trim() === "*")
+    : ifModifiedSince !== null &&
+      Number.isFinite(Date.parse(ifModifiedSince)) &&
+      Math.floor(stat.mtimeMs / 1000) <= Math.floor(Date.parse(ifModifiedSince) / 1000);
+  if (notModified) return new NextResponse(null, { status: 304, headers });
 
   const range = request.headers.get("range");
   const match = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;

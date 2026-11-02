@@ -220,7 +220,7 @@ export async function prepareClip(id: string, position: number, positions?: numb
  * clip reemplazado no deja uniones de más por el camino. Vuelve en cuanto el proceso
  * arranca; `waitForJoin` es quien espera a que termine.
  */
-export async function joinJob(id: string, request: JobRequest): Promise<JobStatus> {
+async function joinJob(id: string, request: JobRequest): Promise<JobStatus> {
   const status = readStatus(id);
   if (!status) throw new JobError("Ese trabajo ya no existe.");
   if (joining.has(id)) return status;

@@ -8,7 +8,7 @@
  */
 
 /** Plataformas admitidas (RF-16.1). El host se compara por sufijo: `m.youtube.com` entra. */
-export const SOURCE_PLATFORMS = [
+const SOURCE_PLATFORMS = [
   { id: "youtube", label: "YouTube", hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"] },
   { id: "tiktok", label: "TikTok", hosts: ["tiktok.com"] },
   // Una publicación (`/p/`), un reel (`/reel/`) y un IGTV (`/tv/`) viven en el mismo host.
@@ -18,7 +18,7 @@ export const SOURCE_PLATFORMS = [
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number]["id"];
 
 /** Tope del enlace: por encima de esto no es una URL de vídeo, es otra cosa. */
-export const LINK_MAX_CHARS = 2048;
+const LINK_MAX_CHARS = 2048;
 
 /**
  * Lo que firma el operador antes de extraer: el enlace y **una casilla** de cumplimiento
@@ -57,7 +57,7 @@ export function platformLabel(platform: SourcePlatform | null): string | null {
 }
 
 /** «YouTube, TikTok e Instagram», para los mensajes de admisión. */
-export function admissionLabel(): string {
+function admissionLabel(): string {
   const labels: string[] = SOURCE_PLATFORMS.map((platform) => platform.label);
   if (labels.length <= 1) return labels[0] ?? "";
   const last = labels[labels.length - 1];

@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { existsSync, rmSync, statSync } from "node:fs";
 
 import { cutClip, CutError } from "./cut";
+import { sha256File } from "./hash";
 import {
   addLibraryItem,
   isSafeLibraryId,
@@ -45,13 +44,6 @@ export interface SplitResult {
   items: LibraryItem[];
   /** Id del clip que se sustituyó. */
   removedId: string;
-}
-
-/** SHA-256 del clip recortado, igual que en el aterrizaje de escenas. */
-async function sha256File(file: string): Promise<string> {
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(file), hash);
-  return hash.digest("hex");
 }
 
 /** Duración medida con `ffprobe`; `null` si no hay con qué medirla. */

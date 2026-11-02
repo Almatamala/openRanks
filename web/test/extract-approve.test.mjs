@@ -138,15 +138,61 @@ test("el mismo tramo no se duplica: se avisa y se reutiliza la entrada", async (
   assert.equal(existsSync(dir), false);
 });
 
+test("varias escenas se recortan en tandas y se dan de alta en orden", async () => {
+  const source = path.join(JOBS_DIR, "fuente.mp4");
+  const id = "a2345678-0000-4000-8000-000000000000";
+  const candidates = [
+    { index: 1, start_s: 0.2, end_s: 1.2, duration_s: 1 },
+    { index: 2, start_s: 1.4, end_s: 2.4, duration_s: 1 },
+    { index: 3, start_s: 2.6, end_s: 3.6, duration_s: 1 },
+  ];
+  const dir = job.extractionDir(id);
+  mkdirSync(dir, { recursive: true });
+  copyFileSync(source, path.join(dir, "source.mp4"));
+  writeFileSync(
+    path.join(dir, "job.json"),
+    JSON.stringify({
+      id,
+      state: "done",
+      phase: "Tramos propuestos",
+      progress: 100,
+      download: null,
+      source: { url: SOURCE_URL, platform: "youtube" },
+      error: null,
+      startedAt: null,
+      finishedAt: null,
+      file: { name: "source.mp4", bytes: 1 },
+      limits: { maxMinutes: 60, maxMB: 2048 },
+      verdicts: { 1: "approved", 2: "approved", 3: "approved" },
+    }),
+  );
+  writeFileSync(job.extractDocPath(id), JSON.stringify({ candidates, warnings: [] }));
+
+  const before = readLibrary().length;
+  const result = await approveCandidates(id);
+
+  assert.equal(result.items.length, 3);
+  assert.equal(result.reused, 0);
+  // El alta en el índice va en orden y sin perder ninguna de las tres escrituras.
+  assert.deepEqual(
+    result.items.map((item) => item.name),
+    ["escena-01.mp4", "escena-02.mp4", "escena-03.mp4"],
+  );
+  assert.equal(readLibrary().length, before + 3, "no se pierde ninguna entrada");
+  assert.equal(new Set(result.items.map((item) => item.sha256)).size, 3, "tres cortes distintos");
+  assert.equal(existsSync(dir), false, "el temporal se borra al cerrar");
+});
+
 test("sin tramos aprobados no se toca nada", async () => {
   const source = path.join(JOBS_DIR, "fuente.mp4");
   const id = "92345678-0000-4000-8000-000000000000";
   const dir = reviewedJob(id, source, "pending");
+  const before = readLibrary().length;
 
   await assert.rejects(() => approveCandidates(id), (error) => error.status === 400);
 
   assert.equal(existsSync(dir), true, "el temporal sigue para poder aprobar");
-  assert.equal(readLibrary().length, 1);
+  assert.equal(readLibrary().length, before, "no se da de alta ninguna escena");
   job.cancelExtraction(id);
 });
 

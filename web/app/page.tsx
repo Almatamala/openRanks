@@ -77,6 +77,80 @@ function retitleForCount(title: string, count: number): string {
   return title.replace(/^(\s*top\s*)\d+/i, (_, head: string) => `${head}${count}`);
 }
 
+/**
+ * Barra y reloj del montaje. El tiempo lleva su propio estado para que el segundo que
+ * baja la cuenta no repinte el panel entero: aquí solo se vuelve a dibujar esta pieza,
+ * y el resto del panel cuando llega una consulta nueva del trabajo.
+ */
+const JobProgress = memo(function JobProgress({
+  phase,
+  percent,
+  running,
+  startedAtMs,
+  measured,
+  etaSeconds,
+  state,
+}: {
+  phase: string;
+  percent: number;
+  running: boolean;
+  startedAtMs: number | null;
+  /** Porcentaje medido por el motor; `null` mientras no haya una medida fiable. */
+  measured: number | null;
+  /** Tiempo restante que publica el trabajo, si lo trae. */
+  etaSeconds: number | null;
+  state: Job["state"];
+}) {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [running]);
+
+  const elapsed = startedAtMs === null ? null : Math.max(0, Math.round((tick - startedAtMs) / 1000));
+  const etaFromMeasurement =
+    running && measured !== null && measured > 1 && measured < 100 && startedAtMs !== null
+      ? Math.max(0, ((tick - startedAtMs) / 1000 / measured) * (100 - measured))
+      : null;
+  const eta = etaFromMeasurement ?? (running ? etaSeconds : null);
+
+  return (
+    <>
+      <div className="phase">
+        <span>{phase}</span>
+        <span>{percent}%</span>
+      </div>
+      <div
+        className={`progress ${running && percent < 4 ? "indeterminate" : ""}`}
+        role="progressbar"
+        aria-label="Avance del montaje"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${phase}, ${percent}%${eta !== null ? `, quedan unos ${formatDuration(eta)}` : ""}`}
+      >
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="phase clock">
+        <span>{startedAtMs !== null ? `Lleva ${formatDuration(elapsed ?? 0)}` : ""}</span>
+        <span>
+          {running
+            ? eta !== null
+              ? `Quedan ~${formatDuration(eta)}`
+              : "Calculando el tiempo restante…"
+            : state === "done"
+              ? `Hecho en ${formatDuration(elapsed ?? 0)}`
+              : ""}
+        </span>
+      </div>
+      {running ? (
+        <p className="hint eta">Estimación por lo que ya se ha montado; se ajusta sola.</p>
+      ) : null}
+    </>
+  );
+});
+
 export default function Page() {
   const [section, setSection] = useState<Section>("montar");
   // El menú lateral se puede retraer a una barra para dejar todo el ancho al contenido.
@@ -743,24 +817,11 @@ export default function Page() {
     }
   }, [deletingUsed, job, jobId]);
 
-  // La barra solo se mueve mientras hay trabajo; el reloj va por dentro para que el
-  // tiempo restante baje cada segundo y no solo cuando llega una consulta nueva.
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    if (!running) return;
-    const timer = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [running]);
-
+  // El reloj y el tiempo restante viven en `JobProgress`: aquí solo se calcula lo que
+  // cambia cuando llega una consulta nueva del trabajo.
   const percent = job?.progress ?? 0;
   const startedAtMs = job?.startedAt ? Date.parse(job.startedAt) : null;
-  const elapsed = startedAtMs === null ? null : Math.max(0, Math.round((tick - startedAtMs) / 1000));
   const measured = job?.progressDetail?.percent ?? null;
-  const etaFromMeasurement =
-    running && measured !== null && measured > 1 && measured < 100 && startedAtMs !== null
-      ? Math.max(0, ((tick - startedAtMs) / 1000 / measured) * (100 - measured))
-      : null;
-  const eta = etaFromMeasurement ?? (running ? (job?.etaSeconds ?? null) : null);
 
   const ranking = job?.artifacts.find((artifact) => artifact.path === "ranking.mp4");
   // Unión de los clips preparados, sin el overlay: descarga opcional junto al ranking.
@@ -768,6 +829,11 @@ export default function Page() {
   // Clips de la galería que usó este ranking: los que borra «Borrar videos utilizados».
   const usados = Object.keys(job?.gallery ?? {}).length;
   const fileUrl = (path: string) => `/api/jobs/${job?.id}/files?path=${encodeURIComponent(path)}`;
+
+  // Navegación estable: `Extract` está memorizado, así que estos callbacks no pueden
+  // cambiar de identidad en cada render (el reloj del montaje lo repintaría entero).
+  const abrirGaleria = useCallback(() => setSection("galeria"), []);
+  const galeriaActualizada = useCallback(() => setGalleryEpoch((value) => value + 1), []);
 
   // Móvil con el **render exacto** dentro: es el motor el que dibuja el overlay sobre
   // negro, así que lo que se ve es lo que saldrá en el vídeo. No hay vista «en vivo»:
@@ -857,10 +923,6 @@ export default function Page() {
                 value={positions}
                 disabled={running}
                 onChange={(event) => cambiarPuestos(Number(event.target.value))}
-                style={{
-                  WebkitAppearance: 'none',
-                  outline: 'none',
-                }}
               >
                 {POSITION_CHOICES.map((count) => (
                   <option key={count} value={count}>
@@ -883,6 +945,7 @@ export default function Page() {
                 positions={positions}
                 prepStatus={prep[slot.position]}
                 libraryId={job?.gallery?.[String(slot.position)] ?? null}
+                active={section === "montar"}
                 dragOver={dragSlot === slot.position}
                 dragging={dragFrom === slot.position}
                 dragFrom={dragFrom}
@@ -1002,34 +1065,15 @@ export default function Page() {
 
             {job ? (
               <>
-                <div className="phase">
-                  <span>{job.phase}</span>
-                  <span>{percent}%</span>
-                </div>
-                <div
-                  className={`progress ${running && percent < 4 ? "indeterminate" : ""}`}
-                  role="progressbar"
-                  aria-label="Avance del montaje"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={percent}
-                  aria-valuetext={`${job.phase}, ${percent}%${eta !== null ? `, quedan unos ${formatDuration(eta)}` : ""}`}
-                >
-                  <span style={{ width: `${percent}%` }} />
-                </div>
-                <div className="phase clock">
-                  <span>{startedAtMs !== null ? `Lleva ${formatDuration(elapsed ?? 0)}` : ""}</span>
-                  <span>
-                    {running
-                      ? eta !== null
-                        ? `Quedan ~${formatDuration(eta)}`
-                        : "Calculando el tiempo restante…"
-                      : job.state === "done"
-                        ? `Hecho en ${formatDuration(elapsed ?? 0)}`
-                        : ""}
-                  </span>
-                </div>
-                {running ? <p className="hint eta">Estimación por lo que ya se ha montado; se ajusta sola.</p> : null}
+                <JobProgress
+                  phase={job.phase}
+                  percent={percent}
+                  running={running}
+                  startedAtMs={startedAtMs}
+                  measured={measured}
+                  etaSeconds={job.etaSeconds ?? null}
+                  state={job.state}
+                />
 
                 {job.state === "failed" && job.error ? (
                   <div className="alert error" role="alert">
@@ -1042,7 +1086,17 @@ export default function Page() {
                     <div className="alert ok" role="status">
                       Tu ranking está listo. Se reproduce en 9:16 y ya lleva la edición.
                     </div>
-                    <video key={ranking.path} src={fileUrl(ranking.path)} controls playsInline preload="metadata" />
+                    {/* Con otra pestaña abierta el vídeo final no se monta: solo sonaría y
+                        gastaría decodificador sin que nadie lo esté viendo. */}
+                    {section === "montar" ? (
+                      <video
+                        key={ranking.path}
+                        src={fileUrl(ranking.path)}
+                        controls
+                        playsInline
+                        preload="metadata"
+                      />
+                    ) : null}
                   </>
                 ) : (
                   <p className="hint">
@@ -1115,8 +1169,9 @@ export default function Page() {
 
         <section className="view" hidden={section !== "extraer"} aria-label="Divisor de escenas">
           <Extract
-            onOpenGallery={() => setSection("galeria")}
-            onApproved={() => setGalleryEpoch((value) => value + 1)}
+            onOpenGallery={abrirGaleria}
+            onApproved={galeriaActualizada}
+            active={section === "extraer"}
           />
         </section>
 
@@ -1277,6 +1332,8 @@ interface SlotRowProps {
   dragging: boolean;
   dragFrom: number | null;
   fileInputs: { current: Record<number, HTMLInputElement | null> };
+  /** La sección de montar está a la vista: sin esto, ni miniatura ni vídeo final cargan. */
+  active: boolean;
   onDragSlot: Dispatch<SetStateAction<number | null>>;
   onDragFrom: Dispatch<SetStateAction<number | null>>;
   onPick: (position: number, file: File | null) => void;
@@ -1296,6 +1353,7 @@ const SlotRow = memo(function SlotRow({
   dragging,
   dragFrom,
   fileInputs,
+  active,
   onDragSlot,
   onDragFrom,
   onPick,
@@ -1390,6 +1448,7 @@ const SlotRow = memo(function SlotRow({
                       file={slot.file}
                       libraryId={libraryId}
                       position={slot.position}
+                      active={active}
                     />
                   ) : (
                     <div className="num">#{slot.position}</div>
@@ -1477,10 +1536,13 @@ const SlotThumb = memo(function SlotThumb({
   file,
   libraryId,
   position,
+  active,
 }: {
   file: File | null;
   libraryId: string | null;
   position: number;
+  /** Sección a la vista: el vídeo de la miniatura no se monta mientras está oculta. */
+  active: boolean;
 }) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -1498,7 +1560,7 @@ const SlotThumb = memo(function SlotThumb({
 
   return (
     <div className="slot-thumb">
-      {src ? (
+      {src && active ? (
         <video
           src={src}
           controls

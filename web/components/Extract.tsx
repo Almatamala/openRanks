@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   EMPTY_DECLARATION,
@@ -13,6 +13,7 @@ import {
   type SourceDeclaration,
 } from "@/lib/extract";
 import { extensionOf } from "@/lib/gallery";
+import { formatDuration } from "@/lib/progress";
 
 /** Lo que el panel sabe del descargador (`/api/extract`); nunca su ruta. */
 type Downloader = {
@@ -63,16 +64,139 @@ type Extraction = {
   warnings?: string[];
 };
 
-/** Tiempo de reloj (`m:ss`) para la parrilla de candidatos. */
-function clock(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
-
 /** Duración de un tramo, en segundos y con coma decimal. */
 function durationLabel(seconds: number): string {
   return `${seconds.toFixed(1).replace(".", ",")} s`;
 }
+
+/**
+ * Tarjeta de una escena propuesta. Se memoriza porque la parrilla puede tener decenas de
+ * vídeos: el avance de una descarga, el reloj del montaje o cambiar de pestaña no tienen
+ * por qué reconciliar cada tarjeta. Solo se repinta cuando cambia su tramo o su decisión.
+ */
+const CandidateCard = memo(function CandidateCard({
+  candidate,
+  total,
+  sourceId,
+  active,
+  deciding,
+  busy,
+  playheads,
+  onReview,
+  onSplit,
+  onMerge,
+}: {
+  candidate: Candidate;
+  /** Cuántas escenas hay: la última no ofrece «Unir con la siguiente». */
+  total: number;
+  /** Extracción de la que se sirve el vídeo temporal y su miniatura. */
+  sourceId: string;
+  /** La sección del divisor está a la vista: con la pestaña oculta no se carga el vídeo. */
+  active: boolean;
+  /** Hay un veredicto guardándose: aprobar, descartar y recuperar se bloquean. */
+  deciding: boolean;
+  /** Hay algo en marcha (veredicto o «Aprobar todos»): además dividir y unir. */
+  busy: boolean;
+  /** Último fotograma visto por tarjeta: es el punto de corte de «Dividir». */
+  playheads: { current: Record<string, number> };
+  onReview: (candidate: Candidate, verdict: Candidate["verdict"]) => void;
+  onSplit: (candidate: Candidate) => void;
+  onMerge: (candidate: Candidate) => void;
+}) {
+  return (
+    <li className={`candidate ${candidate.verdict}`}>
+      {/* El tramo se reproduce del propio vídeo temporal, acotado a su ventana:
+          la miniatura del análisis hace de póster y al arrancar salta al inicio. Con la
+          pestaña oculta no se monta: un vídeo por escena no debe vivir de fondo. */}
+      {active ? (
+        <video
+          className="candidate-thumb"
+          src={`/api/extract/${sourceId}/source`}
+          poster={`/api/extract/${sourceId}/thumb?index=${candidate.thumb}`}
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={`Escena ${candidate.index}: reproducir del ${formatDuration(candidate.start)} al ${formatDuration(candidate.end)}`}
+          onLoadedMetadata={(event) => {
+            event.currentTarget.currentTime = candidate.start;
+          }}
+          onPlay={(event) => {
+            const video = event.currentTarget;
+            if (video.currentTime < candidate.start || video.currentTime >= candidate.end) {
+              video.currentTime = candidate.start;
+            }
+          }}
+          onTimeUpdate={(event) => {
+            const video = event.currentTarget;
+            // El fotograma que se está viendo es el punto de corte de «Dividir».
+            playheads.current[candidate.id] = video.currentTime;
+            if (video.currentTime >= candidate.end) video.pause();
+          }}
+          onSeeking={(event) => {
+            // Los controles permiten arrastrar fuera del tramo: se devuelve al inicio.
+            const video = event.currentTarget;
+            if (video.currentTime < candidate.start || video.currentTime > candidate.end) {
+              video.currentTime = candidate.start;
+            }
+          }}
+        />
+      ) : null}
+      <p className="candidate-title">#{candidate.index}</p>
+      <p className="hint candidate-meta">
+        {formatDuration(candidate.start)} – {formatDuration(candidate.end)} · {durationLabel(candidate.duration)}
+      </p>
+      {candidate.duplicateOf !== null ? (
+        <p className="hint candidate-duplicate">
+          Mismo plano que la escena #{candidate.duplicateOf}
+        </p>
+      ) : null}
+      <div className="candidate-actions">
+        <button
+          className="small secondary"
+          type="button"
+          disabled={deciding}
+          aria-pressed={candidate.verdict === "approved"}
+          onClick={() =>
+            onReview(candidate, candidate.verdict === "approved" ? "pending" : "approved")
+          }
+        >
+          {candidate.verdict === "approved" ? "Quitar" : "Aprobar"}
+        </button>
+        <button
+          className="small secondary"
+          type="button"
+          disabled={deciding}
+          aria-pressed={candidate.verdict === "discarded"}
+          onClick={() =>
+            onReview(candidate, candidate.verdict === "discarded" ? "pending" : "discarded")
+          }
+        >
+          {candidate.verdict === "discarded" ? "Recuperar" : "Descartar"}
+        </button>
+        <button
+          className="small secondary"
+          type="button"
+          disabled={busy}
+          title="Divide este tramo en dos por el fotograma donde esté el vídeo"
+          onClick={() => onSplit(candidate)}
+        >
+          Dividir
+        </button>
+        {candidate.index < total ? (
+          <button
+            className="small secondary"
+            type="button"
+            disabled={busy}
+            title="Une este tramo con el siguiente: eran una sola escena"
+            onClick={() => onMerge(candidate)}
+          >
+            Unir con la siguiente
+          </button>
+        ) : null}
+      </div>
+    </li>
+  );
+});
 
 const MODES = [
   { id: "link", label: "Enlace del vídeo" },
@@ -99,12 +223,15 @@ const FILE_MAX_MB = 2048;
  * Las dos entradas acaban en el **área temporal** (`extract/<id>/source.*`), nunca en la
  * galería: solo los tramos aprobados lo harán cuando exista la revisión (P3-4).
  */
-export default function Extract({
+function Extract({
   onOpenGallery,
   onApproved,
+  active,
 }: {
   onOpenGallery: () => void;
   onApproved: () => void;
+  /** La sección del divisor está a la vista: con la pestaña oculta no se cargan vídeos. */
+  active: boolean;
 }) {
   const [mode, setMode] = useState<Mode>("link");
   const [declaration, setDeclaration] = useState<SourceDeclaration>(EMPTY_DECLARATION);
@@ -470,97 +597,19 @@ export default function Extract({
       ))}
       <ul className="candidate-grid">
         {candidates.map((candidate) => (
-          <li key={candidate.id} className={`candidate ${candidate.verdict}`}>
-            {/* El tramo se reproduce del propio vídeo temporal, acotado a su ventana:
-                la miniatura del análisis hace de póster y al arrancar salta al inicio. */}
-            <video
-              className="candidate-thumb"
-              src={`/api/extract/${extraction?.id}/source`}
-              poster={`/api/extract/${extraction?.id}/thumb?index=${candidate.thumb}`}
-              controls
-              playsInline
-              preload="metadata"
-              aria-label={`Escena ${candidate.index}: reproducir del ${clock(candidate.start)} al ${clock(candidate.end)}`}
-              onLoadedMetadata={(event) => {
-                event.currentTarget.currentTime = candidate.start;
-              }}
-              onPlay={(event) => {
-                const video = event.currentTarget;
-                if (video.currentTime < candidate.start || video.currentTime >= candidate.end) {
-                  video.currentTime = candidate.start;
-                }
-              }}
-              onTimeUpdate={(event) => {
-                const video = event.currentTarget;
-                // El fotograma que se está viendo es el punto de corte de «Dividir».
-                playheads.current[candidate.id] = video.currentTime;
-                if (video.currentTime >= candidate.end) video.pause();
-              }}
-              onSeeking={(event) => {
-                // Los controles permiten arrastrar fuera del tramo: se devuelve al inicio.
-                const video = event.currentTarget;
-                if (video.currentTime < candidate.start || video.currentTime > candidate.end) {
-                  video.currentTime = candidate.start;
-                }
-              }}
-            />
-            <p className="candidate-title">#{candidate.index}</p>
-            <p className="hint candidate-meta">
-              {clock(candidate.start)} – {clock(candidate.end)} · {durationLabel(candidate.duration)}
-            </p>
-            {candidate.duplicateOf !== null ? (
-              <p className="hint candidate-duplicate">
-                Mismo plano que la escena #{candidate.duplicateOf}
-              </p>
-            ) : null}
-            <div className="candidate-actions">
-              <button
-                className="small secondary"
-                type="button"
-                disabled={reviewing !== null}
-                aria-pressed={candidate.verdict === "approved"}
-                onClick={() =>
-                  void review(candidate, candidate.verdict === "approved" ? "pending" : "approved")
-                }
-              >
-                {candidate.verdict === "approved" ? "Quitar" : "Aprobar"}
-              </button>
-              <button
-                className="small secondary"
-                type="button"
-                disabled={reviewing !== null}
-                aria-pressed={candidate.verdict === "discarded"}
-                onClick={() =>
-                  void review(
-                    candidate,
-                    candidate.verdict === "discarded" ? "pending" : "discarded",
-                  )
-                }
-              >
-                {candidate.verdict === "discarded" ? "Recuperar" : "Descartar"}
-              </button>
-              <button
-                className="small secondary"
-                type="button"
-                disabled={reviewing !== null || bulkBusy}
-                title="Divide este tramo en dos por el fotograma donde esté el vídeo"
-                onClick={() => void split(candidate)}
-              >
-                Dividir
-              </button>
-              {candidate.index < candidates.length ? (
-                <button
-                  className="small secondary"
-                  type="button"
-                  disabled={reviewing !== null || bulkBusy}
-                  title="Une este tramo con el siguiente: eran una sola escena"
-                  onClick={() => void merge(candidate)}
-                >
-                  Unir con la siguiente
-                </button>
-              ) : null}
-            </div>
-          </li>
+          <CandidateCard
+            key={candidate.id}
+            candidate={candidate}
+            total={candidates.length}
+            sourceId={extraction?.id ?? ""}
+            active={active}
+            deciding={reviewing !== null}
+            busy={reviewing !== null || bulkBusy}
+            playheads={playheads}
+            onReview={review}
+            onSplit={split}
+            onMerge={merge}
+          />
         ))}
       </ul>
       <p className="hint">
@@ -942,3 +991,7 @@ export default function Extract({
     </div>
   );
 }
+
+// El padre repinta por su propio estado (avance, textos, pestañas): sin `memo`, cada
+// render reconstruía la parrilla de escenas aunque no hubiera cambiado nada de ella.
+export default memo(Extract);

@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
-import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { existsSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { cutClip, CutError } from "./cut";
 import { extractionDir, readExtraction } from "./extract-job";
+import { sha256File } from "./hash";
 import {
   addLibraryItem,
   newLibraryFile,
@@ -26,6 +25,12 @@ import { phashOf } from "./phash";
  * fuente y las miniaturas desaparecen: solo ocupan espacio los tramos aprobados.
  */
 
+/**
+ * Escenas que se recortan a la vez. Cada corte es un proceso del motor más FFmpeg: tres
+ * aprovechan la CPU sin ahogar el resto del panel; más solo añaden contención.
+ */
+const APPROVE_CONCURRENCY = 3;
+
 /** Fallo previsto del aterrizaje, con el código HTTP que le toca. */
 export class ApproveError extends Error {
   readonly status: number;
@@ -41,13 +46,6 @@ export interface ApproveResult {
   items: LibraryItem[];
   /** Cuántos ya estaban en la galería y se reutilizaron en vez de duplicar. */
   reused: number;
-}
-
-/** SHA-256 del clip recién recortado, para no duplicar el mismo tramo. */
-async function sha256File(file: string): Promise<string> {
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(file), hash);
-  return hash.digest("hex");
 }
 
 export async function approveCandidates(id: string): Promise<ApproveResult> {
@@ -80,15 +78,43 @@ export async function approveCandidates(id: string): Promise<ApproveResult> {
   const written: string[] = [];
   let reused = 0;
 
-  try {
-    for (const candidate of approved) {
-      const { id: clipId, destination } = newLibraryFile(".mp4");
-      written.push(destination);
-      await cutClip({ engine, source, destination, start: candidate.start, end: candidate.end });
+  // El corte y las huellas son lo caro (motor + FFmpeg por escena): se hacen en paralelo
+  // por tandas. El alta en la galería va después y en orden, porque `addLibraryItem` lee
+  // y reescribe el índice: dos altas simultáneas se pisarían.
+  const prepared: Array<{
+    id: string;
+    candidate: (typeof approved)[number];
+    destination: string;
+    sha256: string;
+    phash: string | null;
+  }> = [];
 
-      const sha256 = await sha256File(destination);
-      // La huella permite marcar planos repetidos aunque el recorte cambie unos bytes.
-      const phash = await phashOf(destination);
+  try {
+    for (let start = 0; start < approved.length; start += APPROVE_CONCURRENCY) {
+      const batch = approved.slice(start, start + APPROVE_CONCURRENCY);
+      const settled = await Promise.allSettled(
+        batch.map(async (candidate) => {
+          const { id, destination } = newLibraryFile(".mp4");
+          written.push(destination);
+          await cutClip({ engine, source, destination, start: candidate.start, end: candidate.end });
+          // La huella permite marcar planos repetidos aunque el recorte cambie unos bytes.
+          const [sha256, phash] = await Promise.all([
+            sha256File(destination),
+            phashOf(destination),
+          ]);
+          return { id, candidate, destination, sha256, phash };
+        }),
+      );
+      // Se espera a toda la tanda antes de limpiar: ningún FFmpeg puede seguir escribiendo
+      // el archivo que se borra.
+      const failure = settled.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+      for (const result of settled) {
+        if (result.status === "fulfilled") prepared.push(result.value);
+      }
+    }
+
+    for (const { id: clipId, candidate, destination, sha256, phash } of prepared) {
       const existing = readLibrary().find((item) => item.sha256 === sha256);
       if (existing) {
         rmSync(destination, { force: true });

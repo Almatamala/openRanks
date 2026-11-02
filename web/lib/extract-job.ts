@@ -149,7 +149,7 @@ export interface ExtractionDeps {
  */
 let active: { id: string; child: ChildProcess | null } | null = null;
 
-export function extractionRoot(): string {
+function extractionRoot(): string {
   return path.join(JOBS_DIR, "extract");
 }
 

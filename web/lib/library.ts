@@ -34,10 +34,6 @@ const INDEX_FILE = path.join(JOBS_DIR, "library.json");
 const LIBRARY_DIR = path.join(JOBS_DIR, "library");
 const ALLOWED = LIBRARY_EXTENSIONS as readonly string[];
 
-export function libraryDir(): string {
-  return LIBRARY_DIR;
-}
-
 /** Identificador seguro: solo `[a-z0-9-]`, así que nunca sale del directorio. */
 export function isSafeLibraryId(id: string): boolean {
   return SAFE_ID_PATTERN.test(id);

@@ -7,7 +7,7 @@
 | **Fecha** | 28-oct-2026 |
 | **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado y verificación) vive en `docs/plan/openRanks-plan.md` |
 | **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
-| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada hasta la Fase 3** (ADR-16, ADR-19); (9) **extractora con fuentes múltiples y casilla de cumplimiento** (ADR-17, ADR-21); (10) **escenas al estilo CapCut, con revisión humana** (ADR-18); (11) **score de viralidad 0-100 y el mejor clip al final (#1)** (ADR-19); (12) **score con Claude Haiku 5.5 y cliente intercambiable** (ADR-20) |
+| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada hasta la Fase 3** (ADR-16, ADR-19); (9) **extractora con fuentes múltiples y casilla de cumplimiento** (ADR-17, ADR-21); (10) **escenas al estilo CapCut, con revisión humana** (ADR-18); (11) **score de viralidad 0-100 y el mejor clip al final (#1)** (ADR-19); (12) **score con Claude Haiku 5.5 y cliente intercambiable** (ADR-20); (13) **divisor manual de escenas en la galería** (ADR-22) |
 
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
@@ -56,8 +56,8 @@ Objetivos de la Fase 2:
 5. **Dejar preparada** la generación automática sin prometer un comportamiento que aún no
    existe.
 
-**Fase 3 — extractora (diseñada, no construida).** El operador pega un enlace (YouTube, TikTok u
-otra plataforma admitida) o elige un archivo local; openRanks detecta los cortes de escena y de
+**Fase 3 — extractora (diseñada, no construida).** El operador pega un enlace (YouTube, TikTok,
+Instagram u otra plataforma admitida) o elige un archivo local; openRanks detecta los cortes de escena y de
 sonido, propone los tramos dentro de la banda del producto y el operador aprueba los que valen.
 Cada clip entra en la **galería actual** con su procedencia, su categoría y un **score de
 viralidad de 0 a 100**. Con esos scores la selección puede ser manual o automática (LLM), y el
@@ -277,11 +277,13 @@ Historias de usuario:
 | Cambiar la categoría con un filtro activo | El clip sigue seleccionado aunque deje de coincidir con el filtro; el contador incluye la selección oculta. |
 | Fallo al importar o preparar | El trabajo muestra el error con acción de reintentar; no se borra nada de la galería y la selección se conserva. |
 | Clip sin categoría | Se agrupa como «Sin categoría» y se puede etiquetar después. |
+| Clip con dos escenas pegadas | El divisor manual lo parte por el fotograma marcado, con precisión de milisegundos: quedan dos clips con la categoría y la procedencia del original y el original se borra. |
+| Punto de corte fuera de los límites | Si una de las dos partes duraría menos de medio segundo, el divisor lo explica y no toca el original. |
 
 ### 5.5 Flujo de la Fase 3 (L3 · Extractora) — diseñado, no activo
 
 1. El operador abre **Extraer clips** (sección nueva del menú lateral, junto a «Montar ranking» y
-   «Galería de videos»), pega el enlace del compilado (YouTube, TikTok u otra plataforma
+   «Galería de videos»),   pega el enlace del compilado (YouTube, TikTok, Instagram u otra plataforma
    admitida) o elige un archivo local.
 2. Marca la **casilla de cumplimiento** que está bajo el enlace: confirma que el material cumple
    los términos de la plataforma y la política de privacidad. Sin marcarla, el botón de extraer
@@ -457,10 +459,18 @@ funciona con teclado y con lector de pantalla.
    consume ni lo bloquea.
 7. **Borrado individual** de un clip de la galería queda como decisión pendiente (§16); en esta
    fase el único borrado definido es el de «Borrar videos utilizados» (RF-14).
+8. **Divisor manual de escenas.** Con un único clip seleccionado, un control abre el divisor:
+   el vídeo se reproduce y una barra marca el punto de corte con precisión de **milisegundos**,
+   mostrando el fotograma mientras se arrastra. Al confirmar, la parte de antes y la de después
+   se guardan como dos clips nuevos con la categoría y la procedencia del original, y el
+   original se borra. Cada mitad debe durar al menos **medio segundo**; si algo falla, la
+   galería y el clip quedan como estaban.
 
 **Criterio de aceptación.** Un clip subido aparece tras recargar la página, conserva su
 categoría, se filtra por ella y desaparece del filtro cuando se borra el último clip de esa
-categoría. La API y la UI no exponen rutas ni ids internos.
+categoría. La API y la UI no exponen rutas ni ids internos. Un clip con dos escenas pegadas se
+parte por el punto exacto: quedan dos clips con su categoría y procedencia y el original
+desaparece.
 
 ### RF-12 — Selección ordenada y generación manual · **Fase 2**
 
@@ -971,6 +981,11 @@ un mismo par texto + preset produce siempre el mismo MP4.
 - **Galería (Fase 2)**: subir solo guarda el original (no normaliza). Listar y filtrar responde
   en ≤ 300 ms con una biblioteca de hasta 200 clips; si crece, la lista se pagina. La selección
   se refleja en ≤ 100 ms y el máximo de 10 se aplica también en el servidor, no solo en la UI.
+- **Panel y galería (2-nov-2026)**: el reloj del montaje se refresca en su propio componente,
+  las pestañas ocultas no mantienen reproductores de vídeo y la aprobación de escenas recorta
+  en tandas de tres antes de dar de alta los clips en orden.
+- **Entrega de originales**: los archivos de la galería se sirven con `ETag` y `Last-Modified`
+  y responden `304` cuando el clip no cambió; el arrastre del vídeo sigue usando `Range` (206).
 
 ### 10.2 Fiabilidad
 
@@ -1052,7 +1067,7 @@ el panel reconstruye el estado desde el servidor, no desde el cliente.
 | R11 | **La plataforma bloquea la descarga o `yt-dlp` se queda viejo** | Medio: una extracción falla | Versión mínima de la herramienta, error accionable con la orden de actualización y prueba de humo con una URL por plataforma |
 | R12 | **Score de viralidad engañoso** | Medio: se elige un clip flojo | Set dorado con orden humano y correlación mínima (RF-18), razones visibles y revisión humana antes de montar (RF-19) |
 | R13 | **Coste o latencia del LLM** | Medio: el flujo se encarece o espera | Score heurístico local como base, llamadas en lote con tope por trabajo, caché por hash de clip y degradación a heurístico si falla |
-| R14 | **Escenas mal cortadas** (fundidos, destellos, planos muy cortos) | Medio: candidatos inútiles | Banda 1-30 s con fusión y partición, corte exacto en el fotograma del cambio de imagen y revisión con miniaturas, con dividir/unir en la parrilla (ADR-18) |
+| R14 | **Escenas mal cortadas** (fundidos, destellos, planos muy cortos) | Medio: candidatos inútiles | Banda 1-30 s con fusión y partición, corte exacto en el fotograma del cambio de imagen y revisión con miniaturas, con dividir/unir en la parrilla y divisor manual en la galería (ADR-18, ADR-22) |
 
 ---
 
@@ -1078,8 +1093,8 @@ capa.
 | ADR-18 | **Segmentación por escenas y movimiento (como el «Split scenes» de CapCut), con revisión humana**: el sistema propone tramos dentro de la banda 1-30 s y el operador aprueba los que entran en la galería | Decisión del operador (28-oct-2026). CapCut demuestra que cortar por plano ahorra el trabajo manual, pero un compilado ajeno tiene planos que no valen: proponer y aprobar conserva la comodidad sin publicar relleno. La segunda señal de audio cubre lo que la imagen no ve (fundidos, reacciones) |
 | ADR-19 | **Score de viralidad 0-100 por clip y orden con el mejor al final**: selección manual o automática con el score a la vista; el vídeo abre con el clip más flojo y cierra con el mejor, que es el #1. Activa «Generar automático» cuando exista la Fase 3 | Decisión del operador (28-oct-2026). El cierre con el mejor clip es lo que retiene hasta el final, aunque el orden parezca contraintuitivo (mejor = último). El score hace comparables los clips entre trabajos y da al camino automático un criterio explícito: resuelve la pregunta abierta 10 de §16 y da contenido al botón de RF-15 |
 | ADR-20 | **Proveedor del score: Claude Haiku 5.5 por defecto, con cliente intercambiable** por entorno (`OPENRANKS_LLM_MODEL`, `OPENRANKS_LLM_BASE_URL`, `OPENRANKS_LLM_API_KEY`) y tope de 0,02 USD por trabajo | Decisión del operador (28-oct-2026), con precios de lista del 28-oct-2026 (§7.9). El score es una tarea de clasificación y extracción sobre una imagen, y Haiku 5.5 la cubre a 0,0011 USD por trabajo de 10 clips, por debajo de Gemini 3.8 Flash (0,0083), GLM-5V-Turbo (0,0108) y GPT-6.1 Terra (0,0110). El cliente configurable evita atarse a un proveedor: el set dorado (Spearman ≥ 0,6, p95 < 20 s) decide si hay que cambiar a GPT-6 Luna o Gemini 3.8 Flash |
-
 | ADR-21 | **La entrada de la extractora pide una sola casilla de cumplimiento** (términos de la plataforma y política de privacidad) en vez de autor, fecha y licencia; la procedencia que se guarda es la que no hay que teclear: plataforma y URL | Decisión del operador (28-oct-2026). Tres campos por extracción frenaban el flujo sin aportar un dato que el sistema no sepa ya; la casilla deja el cumplimiento en el operador y la procedencia en un dato automático. §11.7 se sigue exigiendo: sin la casilla no se descarga |
+| ADR-22 | **Divisor manual de escenas en la galería**: un clip con dos escenas pegadas se parte por un punto que marca el operador, con precisión de milisegundos; las dos mitades lo sustituyen y conservan categoría y procedencia | Decisión del operador (2-nov-2026). El detector automático no siempre separa dos planos que viven en el mismo archivo, y volver a subir el clip por separado rompe el flujo de la galería. Cortar por tiempo es exacto y previsible, y no compite con la segmentación automática de la Fase 3 (ADR-18): la corrige cuando hace falta |
 
 ---
 

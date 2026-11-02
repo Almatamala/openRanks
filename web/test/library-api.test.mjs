@@ -15,6 +15,7 @@ process.env.OPENRANKS_JOBS_DIR = JOBS_DIR;
 // Se importan **después** de fijar el directorio: `paths.ts` lo lee al cargarse.
 const { GET, POST } = await import("../app/api/library/route.ts");
 const { PATCH, DELETE } = await import("../app/api/library/[id]/route.ts");
+const { GET: GET_FILE } = await import("../app/api/library/[id]/file/route.ts");
 
 const BASE = "http://panel.local/api/library";
 
@@ -190,4 +191,29 @@ test("borrar quita la entrada del índice y el original del disco", async () => 
 
   const again = await DELETE(new Request(`${BASE}/${item.id}`, { method: "DELETE" }), params(item.id));
   assert.equal(again.status, 404);
+});
+
+test("el original se sirve con ETag y responde 304 mientras no cambie", async () => {
+  const { payload } = await listing();
+  const item = payload.items[0];
+  const url = `${BASE}/${item.id}/file`;
+
+  const first = await GET_FILE(new Request(url), params(item.id));
+  assert.equal(first.status, 200);
+  const etag = first.headers.get("etag");
+  assert.ok(etag, "sin ETag el navegador no puede revalidar");
+
+  const revalidated = await GET_FILE(
+    new Request(url, { headers: { "If-None-Match": etag } }),
+    params(item.id),
+  );
+  assert.equal(revalidated.status, 304, "un clip sin cambios no se vuelve a bajar");
+  assert.equal(revalidated.headers.get("etag"), etag);
+
+  // El 304 no puede romper el arrastre del vídeo: los rangos siguen funcionando.
+  const range = await GET_FILE(
+    new Request(url, { headers: { Range: "bytes=0-0" } }),
+    params(item.id),
+  );
+  assert.equal(range.status, 206);
 });
