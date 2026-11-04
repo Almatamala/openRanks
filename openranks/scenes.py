@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -46,6 +48,16 @@ THUMBNAILS_DIR = "candidates"
 MIN_CANDIDATES = 5
 # Lado de la muestra con la que se calcula la huella perceptual: 32×32 en gris.
 HASH_SIZE = 32
+# Ancho al que se mira el vídeo durante la detección. Los filtros (`scdet`, `signalstats`,
+# `blackdetect`) recorren todos los píxeles de cada fotograma: en 1080p son ~2 millones por
+# fotograma y la pasada se lleva casi todo el tiempo del divisor. Un cambio de plano se ve
+# igual de bien en 480 px de ancho, así que se mira la muestra reducida y la pasada baja de
+# minutos a segundos. Nunca se amplía una fuente más pequeña que esto.
+ANALYSIS_WIDTH = 480
+# Tramos que se muestrean a la vez (miniatura + huella). Cada uno es un FFmpeg que abre la
+# fuente y busca su fotograma; con varios a la vez, una parrilla de cien escenas deja de
+# tardar minutos en tener sus miniaturas.
+MAX_SAMPLERS = 8
 
 # `metadata=mode=print` saca una cabecera con el tiempo del fotograma y, debajo, una línea
 # `clave=valor` por cada clave pedida. Las líneas propias de `scdet` usan dos puntos
@@ -215,8 +227,13 @@ def analysis_argv(ffmpeg: str, source: Path, thresholds: Thresholds) -> list[str
     `scdet` deja el score de **cada** fotograma en metadatos (el umbral se decide después),
     `signalstats` la luminancia media (fundidos) y `blackdetect` los negros. Nada de audio:
     `-an`, sin subtítulos ni datos, y sin reordenar fotogramas (`sort`/`passthrough`).
+
+    Los filtros van sobre una muestra reducida a `ANALYSIS_WIDTH` de ancho: es lo que hace
+    que la pasada tarde segundos y no minutos, sin cambiar qué es un corte (el `scdet` se
+    lee igual en 480 px).
     """
     video_filter = (
+        f"scale='min({ANALYSIS_WIDTH},iw)':-2,"
         f"blackdetect=d={thresholds.black_min_s}:pix_th=0.10,"
         "scdet,"
         "metadata=mode=print:key=lavfi.scd.score,"
@@ -289,6 +306,68 @@ def hash_argv(ffmpeg: str, source: Path, at_s: float) -> list[str]:
         "rawvideo",
         "-",
     ]
+
+
+def sample_argv(ffmpeg: str, source: Path, at_s: float, thumbnail: Path) -> list[str]:
+    """Miniatura **y** fotograma de la huella en una sola pasada: un proceso por tramo.
+
+    El fotograma se parte con `split`: una rama se queda en la miniatura de 480 px y la otra
+    en los 1.024 bytes de la huella, que salen por stdout. Antes eran dos FFmpeg por tramo
+    (dos aperturas, dos búsquedas), y con decenas de escenas eso se notaba.
+    """
+    return [
+        ffmpeg,
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        f"{max(0.0, at_s):.3f}",
+        "-i",
+        str(source),
+        "-filter_complex",
+        (
+            "[0:v]split=2[thumb][hash];"
+            "[thumb]scale=480:-2[jpeg];"
+            f"[hash]scale={HASH_SIZE}:{HASH_SIZE}:flags=area,format=gray[raw]"
+        ),
+        "-map",
+        "[jpeg]",
+        "-frames:v",
+        "1",
+        "-q:v",
+        "4",
+        str(thumbnail),
+        "-map",
+        "[raw]",
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-",
+    ]
+
+
+def sample_at(ffmpeg_bin: str, source: Path, at_s: float, thumbnail: Path) -> str | None:
+    """Deja la miniatura del tramo y devuelve la huella de su fotograma central.
+
+    Ni la miniatura ni la huella pueden tumbar el análisis: si la pasada combinada falla se
+    reintenta a la manera antigua (miniatura y después huella) y, si aun así no hay huella,
+    el tramo se propone igual, sin la marca de plano repetido.
+    """
+    try:
+        completed = run_bytes(sample_argv(ffmpeg_bin, source, at_s, thumbnail), timeout_s=300)
+    except ToolError:
+        completed = None
+    if completed is not None and completed.returncode == 0:
+        return phash(completed.stdout or b"")
+
+    try:
+        run(thumbnail_argv(ffmpeg_bin, source, at_s, thumbnail), timeout_s=300)
+    except ToolError:
+        return None
+    return phash_at(ffmpeg_bin, source, at_s)
 
 
 def phash_at(ffmpeg_bin: str, source: Path, at_s: float) -> str | None:
@@ -399,19 +478,26 @@ def analyze(
     target.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target / THUMBNAILS_DIR, ignore_errors=True)
     (target / THUMBNAILS_DIR).mkdir(parents=True, exist_ok=True)
-    for index, segment in enumerate(candidates, start=1):
-        thumbnail = target / THUMBNAILS_DIR / f"{index:02d}.jpg"
-        run(
-            thumbnail_argv(ffmpeg_bin, source_path, segment.start_s + segment.duration_s / 2, thumbnail),
-            timeout_s=300,
-        )
 
-    # El fotograma central de cada tramo deja su huella: dos escenas que repiten el mismo
-    # plano se avisan, pero no se descartan solas (el operador decide cuál se queda).
-    hashes = tuple(
-        phash_at(ffmpeg_bin, source_path, segment.start_s + segment.duration_s / 2)
-        for segment in candidates
-    )
+    # Una miniatura y una huella por tramo, en un solo FFmpeg y varios tramos a la vez. El
+    # resultado se recoge **en el orden de la parrilla**, así que `extract.json` es el mismo
+    # que dejaría una pasada secuencial.
+    samples = [
+        (
+            segment.start_s + segment.duration_s / 2,
+            target / THUMBNAILS_DIR / f"{index:02d}.jpg",
+        )
+        for index, segment in enumerate(candidates, start=1)
+    ]
+    workers = max(1, min(MAX_SAMPLERS, os.cpu_count() or 1))
+    say(f"Miniaturas y huellas de {len(samples)} tramos")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # El fotograma central de cada tramo deja su huella: dos escenas que repiten el
+        # mismo plano se avisan, pero no se descartan solas (el operador decide cuál se
+        # queda).
+        hashes = tuple(
+            pool.map(lambda sample: sample_at(ffmpeg_bin, source_path, sample[0], sample[1]), samples)
+        )
     duplicates = tuple(duplicates_of(hashes))
     repeated = [index for index, duplicate in enumerate(duplicates, start=1) if duplicate is not None]
     if repeated:

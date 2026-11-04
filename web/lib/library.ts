@@ -21,6 +21,8 @@ export {
   filterItems,
   LIBRARY_EXTENSIONS,
   LIBRARY_MAX_BYTES,
+  MERGE_MAX,
+  MERGE_MIN,
   normalizeCategory,
   type LibraryItem,
 } from "./gallery";
@@ -67,15 +69,8 @@ function isLibraryItem(value: unknown): value is LibraryItem {
     Number.isFinite(item.bytes) &&
     item.bytes >= 0 &&
     (item.category === null || typeof item.category === "string") &&
-    typeof item.addedAt === "string" &&
-    // Procedencia, duración y hash son opcionales (los clips subidos a mano no los
-    // tienen); si vienen, tienen que ser válidos.
-    (item.source === undefined ||
-      item.source === null ||
-      (typeof item.source === "object" &&
-        typeof (item.source as { url?: unknown }).url === "string" &&
-        ((item.source as { platform?: unknown }).platform === null ||
-          typeof (item.source as { platform?: unknown }).platform === "string"))) &&
+    // Duración y hash son opcionales (los clips subidos a mano no los tienen); si vienen,
+    // tienen que ser válidos.
     (item.duration_s === undefined ||
       item.duration_s === null ||
       (typeof item.duration_s === "number" &&
@@ -91,6 +86,23 @@ function isLibraryItem(value: unknown): value is LibraryItem {
 }
 
 /**
+ * Solo los campos del contrato. Un índice viejo puede traer campos que ya no existen: se
+ * descartan al leer, así la API nunca los devuelve.
+ */
+function normalizeItem(item: LibraryItem): LibraryItem {
+  return {
+    id: item.id,
+    name: item.name,
+    ext: item.ext,
+    bytes: item.bytes,
+    category: item.category,
+    ...(typeof item.duration_s === "number" ? { duration_s: item.duration_s } : {}),
+    ...(item.sha256 ? { sha256: item.sha256 } : {}),
+    ...(item.phash ? { phash: item.phash } : {}),
+  };
+}
+
+/**
  * Lee el índice. Un `library.json` corrupto no puede dejar el panel sin galería: se
  * devuelve vacío (los archivos de `library/` siguen ahí) en vez de reventar la API.
  */
@@ -99,7 +111,7 @@ export function readLibrary(): LibraryItem[] {
   try {
     const parsed = JSON.parse(readFileSync(INDEX_FILE, "utf-8")) as Partial<LibraryIndex>;
     if (!Array.isArray(parsed.items)) return [];
-    return parsed.items.filter(isLibraryItem);
+    return parsed.items.filter(isLibraryItem).map(normalizeItem);
   } catch {
     return [];
   }
@@ -111,10 +123,15 @@ function writeLibrary(items: LibraryItem[]): void {
   writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2), "utf-8");
 }
 
-/** Índice completo, de lo más reciente a lo más antiguo. */
+/**
+ * Orden base de la galería: por nombre y sin distinguir mayúsculas, con los números en su
+ * sitio (`escena-2` va antes que `escena-10`). El id desempata para que el orden sea estable.
+ */
 function sortedLibrary(): LibraryItem[] {
   return readLibrary().sort(
-    (left, right) => right.addedAt.localeCompare(left.addedAt) || right.id.localeCompare(left.id),
+    (left, right) =>
+      left.name.localeCompare(right.name, "es", { numeric: true, sensitivity: "base" }) ||
+      left.id.localeCompare(right.id),
   );
 }
 
@@ -151,8 +168,6 @@ export function addLibraryItem(input: {
   ext: string;
   bytes: number;
   category?: string | null;
-  /** Procedencia de un tramo extraído (plataforma y URL). */
-  source?: { url: string; platform: string | null } | null;
   duration_s?: number | null;
   sha256?: string | null;
   phash?: string | null;
@@ -163,11 +178,7 @@ export function addLibraryItem(input: {
     ext: input.ext,
     bytes: input.bytes,
     category: normalizeCategory(input.category ?? null),
-    addedAt: new Date().toISOString(),
     // Solo se escriben cuando existen: el contrato de los clips subidos a mano no cambia.
-    ...(input.source
-      ? { source: { url: input.source.url, platform: input.source.platform ?? null } }
-      : {}),
     ...(typeof input.duration_s === "number" ? { duration_s: input.duration_s } : {}),
     ...(input.sha256 ? { sha256: input.sha256 } : {}),
     ...(input.phash ? { phash: input.phash } : {}),

@@ -90,7 +90,6 @@ async function registerPart(
     ext: origin.ext,
     bytes: statSync(reserved.destination).size,
     category: origin.category,
-    source: origin.source ?? null,
     duration_s: Math.round(seconds * 1000) / 1000,
     sha256,
     phash,

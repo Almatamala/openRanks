@@ -1,4 +1,5 @@
 import { existsSync, rmSync, statSync } from "node:fs";
+import { cpus } from "node:os";
 import path from "node:path";
 
 import { cutClip, CutError } from "./cut";
@@ -26,10 +27,11 @@ import { phashOf } from "./phash";
  */
 
 /**
- * Escenas que se recortan a la vez. Cada corte es un proceso del motor más FFmpeg: tres
- * aprovechan la CPU sin ahogar el resto del panel; más solo añaden contención.
+ * Escenas que se recortan a la vez. Cada corte es un proceso del motor más FFmpeg: uno por
+ * núcleo deja la CPU llena sin ahogar el resto del panel, y es lo que hace que diez escenas
+ * aprobadas no tarden minutos en aparecer en la galería.
  */
-const APPROVE_CONCURRENCY = 3;
+const APPROVE_CONCURRENCY = Math.max(2, Math.min(6, (cpus().length || 4) - 1));
 
 /** Fallo previsto del aterrizaje, con el código HTTP que le toca. */
 export class ApproveError extends Error {
@@ -48,7 +50,12 @@ export interface ApproveResult {
   reused: number;
 }
 
-export async function approveCandidates(id: string): Promise<ApproveResult> {
+export async function approveCandidates(
+  id: string,
+  /** Categoría para **todas** las escenas que entren; vacía es «Sin categoría». */
+  category?: unknown,
+): Promise<ApproveResult> {
+  const sharedCategory = normalizeCategory(category);
   const status = readExtraction(id);
   if (!status) throw new ApproveError("Esa extracción ya no existe.", 404);
   if (status.state !== "done" || !status.candidates) {
@@ -98,9 +105,11 @@ export async function approveCandidates(id: string): Promise<ApproveResult> {
           written.push(destination);
           await cutClip({ engine, source, destination, start: candidate.start, end: candidate.end });
           // La huella permite marcar planos repetidos aunque el recorte cambie unos bytes.
+          // El análisis ya midió **el mismo** fotograma con el mismo algoritmo, así que se
+          // reaprovecha: un tramo dividido o unido no la heredó y se calcula aquí.
           const [sha256, phash] = await Promise.all([
             sha256File(destination),
-            phashOf(destination),
+            candidate.phash ? Promise.resolve(candidate.phash) : phashOf(destination),
           ]);
           return { id, candidate, destination, sha256, phash };
         }),
@@ -128,8 +137,7 @@ export async function approveCandidates(id: string): Promise<ApproveResult> {
         name: `escena-${String(candidate.index).padStart(2, "0")}.mp4`,
         ext: ".mp4",
         bytes: statSync(destination).size,
-        category: normalizeCategory(null),
-        source: status.source,
+        category: sharedCategory,
         duration_s: candidate.duration,
         sha256,
         phash,

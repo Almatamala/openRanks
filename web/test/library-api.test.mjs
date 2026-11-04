@@ -52,14 +52,7 @@ test("subir un clip devuelve 201 y el índice sin rutas del host", async () => {
   const json = JSON.stringify(payload);
   assert.equal(json.includes(JOBS_DIR), false);
   assert.equal(json.includes("library/"), false);
-  assert.deepEqual(Object.keys(payload.item).sort(), [
-    "addedAt",
-    "bytes",
-    "category",
-    "ext",
-    "id",
-    "name",
-  ]);
+  assert.deepEqual(Object.keys(payload.item).sort(), ["bytes", "category", "ext", "id", "name"]);
 });
 
 test("un formato no permitido falla con un error legible", async () => {
@@ -89,8 +82,11 @@ test("listar y filtrar por categoría, incluida «Sin categoría»", async () =>
   const all = await listing();
   assert.equal(all.response.status, 200);
   assert.equal(all.payload.items.length, 2);
-  // Lo más reciente primero.
-  assert.equal(all.payload.items[0].name, "perros.mp4");
+  // Orden base: por nombre, no por cuándo llegó.
+  assert.deepEqual(
+    all.payload.items.map((item) => item.name),
+    ["gatos graciosos.mp4", "perros.mp4"],
+  );
   assert.equal(all.payload.categories.includes("Gatos"), true);
 
   const gatos = await listing("?category=Gatos");

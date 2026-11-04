@@ -14,6 +14,7 @@ import {
 } from "@/lib/extract";
 import { extensionOf } from "@/lib/gallery";
 import { formatDuration } from "@/lib/progress";
+import CategoryPicker from "@/components/CategoryPicker";
 
 /** Lo que el panel sabe del descargador (`/api/extract`); nunca su ruta. */
 type Downloader = {
@@ -249,6 +250,10 @@ function Extract({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approvedMessage, setApprovedMessage] = useState<string | null>(null);
+  // Categoría de las escenas que entren en la galería: una sola para todas, y las que ya
+  // existen se ofrecen para no reescribirlas a mano.
+  const [category, setCategory] = useState("");
+  const [knownCategories, setKnownCategories] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement | null>(null);
   // Último fotograma de cada tramo: es donde «Dividir» corta el vídeo.
   const playheads = useRef<Record<string, number>>({});
@@ -415,6 +420,30 @@ function Extract({
     return () => clearInterval(timer);
   }, [liveId, track]);
 
+  // Con escenas que revisar se ofrecen las categorías que ya usa la galería. Si no se
+  // pueden leer, el campo sigue siendo de texto libre.
+  const hasCandidates = (extraction?.candidates?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!hasCandidates) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/library", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as { categories?: unknown };
+        if (cancelled || !Array.isArray(data.categories)) return;
+        setKnownCategories(
+          data.categories.filter((value): value is string => typeof value === "string"),
+        );
+      } catch {
+        // Sin categorías guardadas se escribe una nueva a mano.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCandidates]);
+
   const discard = useCallback(async () => {
     if (!extraction) return;
     const id = extraction.id;
@@ -535,7 +564,11 @@ function Extract({
     setApproving(true);
     setActionError(null);
     try {
-      const response = await fetch(`/api/extract/${extraction.id}/approve`, { method: "POST" });
+      const response = await fetch(`/api/extract/${extraction.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category }),
+      });
       const payload = (await response.json().catch(() => null)) as {
         items?: unknown[];
         reused?: number;
@@ -556,6 +589,7 @@ function Extract({
       );
       setExtraction(null);
       setFile(null);
+      setCategory("");
       onApproved();
     } catch (failure) {
       setActionError(
@@ -566,7 +600,7 @@ function Extract({
     } finally {
       setApproving(false);
     }
-  }, [approving, extraction, onApproved]);
+  }, [approving, category, extraction, onApproved]);
 
   const detail = extraction?.download;
   const progressDetail = [
@@ -612,10 +646,21 @@ function Extract({
           />
         ))}
       </ul>
-      <p className="hint">
-        Las escenas aprobadas se recortan del temporal y entran en la galería; al cerrar la
-        revisión el vídeo original se borra. Si un corte salió mal, «Dividir» parte el tramo por
-        el fotograma que estés viendo y «Unir con la siguiente» pega dos que eran una escena.
+      {/* Una categoría para todas las escenas: entran ya etiquetadas en la galería. */}
+      <label className="field" htmlFor="extract-category">
+        Categoría de los clips
+      </label>
+      <CategoryPicker
+        id="extract-category"
+        value={category}
+        categories={knownCategories}
+        onChange={setCategory}
+        ariaLabel="Categoría de los clips que entren en la galería"
+        disabled={approving}
+        removeLabel="Sin categoría"
+      />
+      <p className="hint extract-note" id="extract-category-note">
+        Se aplica a todas las escenas que entren en la galería; vacía es «Sin categoría».
       </p>
       <div className="actions">
         <a

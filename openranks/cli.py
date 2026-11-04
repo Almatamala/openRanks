@@ -133,6 +133,27 @@ def _build_parser() -> argparse.ArgumentParser:
     cut_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
     cut_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
 
+    merge_cmd = subparsers.add_parser(
+        "merge",
+        help="pega de 2 a 4 clips de la galería en uno solo, en el orden dado",
+    )
+    merge_cmd.add_argument(
+        "--input",
+        action="append",
+        required=True,
+        help="clip de entrada (repetible; el orden de las opciones es el del resultado)",
+    )
+    merge_cmd.add_argument("--out", required=True, help="archivo del clip fusionado")
+    merge_cmd.add_argument(
+        "--preview",
+        action="store_true",
+        help="versión reducida y rápida para la vista previa del panel",
+    )
+    merge_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    merge_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    merge_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+    merge_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
     render_cmd = subparsers.add_parser(
         "render",
         help="L2 solo: re-compone la edición sobre un union.mp4 ya ensamblado (segundos, no minutos)",
@@ -242,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         "analyze": _run_analyze,
         "phash": _run_phash,
         "cut": _run_cut,
+        "merge": _run_merge,
         "render": _run_render,
         "prepare": _run_prepare,
         "join": _run_join,
@@ -449,6 +471,35 @@ def _run_cut(args: argparse.Namespace) -> int:
         print(
             f"OK {result.output.name} "
             f"({result.start_s:.1f}s - {result.end_s:.1f}s, {result.duration_s:.2f}s)"
+        )
+    return EXIT_OK
+
+
+def _run_merge(args: argparse.Namespace) -> int:
+    """Fusión de la galería: pega los clips en el orden en que llegan."""
+    from .merge import MergeError, merge_clips
+
+    try:
+        result = merge_clips(
+            args.input,
+            args.out,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            preview=bool(getattr(args, "preview", False)),
+        )
+    except MergeError as exc:
+        print(f"fallo la fusión: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except (ToolError, ToolNotFound) as exc:
+        print(f"fallo la fusión: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+
+    if args.json:
+        print(json.dumps(result.to_manifest(), indent=2, ensure_ascii=False))
+    else:
+        print(
+            f"OK {result.output.name} "
+            f"({len(result.inputs)} clips, {result.info.usable_duration_s:.2f}s)"
         )
     return EXIT_OK
 

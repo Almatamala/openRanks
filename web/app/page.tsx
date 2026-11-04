@@ -153,6 +153,28 @@ const JobProgress = memo(function JobProgress({
 
 export default function Page() {
   const [section, setSection] = useState<Section>("montar");
+
+  // Un `<select>` conserva el foco después de elegir con el ratón y su anillo se queda
+  // encendido. Se suelta el foco al terminar esa elección; con teclado no se toca, para
+  // poder seguir moviéndose entre opciones.
+  useEffect(() => {
+    let picked: HTMLSelectElement | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      picked = event.target instanceof HTMLSelectElement ? event.target : null;
+    };
+    const onChange = (event: Event) => {
+      if (picked && event.target === picked) {
+        picked.blur();
+        picked = null;
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("change", onChange, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("change", onChange, true);
+    };
+  }, []);
   // El menú lateral se puede retraer a una barra para dejar todo el ancho al contenido.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [positions, setPositions] = useState(POSITIONS_MIN);

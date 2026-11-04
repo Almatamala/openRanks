@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { formatDuration } from "@/lib/progress";
+import CategoryPicker from "@/components/CategoryPicker";
 import {
   canGenerate,
   canSelect,
@@ -11,6 +12,8 @@ import {
   filterItems,
   LIBRARY_EXTENSIONS,
   LIBRARY_MAX_BYTES,
+  MERGE_MAX,
+  MERGE_MIN,
   missingForGeneration,
   normalizeCategory,
   SELECTION_MAX,
@@ -105,6 +108,21 @@ function Gallery({
   // encolar un salto por cada evento y quedarse congelada hasta soltar.
   const splitPreview = useRef(0);
   const splitSeeking = useRef(false);
+  // Fusión: los clips elegidos, en el orden del vídeo resultante, y la vista previa ya
+  // montada que enseña cómo queda el clip unido.
+  const [mergeIds, setMergeIds] = useState<string[] | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  // Duración medida en el navegador para los clips que no la traen del índice: así el
+  // diálogo enseña su tiempo y su parte del ancho sin esperar a que el motor los mida.
+  const [measuredDurations, setMeasuredDurations] = useState<Record<string, number>>({});
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  // Arrastrar una fila para reordenar: qué fila se arrastra y sobre cuál va a caer.
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const mergeVideo = useRef<HTMLVideoElement | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -114,6 +132,14 @@ function Gallery({
   const toggleItem = useCallback((id: string) => {
     setSelected((current) => toggleSelection(current, id));
   }, []);
+
+  // El tope se aplica también al **estado** y no solo al clic: con más de diez la selección
+  // no vale para un ranking, así que «Generar manual» se deshabilitaba sin decir por qué.
+  useEffect(() => {
+    setSelected((current) =>
+      current.length > SELECTION_MAX ? current.slice(0, SELECTION_MAX) : current,
+    );
+  }, [selected]);
 
   const load = useCallback(async () => {
     try {
@@ -397,9 +423,145 @@ function Gallery({
     }
   }, [closeSplit, load, splitAt, splitBusy, splitTarget]);
 
+  // Fusión de 2 a 4 clips: abre el diálogo con el orden de selección. El orden se cambia
+  // dentro, así que seleccionar no obliga a acertar a la primera.
+  const openMerge = useCallback(() => {
+    if (selected.length < MERGE_MIN || selected.length > MERGE_MAX) return;
+    setMergeError(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+    setMergeIds([...selected]);
+  }, [selected]);
+
+  const closeMerge = useCallback(() => {
+    mergeVideo.current?.pause();
+    setMergeIds(null);
+    setMergeError(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  /** Mueve un clip en la cronología: la vista previa se vuelve a montar con ese orden. */
+  const moveMerge = useCallback((from: number, to: number) => {
+    setMergeIds((current) => {
+      if (!current || to < 0 || to >= current.length) return current;
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
+  // La vista previa es el clip **ya unido** (el motor lo monta reducido y rápido), no la
+  // lista de clips: así se ve el resultado real antes de confirmar. Se espera un poco para
+  // no lanzar un montaje por cada flecha que se pulsa.
+  useEffect(() => {
+    if (!mergeIds || mergeIds.length < MERGE_MIN) return;
+    let cancelled = false;
+    setPreviewBusy(true);
+    setPreviewError(null);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch("/api/library/merge/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: mergeIds }),
+          });
+          const payload = (await response.json().catch(() => null)) as {
+            url?: string;
+            error?: string;
+          } | null;
+          if (!response.ok || !payload?.url) {
+            throw new Error(payload?.error ?? "No se pudo preparar la vista previa.");
+          }
+          if (!cancelled) setPreviewUrl(payload.url);
+        } catch (failure) {
+          if (!cancelled) {
+            setPreviewError(
+              failure instanceof Error ? failure.message : "No se pudo preparar la vista previa.",
+            );
+          }
+        } finally {
+          if (!cancelled) setPreviewBusy(false);
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mergeIds]);
+
+  const confirmMerge = useCallback(async () => {
+    if (!mergeIds || mergeBusy) return;
+    setMergeBusy(true);
+    setMergeError(null);
+    try {
+      const response = await fetch("/api/library/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: mergeIds }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error ?? "No se pudieron fusionar los clips.");
+      mergeVideo.current?.pause();
+      setMergeIds(null);
+      setPreviewUrl(null);
+      setSelected([]);
+      await load();
+    } catch (failure) {
+      setMergeError(
+        failure instanceof Error ? failure.message : "No se pudieron fusionar los clips.",
+      );
+    } finally {
+      setMergeBusy(false);
+    }
+  }, [load, mergeBusy, mergeIds]);
+
   // El divisor trabaja con **un** clip: el único seleccionado.
   const splitCandidate =
     selected.length === 1 && items ? (items.find((item) => item.id === selected[0]) ?? null) : null;
+
+  // La cronología del diálogo de fusión, en el orden que se haya dejado.
+  const mergeItems: LibraryItem[] =
+    mergeIds && items
+      ? mergeIds
+          .map((id) => items.find((item) => item.id === id))
+          .filter((item): item is LibraryItem => item !== undefined)
+      : [];
+  const mergeSeconds = (item: LibraryItem) =>
+    Math.max(item.duration_s ?? measuredDurations[item.id] ?? 0, 0);
+  // El ancho de cada tramo es su parte del tiempo final. Muchos clips de la galería no
+  // traen la duración medida: si pesaran 0,1 s el botón quedaría en una astilla y la fila
+  // dejaría de repartir todo el ancho. Entran con la media de los que sí la tienen.
+  const mergeKnown = mergeItems.map(mergeSeconds).filter((seconds) => seconds > 0);
+  const mergeFallback =
+    mergeKnown.length > 0
+      ? mergeKnown.reduce((sum, seconds) => sum + seconds, 0) / mergeKnown.length
+      : 1;
+  const mergeWeights = mergeItems.map((item) => {
+    const seconds = mergeSeconds(item);
+    return seconds > 0 ? seconds : mergeFallback;
+  });
+  const mergeWeightTotal = mergeWeights.reduce((sum, weight) => sum + weight, 0);
+
+  /** Lleva la vista previa al principio del clip `index` de la cronología. */
+  const seekMerge = (index: number) => {
+    const video = mergeVideo.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const before = mergeWeights.slice(0, index).reduce((sum, weight) => sum + weight, 0);
+    const offset =
+      mergeWeightTotal > 0
+        ? (before / mergeWeightTotal) * video.duration
+        : (index / Math.max(1, mergeItems.length)) * video.duration;
+    video.currentTime = Math.min(Math.max(0, offset), Math.max(0, video.duration - 0.05));
+    void video.play().catch(() => {});
+  };
 
   // `undefined` es «Todas» y `null` es «Sin categoría»: filtrar nunca toca la selección.
   const filterValue = filter === ALL ? undefined : filter === NONE ? null : filter;
@@ -545,23 +707,17 @@ function Gallery({
               ¿Con qué categoría?
             </p>
             <div className="upload-ask-row">
-              <input
-                type="text"
-                list="gallery-categories"
+              <CategoryPicker
                 value={pendingCategory}
-                aria-label="Categoría de los clips que se suben"
-                autoComplete="off"
+                categories={categories}
+                onChange={setPendingCategory}
+                ariaLabel="Categoría de los clips que se suben"
                 disabled={uploading !== null}
-                onChange={(event) => setPendingCategory(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void uploadPending();
-                  }
-                  if (event.key === "Escape") {
-                    setPending([]);
-                    setPendingCategory("");
-                  }
+                removeLabel="Sin categoría"
+                onSubmit={() => void uploadPending()}
+                onCancel={() => {
+                  setPending([]);
+                  setPendingCategory("");
                 }}
               />
               <button
@@ -651,6 +807,27 @@ function Gallery({
               <button
                 className="gallery-tool"
                 type="button"
+                disabled={
+                  selected.length < MERGE_MIN ||
+                  selected.length > MERGE_MAX ||
+                  splitBusy ||
+                  deletingSelection ||
+                  batchSaving ||
+                  generating
+                }
+                aria-label="Fusionar los clips seleccionados en uno solo"
+                title={
+                  selected.length >= MERGE_MIN && selected.length <= MERGE_MAX
+                    ? "Fusionar los seleccionados en un solo clip"
+                    : `Elige entre ${MERGE_MIN} y ${MERGE_MAX} clips para fusionarlos`
+                }
+                onClick={openMerge}
+              >
+                <GalleryToolIcon name="merge" />
+              </button>
+              <button
+                className="gallery-tool"
+                type="button"
                 disabled={selected.length === 0 || batchSaving || deletingSelection}
                 aria-label="Cambiar la categoría de los clips seleccionados"
                 title="Cambiar la categoría de los seleccionados"
@@ -672,6 +849,19 @@ function Gallery({
               >
                 <GalleryToolIcon name="trash" />
               </button>
+              <button
+                className="gallery-tool"
+                type="button"
+                disabled={selected.length === 0}
+                aria-label="Deseleccionar todos los clips"
+                title="Deseleccionar todos"
+                onClick={() => {
+                  setSelected([]);
+                  setEditingCategory(false);
+                }}
+              >
+                <GalleryToolIcon name="x" />
+              </button>
             </div>
           </div>
         </div>
@@ -689,37 +879,40 @@ function Gallery({
               {selected.length === 1 ? "clip seleccionado" : "clips seleccionados"}
             </label>
             <div className="upload-ask-row">
-              <input
+              <CategoryPicker
                 id="batch-category"
-                type="text"
-                list="gallery-categories"
                 value={batchDraft}
-                autoComplete="off"
+                categories={categories}
+                onChange={setBatchDraft}
+                ariaLabel="Categoría para los clips seleccionados"
                 disabled={batchSaving}
-                onChange={(event) => setBatchDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void saveBatchCategory();
-                  }
-                  if (event.key === "Escape") setEditingCategory(false);
-                }}
+                removeLabel="Sin categoría"
+                onSubmit={() => void saveBatchCategory()}
+                onCancel={() => setEditingCategory(false)}
               />
               <button
-                className="primary small"
+                className="gallery-tool primary"
                 type="button"
                 disabled={batchSaving}
+                aria-label={batchSaving ? "Guardando la categoría" : "Guardar la categoría"}
+                title={batchSaving ? "Guardando…" : "Guardar"}
                 onClick={() => void saveBatchCategory()}
               >
-                {batchSaving ? "Guardando…" : "Guardar"}
+                {batchSaving ? (
+                  <span className="spinner" aria-hidden="true" />
+                ) : (
+                  <GalleryToolIcon name="save" />
+                )}
               </button>
               <button
-                className="secondary small"
+                className="gallery-tool"
                 type="button"
                 disabled={batchSaving}
+                aria-label="Cancelar el cambio de categoría"
+                title="Cancelar"
                 onClick={() => setEditingCategory(false)}
               >
-                Cancelar
+                <GalleryToolIcon name="x" />
               </button>
             </div>
             {batchError ? (
@@ -843,12 +1036,167 @@ function Gallery({
           </div>
         ) : null}
 
-        {/* Autocompletado de categorías: las existentes, sin pantalla de administración. */}
-        <datalist id="gallery-categories">
-          {categories.map((category) => (
-            <option key={category} value={category} />
-          ))}
-        </datalist>
+        {mergeIds ? (
+          <div className="split-layer">
+            <div className="split-backdrop" onClick={closeMerge} />
+            <div
+              className="split-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Fusionar ${mergeItems.length} clips en uno solo`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") closeMerge();
+              }}
+            >
+              <header className="split-head">
+                <h3>Fusionar {mergeItems.length} clips en uno solo</h3>
+                <button
+                  className="secondary small split-close"
+                  type="button"
+                  aria-label="Cerrar la fusión"
+                  title="Cerrar"
+                  onClick={closeMerge}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </header>
+              {previewBusy || !previewUrl ? (
+                <div className="merge-preview-status hint" role="status" aria-live="polite">
+                  <span className="spinner" aria-hidden="true" />
+                  Montando la vista previa del clip unido…
+                </div>
+              ) : (
+                <video
+                  key={previewUrl}
+                  ref={mergeVideo}
+                  className="split-video"
+                  src={previewUrl}
+                  controls
+                  playsInline
+                  preload="auto"
+                  aria-label="Vista previa del clip fusionado"
+                />
+              )}
+              {previewError ? (
+                <p className="hint error-text" role="alert">
+                  {previewError}
+                </p>
+              ) : null}
+              {/* Cada botón es el tramo **y** su puesto: ocupa el espacio que su clip ocupa en
+                  el clip unido, enseña número, nombre y tiempo, se agarra y se suelta en
+                  otro puesto, y al pulsarlo lleva la vista previa a ese punto. */}
+              {/* Un clip sin duración en el índice se mide aquí una vez, con los metadatos
+                  de su propio archivo; al llegar el dato desaparece el vídeo oculto. */}
+              {mergeItems.map((item) =>
+                item.duration_s == null && measuredDurations[item.id] === undefined ? (
+                  <video
+                    key={`medir-${item.id}`}
+                    src={fileUrl(item.id)}
+                    preload="metadata"
+                    style={{ display: "none" }}
+                    aria-hidden="true"
+                    onLoadedMetadata={(event) => {
+                      const media = event.currentTarget;
+                      const seconds = Math.round(media.duration * 1000) / 1000;
+                      if (!Number.isFinite(seconds) || seconds <= 0) return;
+                      setMeasuredDurations((current) =>
+                        current[item.id] === undefined
+                          ? { ...current, [item.id]: seconds }
+                          : current,
+                      );
+                    }}
+                  />
+                ) : null,
+              )}
+              <ol className="merge-order" aria-label="Orden de la fusión">
+                {mergeItems.map((item, index) => (
+                  <li
+                    key={item.id}
+                    className={`${draggingIndex === index ? "dragging" : ""}${
+                      dragOverIndex === index && draggingIndex !== index ? " drop-target" : ""
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    style={{ flexGrow: mergeWeights[index] ?? 1, flexBasis: 0 }}
+                    aria-label={`Clip ${index + 1} de ${mergeItems.length}: ${item.name}. Pulsa para ir a él o arrástralo para cambiar el orden.`}
+                    onClick={() => seekMerge(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        seekMerge(index);
+                      }
+                    }}
+                    onDragStart={(event) => {
+                      setDraggingIndex(index);
+                      event.dataTransfer.effectAllowed = "move";
+                      // Algunos navegadores no arrastran sin datos en el portapapeles.
+                      event.dataTransfer.setData("text/plain", item.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingIndex(null);
+                      setDragOverIndex(null);
+                    }}
+                    onDragOver={(event) => {
+                      if (draggingIndex === null) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDragOverIndex(index);
+                    }}
+                    onDragLeave={() => {
+                      setDragOverIndex((current) => (current === index ? null : current));
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggingIndex !== null && draggingIndex !== index) {
+                        moveMerge(draggingIndex, index);
+                      }
+                      setDraggingIndex(null);
+                      setDragOverIndex(null);
+                    }}
+                  >
+                    <span className="merge-order-position">#{index + 1}</span>
+                    <span className="merge-order-info">
+                      <span className="merge-order-name">{item.name}</span>
+                      <span className="merge-order-duration">
+                        {mergeSeconds(item) > 0 ? formatDuration(mergeSeconds(item)) : "—"}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <div className="actions split-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={mergeBusy || mergeItems.length < MERGE_MIN}
+                  onClick={() => void confirmMerge()}
+                >
+                  {mergeBusy
+                    ? "Fusionando…"
+                    : `Fusionar ${mergeItems.length} clips en uno`}
+                </button>
+              </div>
+              {mergeError ? (
+                <div className="alert error" role="alert">
+                  {mergeError}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {content}
 
@@ -891,7 +1239,11 @@ function Gallery({
 }
 
 /** Iconos de la barra de la galería (trazos de Lucide, sin dependencia extra). */
-function GalleryToolIcon({ name }: { name: "pen" | "trash" | "scissors" }) {
+function GalleryToolIcon({
+  name,
+}: {
+  name: "pen" | "trash" | "scissors" | "merge" | "save" | "x";
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -916,6 +1268,28 @@ function GalleryToolIcon({ name }: { name: "pen" | "trash" | "scissors" }) {
           <path d="M20 4 8.12 15.88" />
           <circle cx="6" cy="18" r="3" />
           <path d="M14.8 14.8 20 20" />
+        </>
+      ) : name === "merge" ? (
+        // Merge arrow: dos trazos entran desde la izquierda y salen como una sola flecha,
+        // «estos dos pasan a ser uno».
+        <>
+          <path d="M3 4l8 8-8 8" />
+          <path d="M11 12h8" />
+          <path d="m15 8 4 4-4 4" />
+        </>
+      ) : name === "save" ? (
+        // Disquete de guardar: la caja, la lengüeta de abajo y la pestaña de la etiqueta.
+        <>
+          <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+          <path d="M17 21v-8H7v8" />
+          <path d="M7 3v5h8" />
+        </>
+      ) : name === "x" ? (
+        // El trazo llega casi a las esquinas del lienzo, como las tijeras y el lápiz: una
+        // X inscrita en el centro (6→18) se veía más pequeña que el resto de iconos.
+        <>
+          <path d="M4 4l16 16" />
+          <path d="M20 4 4 20" />
         </>
       ) : (
         <>
@@ -998,9 +1372,6 @@ const GalleryCard = memo(function GalleryCard({
             ? "Duración: —"
             : `Duración: ${formatDuration(duration)}`}
       </p>
-      {item.source ? (
-        <p className="gallery-meta">Fuente: {item.source.platform ?? "archivo local"}</p>
-      ) : null}
       {item.duplicateOf ? (
         <p className="gallery-meta gallery-duplicate">Posible duplicado de otro clip</p>
       ) : null}

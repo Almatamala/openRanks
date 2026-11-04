@@ -5,27 +5,17 @@
  */
 import { POSITIONS_MAX, POSITIONS_MIN } from "./limits";
 
-/** Procedencia de un clip extraído (RF-20): plataforma y URL de la fuente. */
-export interface ClipSource {
-  url: string;
-  platform: string | null;
-}
-
 /** Un clip de la galería, tal y como lo devuelve la API (nunca con rutas del host). */
 export interface LibraryItem {
   /** Identificador público del clip en la galería. */
   id: string;
-  /** Nombre original del archivo, sin rutas. */
+  /** Nombre original del archivo, sin rutas. No es único: dos clips pueden llamarse igual. */
   name: string;
   /** Extensión canónica, con punto (`".mp4"`). */
   ext: string;
   bytes: number;
   /** Texto libre; `null` es «Sin categoría» (RF-11.3). */
   category: string | null;
-  /** Cuándo entró (ISO 8601): la galería enseña lo más reciente primero. */
-  addedAt: string;
-  /** De dónde salió un tramo extraído; los clips subidos a mano no lo tienen. */
-  source?: ClipSource | null;
   /** Duración medida al recortar el tramo (segundos). */
   duration_s?: number | null;
   /** SHA-256 del clip: deduplicación al volver a extraer el mismo tramo. */
@@ -41,6 +31,13 @@ export const LIBRARY_EXTENSIONS = [".mp4", ".mov", ".mkv", ".webm", ".m4v", ".av
 
 /** 2 GB por archivo, igual que el límite de la subida actual. */
 export const LIBRARY_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
+/**
+ * Fusión de clips: de 2 a 4 se pegan en uno solo, en el orden que elija el operador. Por
+ * debajo de dos no hay nada que pegar; por encima de cuatro deja de ser un clip de trabajo.
+ */
+export const MERGE_MIN = 2;
+export const MERGE_MAX = 4;
 
 const ALLOWED = LIBRARY_EXTENSIONS as readonly string[];
 

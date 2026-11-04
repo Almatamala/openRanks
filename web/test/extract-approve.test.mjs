@@ -112,8 +112,7 @@ test("los aprobados entran en la galería y el temporal se borra", async () => {
   const item = result.items[0];
   assert.equal(item.name, "escena-01.mp4");
   assert.equal(item.category, null);
-  assert.equal(item.source.platform, "youtube");
-  assert.equal(item.source.url, SOURCE_URL);
+  assert.equal(item.source, undefined, "el clip de galería ya no guarda la procedencia");
   assert.ok(item.duration_s > 2 && item.duration_s < 4, item.duration_s);
   assert.match(item.sha256, /^[a-f0-9]{64}$/);
   assert.ok(existsSync(path.join(JOBS_DIR, "library", `${item.id}.mp4`)));
@@ -121,7 +120,7 @@ test("los aprobados entran en la galería y el temporal se borra", async () => {
   // Revisión cerrada: ni fuente, ni miniaturas, ni trabajo.
   assert.equal(existsSync(dir), false);
   assert.equal(readLibrary().length, 1);
-  assert.equal(readLibrary()[0].source.platform, "youtube");
+  assert.equal(readLibrary()[0].source, undefined);
 });
 
 test("el mismo tramo no se duplica: se avisa y se reutiliza la entrada", async () => {
@@ -169,10 +168,15 @@ test("varias escenas se recortan en tandas y se dan de alta en orden", async () 
   writeFileSync(job.extractDocPath(id), JSON.stringify({ candidates, warnings: [] }));
 
   const before = readLibrary().length;
-  const result = await approveCandidates(id);
+  // La categoría se elige una vez y la llevan **todas** las escenas que entren.
+  const result = await approveCandidates(id, "  Gatos   graciosos ");
 
   assert.equal(result.items.length, 3);
   assert.equal(result.reused, 0);
+  assert.deepEqual(
+    result.items.map((item) => item.category),
+    ["Gatos graciosos", "Gatos graciosos", "Gatos graciosos"],
+  );
   // El alta en el índice va en orden y sin perder ninguna de las tres escrituras.
   assert.deepEqual(
     result.items.map((item) => item.name),

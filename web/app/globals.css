@@ -329,8 +329,12 @@ input[type="text"] {
   font-family: inherit;
 }
 
-input[type="text"]:focus {
-  border-color: var(--focus);
+/* El foco de los campos tampoco se pinta en celeste: mismo acento que el resto del panel. */
+input[type="text"]:focus,
+input[type="text"]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.16);
 }
 
 /* Texto del título y del subtítulo: ocupa todo el ancho de la tarjeta. */
@@ -442,14 +446,80 @@ a.button-link.primary:hover {
   filter: brightness(1.08);
 }
 
+/* La flecha la dibuja el propio control: la nativa del sistema se pinta blanca al pasar el
+   ratón por encima y rompe el tema oscuro. */
 select {
-  background: #0b0d12;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #0b0d12;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%23a7adba' d='M0 2 6 8 12 2 10.6 .6 6 5.2 1.4 .6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 7px;
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 9px;
-  padding: 9px 12px;
+  border-radius: 10px;
+  padding: 9px 34px 9px 12px;
   font-size: 15px;
   font-family: inherit;
+  cursor: pointer;
+}
+
+/* Solo se enciende mientras se elige: el foco dura lo que dura el desplegable y, al elegir
+   con el ratón, se suelta (el panel deja de brillar). Pasar el ratón no cambia nada. */
+select:focus,
+select:focus-visible {
+  outline: none;
+  background-color: #0b0d12;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.18);
+}
+
+/* Las opciones heredan el tema: sin fondo blanco al desplegar la lista. La ya elegida no se
+   resalta; solo se ilumina la que tiene el ratón encima. */
+select option {
+  background: #0b0d12;
+  color: var(--text);
+}
+
+/* Donde el navegador deja dibujar el desplegable (Chrome/Edge), la lista se redondea igual
+   que la del buscador. Sin soporte se queda la lista nativa, que pinta el sistema. */
+@supports (appearance: base-select) {
+  select,
+  select::picker(select) {
+    appearance: base-select;
+  }
+
+  select::picker(select) {
+    margin-top: 4px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #0b0d12;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  /* La flecha la dibuja el propio control, y la marca de «elegida» sobra. */
+  select::picker-icon,
+  select::checkmark {
+    display: none;
+  }
+
+  select option {
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  select option:checked {
+    background: #0b0d12;
+    color: var(--text);
+  }
+
+  select option:hover,
+  select option:focus-visible {
+    background: rgba(255, 214, 10, 0.12);
+    color: var(--accent);
+  }
 }
 
 button {
@@ -1233,6 +1303,62 @@ code {
   min-width: 0;
 }
 
+/* Selector de categoría con búsqueda: la lista son las categorías que ya existen y se
+   filtra sola al escribir. Va flotando para no empujar lo que hay debajo. */
+.category-picker {
+  position: relative;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.category-picker input[type="text"] {
+  width: 100%;
+}
+
+.category-picker-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  /* La barra de la lista es del tema: fina y en gris de borde, sin el blanco del sistema. */
+  scrollbar-width: thin;
+  scrollbar-color: #3a4150 transparent;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0b0d12;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.category-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-option:hover,
+.category-option.active {
+  background: rgba(255, 214, 10, 0.12);
+  color: var(--accent);
+}
+
+.category-option.empty {
+  color: var(--muted);
+}
+
 .upload-status {
   display: flex;
   align-items: center;
@@ -1453,6 +1579,19 @@ code {
   background: var(--panel-2);
 }
 
+/* Guardar y cancelar son iconos: mismo alto que el campo de categoría, sin texto. */
+.gallery-batch .gallery-tool {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.gallery-batch .gallery-tool.primary {
+  border-color: var(--accent);
+}
+
 /* Divisor manual: ventana con el vídeo y su línea de tiempo. */
 .split-layer {
   position: fixed;
@@ -1534,6 +1673,101 @@ code {
 .split-legend strong {
   color: var(--accent);
   font-size: 14px;
+}
+
+/* Fusión de clips: la misma ventana que el divisor, con la cronología editable y una
+   línea de tiempo partida en tramos (uno por clip). */
+/* Los puestos van en fila, como la cronología que representan: un botón por clip. */
+.merge-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.merge-order li {
+  display: grid;
+  flex: 1 1 0;
+  gap: 1px;
+  justify-items: center;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+}
+
+.merge-order li:active {
+  cursor: grabbing;
+}
+
+.merge-order li:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* La fila que se agarra y el puesto donde caería. */
+.merge-order li.dragging {
+  opacity: 0.45;
+}
+
+.merge-order li.drop-target {
+  border-color: var(--accent);
+  background: rgba(255, 214, 10, 0.08);
+}
+
+/* Mientras el motor monta el clip unido todavía no hay vídeo que enseñar. */
+.merge-preview-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+  margin: 0;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+/* Nombre y tiempo apilados dentro del botón: la fila sigue siendo horizontal. */
+.merge-order-info {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* El puesto va arriba y centrado, sobre el nombre y el tiempo. */
+.merge-order-position {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.merge-order-name {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-order-duration {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Extraer clips (F3 · P3-1): origen, declaración de derechos y herramienta de descarga.
