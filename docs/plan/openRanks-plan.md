@@ -303,6 +303,97 @@ hacerse en paralelo después de IA-5. El primer corte demuestra el caso GenAI de
 (datos → embeddings → RAG → textos → evaluación); el segundo incorpora los modelos tabulares y
 su operación; el tercero activa la generación automática en el producto.
 
+### 12.4 Emoji a color en el overlay (futuro, no activo)
+
+> **No forma parte del alcance actual.** Hoy el podio se dibuja con las medallas monocromas de
+> `Symbola` porque el renderer no puede hacer otra cosa: el overlay es un script ASS que pinta
+> **libass**, y libass solo rasteriza glifos vectoriales de un color. Las fuentes de emoji de color
+> (`Noto Color Emoji` en CBDT/COLRv1, `Apple Color Emoji` en `sbix`, `Segoe UI Emoji` en COLR) no
+> se pintan: la casilla sale vacía. Instalar `fonts-noto-color-emoji` no arregla nada —la promesa
+> del README sobre la imagen de Docker no se cumple en `web/Dockerfile`, y aunque se cumpliera
+> seguiría saliendo la caja—; es la limitación de libass#381, abierta desde 2020. Los emoji «reales»
+> son además secuencias (ZWJ, tonos de piel, banderas) que libass no compone.
+
+**Vía elegida si se retoma: emoji como PNG compuestos por FFmpeg (vía A).** Se descartan las
+alternativas: Chromium headless / Remotion (≈300 MB y un segundo runtime Node en el motor),
+Pango+Cairo (mueve todo el layout fuera de libass y añade una dependencia nativa que no existe en
+Windows) y Skia (rompe el núcleo stdlib puro). La vía A no añade dependencias de sistema y
+funciona igual en Windows y en Docker.
+
+| Tarea | Entregable | Verificación |
+| --- | --- | --- |
+| **EMOJI-1** | Set de PNG por emoji en `assets/emoji/` (Twemoji 72/128 o Noto Emoji PNG), con nombre por código (`1f431.png`, `1f468-200d-1f469-200d-1f467.png`), set fijado con su licencia y atribución. | Los códigos del set cubren los emoji de prueba; licencia compatible y citada. |
+| **EMOJI-2** | Tokenizador en `core/` de secuencias (pictográficos, ZWJ, VS16, keycap, banderas, tonos de piel), deduplicado por archivo, integrado en `title_layers` / `_escape_text`. | Tests puros de detección y de secuencias compuestas; ningún emoji llega al texto ASS. |
+| **EMOJI-3** | Posiciones: cada emoji viaja en el spec como un token propio (como una palabra), se le da `x/y` dentro de su renglón con la misma estimación de ancho que ya reparte el título (`estimate_width`, hoy el spec no guarda la `x` de cada token) y se escala con el tamaño del texto. | `spec.json` trae cada emoji con `x/y`; el emoji nunca queda pegado a texto ni cruza el margen seguro. |
+| **EMOJI-4** | Grafo de filtros: `ass=` sobre el vídeo + un input `-loop 1 -i emoji.png` por emoji único, `scale` al tamaño del texto y `overlay` con `enable='between(t,…)'`; alfa para fundidos y para la atenuación/difuminado de las casillas. `preview_argv` usa el mismo grafo sobre negro. | `overlay_argv` / `preview_argv` con emoji; la vista previa y el render usan el mismo grafo. |
+| **EMOJI-5** | Panel: los límites de texto aceptan emoji (hoy se cuentan por puntos de código) y se decide si cuentan grafemas; el contador sigue coincidiendo con el motor. | Tests de espejo `web/lib/limits.ts` ↔ `core/binding.py` con emoji. |
+| **EMOJI-6** | Integración: render real con emoji en título, subtítulo y rótulos, y comparación de píxeles contra la unión. | `tests/test_overlay_e2e.py` ampliado; sin regresión en los tests ASS actuales. |
+
+**Regla de entrada:** antes de implementar nada de esto se define el RF/ADR correspondiente en el
+RPD (qué campos admiten emoji, qué set se usa y cómo se cuentan los caracteres) y se añaden sus
+criterios de aceptación en §13, igual que el resto de bloques futuros.
+
+**Corte mínimo, si solo se quieren las medallas del podio.** Las casillas ya tienen `x/y` fijos en
+el spec, así que no hay texto que medir: bastan **3 PNG** (🥇🥈🥉) y cambiar el glifo del evento
+`Badge` por un `overlay` por casilla, aplicando el pulso (112 %) y la atenuación como filtros.
+≈80-120 líneas + 3 assets, y se ve el podio a color sin tocar el resto del render.
+
+**Coste de la vía completa:** ≈300-500 líneas de Python en `core/overlay.py` y `core/specs.py`,
+más los assets y los tests; sin dependencias nuevas.
+
+### 12.5 Efectos de sonido entre clips (futuro, no activo)
+
+> **No forma parte del alcance actual.** Hoy el render copia el audio del montaje tal cual
+> (`-c:a copy` en `overlay_argv`) y la unión pega los clips por copia de streams: no hay mezcla,
+> `assets/sfx/` está vacío y la vista previa del overlay es un PNG, así que tampoco hay forma de
+> escucharlo antes de montar. Este bloque añade **solo el efecto breve de cada corte seco**, sin
+> música de fondo y sin voz.
+
+**Qué se hace.** El corte *k* cae en `t = suma de las duraciones de los tramos 0..k-1`: el plan
+de L1 ya lo trae en `segments[].duration_s` y es exactamente la duración que el montaje garantiza
+(no hay deriva de vídeo, el corte es seco). Los cues se derivan del plan, **nunca** de una lista
+del panel: el operador no coloca sonidos a mano. Cada cue entra con un adelanto de 0,3-0,5 s
+(whoosh que anticipa el corte), nunca suena en `t = 0` ni más allá del total, y el último puede
+cambiar de sonido para el #1.
+
+**Cómo suena sin romper la mezcla.** La cama ya está a −14 LUFS, así que el efecto va a ganancia
+relativa baja (≈ −18 a −22 dB) para no tapar la voz de los clips; se suman con
+`amix=normalize=0` (el `amix` por defecto baja la cama entera) y `duration=first` (si no, el audio
+alarga el vídeo), y se cierra con `alimiter=limit=0.891` (−1 dBTP) antes de codificar a AAC
+48 kHz/192k, igual que ya hace `merge.py` en la fusión de la galería.
+
+| Tarea | Entregable | Verificación |
+| --- | --- | --- |
+| **SFX-1** | Set fijo de 2-4 sonidos en `assets/sfx/` (whoosh de corte, impacto corto para el podio), 48 kHz, ≤1,5 s, con licencia comercial y atribución; el set se referencia por hash. | Cada archivo abre con `ffprobe` a 48 kHz y ≤1,5 s; licencias citadas; el hash del set queda en el manifiesto. |
+| **SFX-2** | Mapa de cues **puro** en `core/` a partir de `plan.segments`: cortes acumulados, adelanto con `clamp` a 0, redondeo a ms, sin cue en 0 ni en el total, orden estable. | Tests puros con 5 y 10 tramos: los cortes suman `total_duration_s`, el adelanto no cruza el corte anterior, mismo plan ⇒ mismos cues. |
+| **SFX-3** | Cadena de audio en `core/overlay.py`: un input por asset único, `adelay` por cue, `amix`, `alimiter` y `aresample`; AAC 192k **solo** cuando hay efectos. Sin efectos, el camino actual (`-c:a copy`) queda intacto. | `tests/test_overlay_args.py` con y sin sfx: el grafo trae un `adelay` por cue y el caso sin efectos conserva `-c:a copy`. |
+| **SFX-4** | `spec.json` y manifiesto: `audio.sfx = {enabled, assets:[{file, sha256}], cues:[{t_s, asset, gain_db}]}` y vuelta a medir la sonoridad del ranking (`input_i`), como hace la unión. | El spec y el manifiesto traen los cues y los hashes; la sonoridad medida queda en −14 LUFS ±1. |
+| **SFX-5** | Sincronía real: medir en el `union.mp4` dónde cae cada corte —el concat de AAC arrastra el *priming* de cada segmento, ~21 ms por tramo— y corregir el offset si hace falta. | Integración con 5 clips de 2 s: el pico de cada efecto cae a ≤50 ms del corte esperado (2, 4, 6 y 8 s) y el vídeo conserva duración y número de fotogramas. |
+| **SFX-6** | Integración de punta a punta y no regresión del render sin efectos. | `tests/test_overlay_e2e.py` ampliado: 1080x1920/30, duración idéntica al render sin sfx, audio presente; tests ASS y flujo por etapas sin cambios. |
+
+**Decisiones que fija el RF/ADR de entrada.** (1) Si los efectos van siempre activos o con un
+interruptor en el preset —ADR-8 bloquea el estilo, así que un interruptor es una decisión de
+producto, no un campo editable más—. (2) Si el set se amplía con un impacto para el #1. (3) Si la
+fusión de la galería (`merge.py`) también los lleva: hoy es un segundo renderizador y quedaría
+fuera. (4) Que `union.mp4`, la descarga sin edición, sigue limpia.
+
+**Sin vista previa de sonido.** `preview_argv` devuelve un PNG: el panel no podrá dejar oír el
+resultado antes de montar. Se acepta porque el render tarda segundos; una previsualización de
+audio sería otro bloque.
+
+**Regla de entrada:** antes de implementar nada de esto se define el RF/ADR correspondiente en el
+RPD (si el efecto está activo por defecto, qué set se usa, de dónde salen sus derechos y qué
+renderizadores lo aplican) y se añaden sus criterios de aceptación en §13, igual que el resto de
+bloques futuros.
+
+**Corte mínimo.** Un único whoosh, siempre activo, en todos los cortes y sin interruptor:
+≈100-150 líneas (mapa de cues + cadena + tests) y **1 asset**. Demuestra el valor sin abrir la
+decisión de ADR-8.
+
+**Coste del bloque completo:** ≈150-250 líneas de Python en `core/overlay.py` y un módulo de
+cues, 2-4 assets y sus tests; **sin dependencias nuevas, sin red y sin claves**. El determinismo
+se mantiene: mismo plan y mismos assets ⇒ mismo audio.
+
 ---
 
 ## 13. Estrategia de verificación
@@ -452,11 +543,15 @@ y se revisa antes de cerrar la fase.
   (§12.1).
 - Pendiente de L2, ya previsto en el RPD: **banner con la foto de referencia**
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van desactivados,
-  §9.2, y requieren assets propios).
+  §9.2, y requieren assets propios). Los efectos de sonido entre clips tienen su desglose en
+  §12.5 (no activos).
 - **La generación automática** del panel sigue deshabilitada (ADR-16): su criterio ya está en el
   RPD (RF-18, RF-19, ADR-19) y el botón se activa al construir la Fase 3.
 - **El plan de IA y automatización con LLM** está documentado como roadmap candidato en §12.3,
   pero **no está activo**. Antes de implementar cada tarea se define su RF/ADR en el RPD.
+- **Emoji a color en el render** queda como mejora futura en §12.4 (no activa): libass no pinta
+  fuentes de color, y la vía elegida —PNG compuestos por FFmpeg— exige assets, posiciones por
+  token en el spec y un grafo de filtros.
 - **La Fase 3 (L3 · Extractora)** está **diseñada en el RPD** —fuentes, segmentación al estilo
   CapCut, score 0-100 y orden con el mejor al final—, desglosada en tareas (P3-1 a P3-8) con su
   verificación (§13.4) y **en construcción**: **P3-1 a P3-4 ya están hechas** (entrada con
