@@ -22,6 +22,7 @@ import { cycleColor, titleWords, visibleLength, wordsToTitle } from "@/lib/title
 import Sidebar, { type Section } from "@/components/Sidebar";
 import Gallery from "@/components/Gallery";
 import Extract from "@/components/Extract";
+import Settings from "@/components/Settings";
 
 /** El acta del trabajo más lo derivado que añade `/api/jobs/[id]`: ETA, archivos y log. */
 type Job = JobStatus & {
@@ -54,8 +55,18 @@ type ImportResponse = {
   error?: string;
   id?: string;
   positions?: number;
-  clips?: { position: number; name: string; ext: string }[];
+  clips?: {
+    position: number;
+    name: string;
+    ext: string;
+    label?: string | null;
+    score?: number | null;
+    score_source?: string | null;
+  }[];
 };
+
+/** Score del LLM de un clip importado, para enseñarlo en su puesto (P3-6). */
+type ClipScore = { value: number; source: string | null };
 
 const STORE_KEY = "openranks.panel.v1";
 
@@ -217,6 +228,8 @@ export default function Page() {
   const [inFlightUploads, setInFlightUploads] = useState(0);
   const [deletingUsed, setDeletingUsed] = useState(false);
   const [usedError, setUsedError] = useState<string | null>(null);
+  // Score del LLM por puesto: se pinta junto al clip y viaja al intercambiar puestos.
+  const [clipScores, setClipScores] = useState<Record<number, ClipScore>>({});
   // Sube cuando «Borrar videos utilizados» cambia la galería desde el montaje.
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   // Recorrido **real** de la altura del título, calculado por el motor: fuera de él
@@ -460,6 +473,13 @@ export default function Page() {
           slot.position === position ? { ...slot, file, imported: file ? null : slot.imported } : slot,
         ),
       );
+      // Un archivo elegido a mano sustituye al clip importado: su score ya no vale.
+      setClipScores((current) => {
+        if (!(position in current)) return current;
+        const next = { ...current };
+        delete next[position];
+        return next;
+      });
       const token = (pickTokens.current[position] ?? 0) + 1;
       pickTokens.current[position] = token;
       if (!file) {
@@ -698,6 +718,20 @@ export default function Page() {
       const count = payload.positions;
       const clips = payload.clips;
       const names = new Map(clips.map((clip) => [clip.position, clip.name]));
+      const labels = new Map(clips.map((clip) => [clip.position, clip.label ?? ""]));
+      setClipScores(
+        Object.fromEntries(
+          clips
+            .filter((clip) => typeof clip.score === "number")
+            .map((clip) => [
+              clip.position,
+              {
+                value: clip.score as number,
+                source: clip.score_source ?? null,
+              },
+            ]),
+        ),
+      );
       // El trabajo es el mismo (o uno nuevo): la vista se reconstruye desde el servidor.
       jobPromise.current = Promise.resolve(nextJobId);
       runToken.current += 1;
@@ -711,7 +745,7 @@ export default function Page() {
           position,
           file: null,
           imported: names.get(position) ?? null,
-          label: "",
+          label: labels.get(position) ?? "",
         })),
       );
       setPrep(
@@ -764,7 +798,18 @@ export default function Page() {
         setError("Espera a que terminen de subirse los clips para cambiar el orden.");
         return;
       }
-      const swapLocal = () => setSlots((current) => swapSlots(current, from, to));
+      const swapLocal = () => {
+        setSlots((current) => swapSlots(current, from, to));
+        // El score viaja con el clip: si no, el #1 enseñaría el del #5.
+        setClipScores((current) => {
+          const next = { ...current };
+          delete next[from];
+          delete next[to];
+          if (current[to]) next[from] = current[to];
+          if (current[from]) next[to] = current[from];
+          return next;
+        });
+      };
 
       swapLocal();
       if (!jobId) return;
@@ -828,6 +873,7 @@ export default function Page() {
         current.map((slot) => ({ ...slot, file: null, imported: null, label: "" })),
       );
       setPrep({});
+      setClipScores({});
       setGalleryEpoch((value) => value + 1);
       setPollNonce((value) => value + 1);
     } catch (failure) {
@@ -910,7 +956,9 @@ export default function Page() {
                   ? `openRanks · montar un TOP ${positions}`
                   : section === "galeria"
                     ? "openRanks · galería de videos"
-                    : "openRanks · divisor de escenas"}
+                    : section === "extraer"
+                      ? "openRanks · divisor de escenas"
+                      : "openRanks · ajustes"}
               </h1>
               {section === "montar" ? (
                 <p>
@@ -922,10 +970,15 @@ export default function Page() {
                   Los clips que ya subiste, con su categoría, para elegir entre 5 y 10 en orden y
                   montar el ranking sin volver a subirlos.
                 </p>
-              ) : (
+              ) : section === "extraer" ? (
                 <p>
                   De un vídeo a las escenas: declara la procedencia y los derechos; openRanks lo
                   divide en escenas y tú eliges las que entran en el ranking.
+                </p>
+              ) : (
+                <p>
+                  Guarda la clave de Claude o de Gemini para puntuar con IA y elige cuál se usa.
+                  Sin clave no hay score: guarda una aquí para puntuar la galería y generar los títulos. El divisor de escenas no necesita clave.
                 </p>
               )}
             </div>
@@ -967,6 +1020,7 @@ export default function Page() {
                 positions={positions}
                 prepStatus={prep[slot.position]}
                 libraryId={job?.gallery?.[String(slot.position)] ?? null}
+                score={clipScores[slot.position] ?? null}
                 active={section === "montar"}
                 dragOver={dragSlot === slot.position}
                 dragging={dragFrom === slot.position}
@@ -1197,6 +1251,10 @@ export default function Page() {
           />
         </section>
 
+        <section className="view" hidden={section !== "ajustes"} aria-label="Ajustes">
+          <Settings active={section === "ajustes"} />
+        </section>
+
       {drawerOpen ? (
         <>
           <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />
@@ -1349,6 +1407,8 @@ interface SlotRowProps {
   canReorder: boolean;
   positions: number;
   prepStatus: ClipStatus | undefined;
+  /** Score del LLM del clip importado; `null` si vino a mano o no tiene score. */
+  score: ClipScore | null;
   libraryId: string | null;
   dragOver: boolean;
   dragging: boolean;
@@ -1368,6 +1428,7 @@ const SlotRow = memo(function SlotRow({
   slot,
   running,
   canReorder,
+  score,
   positions,
   prepStatus,
   libraryId,
@@ -1501,6 +1562,11 @@ const SlotRow = memo(function SlotRow({
                       onChange={(event) => onPick(slot.position, event.target.files?.[0] ?? null)}
                     />
                     <ClipBadge status={prepStatus} />
+                    {score ? (
+                      <p className="hint slot-score">
+                        Score {score.value}/100 · {score.source ?? "llm"}
+                      </p>
+                    ) : null}
                   </div>
                   <SlotStatus
                     status={prepStatus}

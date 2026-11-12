@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "name": "set dorado base — material generado",
+  "license": "CC0-1.0: clips generados por el propio proyecto con FFmpeg; sustituibles por material propio o licenciado",
+  "notes": "human_rank 1 = el clip que una persona pondría en el #1. El orden se fijó antes de medir y no se cambia para mejorar la correlación.",
+  "clips": [
+    {
+      "id": "g01",
+      "file": "g01.mp4",
+      "human_rank": 1,
+      "recipe": { "video": "testsrc2", "audio": "loud", "duration_s": 6, "size": "320x240" }
+    },
+    {
+      "id": "g02",
+      "file": "g02.mp4",
+      "human_rank": 2,
+      "recipe": { "video": "testsrc2", "audio": "normal", "duration_s": 6, "size": "320x240" }
+    },
+    {
+      "id": "g03",
+      "file": "g03.mp4",
+      "human_rank": 3,
+      "recipe": { "video": "smptebars", "audio": "normal", "duration_s": 6, "size": "320x240" }
+    },
+    {
+      "id": "g04",
+      "file": "g04.mp4",
+      "human_rank": 4,
+      "recipe": { "video": "skin", "audio": "normal", "duration_s": 6, "size": "320x240" }
+    },
+    {
+      "id": "g05",
+      "file": "g05.mp4",
+      "human_rank": 5,
+      "recipe": { "video": "flat", "audio": "quiet", "duration_s": 6, "size": "320x240" }
+    },
+    {
+      "id": "g06",
+      "file": "g06.mp4",
+      "human_rank": 6,
+      "recipe": { "video": "flat", "audio": "none", "duration_s": 6, "size": "320x240" }
+    }
+  ]
+}

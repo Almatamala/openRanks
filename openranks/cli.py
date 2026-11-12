@@ -107,6 +107,21 @@ def _build_parser() -> argparse.ArgumentParser:
     analyze_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
     analyze_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
 
+    rate_cmd = subparsers.add_parser(
+        "rate",
+        help="puntúa clips completos de la galería con el LLM (0-100 y título; F3 · P3-9)",
+    )
+    rate_cmd.add_argument(
+        "--input",
+        action="append",
+        required=True,
+        help="clip a puntuar (repetible; el orden de las opciones es el de la salida)",
+    )
+    rate_cmd.add_argument("--ffmpeg", default=None, help="ruta explícita a ffmpeg")
+    rate_cmd.add_argument("--ffprobe", default=None, help="ruta explícita a ffprobe")
+    rate_cmd.add_argument("--json", action="store_true", help="salida legible por máquina (la usa el panel)")
+    rate_cmd.add_argument("--quiet", action="store_true", help="sin progreso")
+
     phash_cmd = subparsers.add_parser(
         "phash",
         help="huella perceptual (pHash) de un vídeo: detecta planos repetidos",
@@ -261,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     handlers = {
         "analyze": _run_analyze,
+        "rate": _run_rate,
         "phash": _run_phash,
         "cut": _run_cut,
         "merge": _run_merge,
@@ -425,6 +441,44 @@ def _run_analyze(args: argparse.Namespace) -> int:
             )
         for warning in result.warnings:
             print(f"  aviso: {warning}")
+    return EXIT_OK
+
+
+def _run_rate(args: argparse.Namespace) -> int:
+    """P3-9 y P3-11: score con LLM de clips completos, en una sola llamada."""
+    from .rate import RateError, rate_many
+
+    say = (lambda _: None) if args.quiet else (lambda message: print(message, flush=True))
+    try:
+        clips = rate_many(
+            args.input,
+            ffmpeg=args.ffmpeg,
+            ffprobe=args.ffprobe,
+            log=say,
+        )
+    except RateError as exc:
+        if args.json:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        print(f"fallo la puntuación: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+
+    if args.json:
+        print(
+            json.dumps(
+                {"clips": [clip.to_json(index) for index, clip in enumerate(clips, start=1)]},
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        for index, clip in enumerate(clips, start=1):
+            if clip.error:
+                print(f"  #{index:02d}  {clip.file}: {clip.error}")
+            else:
+                print(
+                    f"  #{index:02d}  {clip.file}: {clip.score}/100 "
+                    f"({clip.duration_s:.1f}s, {clip.source})"
+                )
     return EXIT_OK
 
 

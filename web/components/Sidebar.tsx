@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 
 /** Secciones del panel. La navegación no usa rutas: el montaje sigue vivo al cambiar. */
-export type Section = "montar" | "galeria" | "extraer";
+export type Section = "montar" | "galeria" | "extraer" | "ajustes";
 
 const SECTIONS: { id: Section; label: string; note: string }[] = [
   { id: "montar", label: "Montar ranking", note: "Clips, textos y montaje" },
   { id: "galeria", label: "Galería de videos", note: "Tus clips, con categoría" },
   { id: "extraer", label: "Divisor de escenas", note: "Un vídeo, en escenas" },
+  { id: "ajustes", label: "Ajustes", note: "Claves de IA y proveedor" },
 ];
 
 /**

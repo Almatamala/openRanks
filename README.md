@@ -72,7 +72,7 @@ opcional y los nombres de los puestos, y **ver el resultado en el panel** (9:16 
 con la descarga del ranking final y, opcionalmente, de la unión sin edición). Muestra la fase en
 lenguaje humano («Preparando el clip #4», «Añadiendo la edición»), valida el texto antes de
 gastar un render y no enseña rutas, ids internos ni JSON (§RF-9). En la galería, **Generar
-automático** está visible y deshabilitado («Próximamente»).
+automático** ya está activo: **Puntuar galería** puntúa todos los clips, muestra su score y el título que llevarán en la edición, y permite eliminar los que no pasan el umbral antes de generar.
 
 **El trabajo pesado ocurre al subir, no al montar.** Al elegir el archivo de un puesto se
 sube y se **prepara en segundo plano** (área útil, 1080x1920, 30 fps, audio a −14 LUFS);
@@ -135,6 +135,7 @@ El resto se configura por entorno:
 | `OPENRANKS_FONT` | Familia tipográfica del overlay | `Arial` (en Linux: `DejaVu Sans`) |
 | `OPENRANKS_FIT` | Cómo encaja cada clip en el marco | `auto` (detecta el área útil) |
 | `OPENRANKS_PRESET_FILE` | Plantilla guardada por el panel, que se aplica sobre la de fábrica | la fija el panel en el directorio de trabajos |
+| `OPENRANKS_SCORE_MIN` | Umbral de la puntuación masiva de la galería | `55` |
 
 ## Correr en Docker
 
@@ -426,6 +427,11 @@ docs/plan/       # plan: orden de construcción, estado y verificación
 - Pendiente de L2, ya previsto en el RPD: **banner con la foto de referencia**
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van
   desactivados, §9.2, y requieren assets propios).
-- **L3 (extracción automática) y L4 (publicación) no forman parte del alcance actual**.
-  No hay código, tablas ni endpoints de esas capas; si se retoman, se documentan primero
-  en el RPD y el plan.
+- **L3 (extractora) está construida y verificada** (P3-1 a P3-11): ingesta, descarga,
+  segmentación en escenas, parrilla de revisión, score y títulos con LLM (Claude, Gemini u
+  OpenAI), selección automática y puntuación masiva de la galería. **La clave es obligatoria**:
+  sin ella no hay score ni nombres, y el panel pide configurarla en Ajustes. El **set dorado**
+  de `benchmark/golden/` mide **Spearman 0,81** (mínimo 0,6) y **p95 ≈ 0,6 s** por clip; la CI
+  lo evalúa solo si hay clave (`OPENRANKS_LLM_API_KEY`).
+  **L4 (publicación) sigue fuera del alcance actual**: no hay código, tablas ni endpoints
+  de esa capa; si se retoma, se documenta primero en el RPD y el plan.

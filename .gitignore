@@ -12,3 +12,6 @@ out/
 demo/
 demo*/
 tools/
+
+# Clips generados del set dorado (P3-8): se construyen con FFmpeg, no se versionan
+benchmark/golden/*.mp4

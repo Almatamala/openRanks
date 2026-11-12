@@ -9,6 +9,7 @@ import {
   filterItems,
   LIBRARY_EXTENSIONS,
   normalizeCategory,
+  normalizeLabel,
   type LibraryItem,
 } from "./gallery";
 
@@ -79,6 +80,24 @@ function isLibraryItem(value: unknown): value is LibraryItem {
     (item.sha256 === undefined ||
       item.sha256 === null ||
       (typeof item.sha256 === "string" && /^[a-f0-9]{64}$/.test(item.sha256))) &&
+    (item.score === undefined ||
+      item.score === null ||
+      (typeof item.score === "number" &&
+        Number.isInteger(item.score) &&
+        item.score >= 0 &&
+        item.score <= 100)) &&
+    (item.score_source === undefined ||
+      item.score_source === null ||
+      typeof item.score_source === "string") &&
+    (item.score_model === undefined ||
+      item.score_model === null ||
+      typeof item.score_model === "string") &&
+    (item.scored_at === undefined ||
+      item.scored_at === null ||
+      typeof item.scored_at === "string") &&
+    (item.label === undefined ||
+      item.label === null ||
+      typeof item.label === "string") &&
     (item.phash === undefined ||
       item.phash === null ||
       (typeof item.phash === "string" && /^[0-9a-f]{16}$/.test(item.phash)))
@@ -99,6 +118,11 @@ function normalizeItem(item: LibraryItem): LibraryItem {
     ...(typeof item.duration_s === "number" ? { duration_s: item.duration_s } : {}),
     ...(item.sha256 ? { sha256: item.sha256 } : {}),
     ...(item.phash ? { phash: item.phash } : {}),
+    ...(typeof item.score === "number" ? { score: item.score } : {}),
+    ...(item.score_source ? { score_source: item.score_source } : {}),
+    ...(item.score_model ? { score_model: item.score_model } : {}),
+    ...(item.scored_at ? { scored_at: item.scored_at } : {}),
+    ...(item.label ? { label: item.label } : {}),
   };
 }
 
@@ -171,6 +195,11 @@ export function addLibraryItem(input: {
   duration_s?: number | null;
   sha256?: string | null;
   phash?: string | null;
+  score?: number | null;
+  score_source?: string | null;
+  score_model?: string | null;
+  scored_at?: string | null;
+  label?: string | null;
 }): LibraryItem {
   const item: LibraryItem = {
     id: input.id,
@@ -182,6 +211,11 @@ export function addLibraryItem(input: {
     ...(typeof input.duration_s === "number" ? { duration_s: input.duration_s } : {}),
     ...(input.sha256 ? { sha256: input.sha256 } : {}),
     ...(input.phash ? { phash: input.phash } : {}),
+    ...(typeof input.score === "number" ? { score: input.score } : {}),
+    ...(input.score_source ? { score_source: input.score_source } : {}),
+    ...(input.score_model ? { score_model: input.score_model } : {}),
+    ...(input.scored_at ? { scored_at: input.scored_at } : {}),
+    ...(input.label ? { label: input.label } : {}),
   };
   writeLibrary([item, ...readLibrary()]);
   return item;
@@ -211,4 +245,55 @@ export function setCategory(id: string, raw: unknown): LibraryItem | null {
   items[index] = updated;
   writeLibrary(items);
   return updated;
+}
+
+/** Guarda el score de un clip (P3-9) y, si llega, su título de edición. */
+export function setScore(
+  id: string,
+  input: {
+    score: number;
+    score_source?: string | null;
+    score_model?: string | null;
+    scored_at?: string | null;
+    duration_s?: number | null;
+    label?: string | null;
+  },
+): LibraryItem | null {
+  const items = readLibrary();
+  const index = items.findIndex((item) => item.id === id);
+  if (index === -1) return null;
+  if (!Number.isInteger(input.score) || input.score < 0 || input.score > 100) return null;
+  const label = normalizeLabel(input.label);
+
+  const item: LibraryItem = {
+    ...items[index],
+    score: input.score,
+    ...(input.score_source ? { score_source: input.score_source } : {}),
+    ...(input.score_model ? { score_model: input.score_model } : {}),
+    ...(input.scored_at ? { scored_at: input.scored_at } : {}),
+    ...(typeof input.duration_s === "number" &&
+    Number.isFinite(input.duration_s) &&
+    input.duration_s > 0
+      ? { duration_s: input.duration_s }
+      : {}),
+    ...(label ? { label } : {}),
+  };
+  items[index] = item;
+  writeLibrary(items);
+  return item;
+}
+
+/** Título corto con el que el clip entra en la edición; vacío lo quita. */
+export function setLabel(id: string, raw: unknown): LibraryItem | null {
+  const items = readLibrary();
+  const index = items.findIndex((item) => item.id === id);
+  if (index === -1) return null;
+
+  const label = normalizeLabel(raw);
+  const item: LibraryItem = { ...items[index] };
+  if (label) item.label = label;
+  else delete item.label;
+  items[index] = item;
+  writeLibrary(items);
+  return item;
 }

@@ -1,0 +1,269 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+import type { KeyStatus, LlmProvider, SettingsSnapshot } from "@/lib/api-keys";
+
+/**
+ * Ajustes del panel (RF-22, P3-10): guarda la clave de Claude o la de Gemini en el
+ * servidor y elige cuál se usa para el score con LLM.
+ *
+ * La vista explica sin rodeos dónde actúa la clave: **solo en «Puntuar galería»**, donde
+ * el LLM pone score y título a los clips ya cortados. El divisor de escenas no usa la
+ * clave: cortar y puntuar son procesos separados. Sin clave no hay score ni títulos.
+ */
+
+const PROVIDERS: {
+  id: LlmProvider;
+  title: string;
+  keyLabel: string;
+  placeholder: string;
+}[] = [
+  {
+    id: "claude",
+    title: "Claude (Anthropic)",
+    keyLabel: "Clave de la API de Claude",
+    placeholder: "sk-ant-…",
+  },
+  {
+    id: "gemini",
+    title: "Gemini (Google)",
+    keyLabel: "Clave de la API de Gemini",
+    placeholder: "AIza…",
+  },
+];
+
+function statusText(status: KeyStatus | undefined): string {
+  if (!status?.configured) return "Sin clave";
+  if (status.source === "panel") {
+    return `Guardada en el panel · termina en ${status.hint ?? "····"}`;
+  }
+  return "Definida en el entorno del panel";
+}
+
+export default function Settings({ active }: { active: boolean }) {
+  const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
+  const [provider, setProvider] = useState<LlmProvider>("claude");
+  const [draft, setDraft] = useState<Record<LlmProvider, string>>({ claude: "", gemini: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch("/api/settings", { cache: "no-store" });
+      const data = (await response.json()) as SettingsSnapshot & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "No se pudieron leer los ajustes.");
+      setSnapshot(data);
+      setProvider(data.activeProvider ?? data.provider ?? "claude");
+      setError(null);
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "No se pudieron leer los ajustes.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active) void load();
+  }, [active, load]);
+
+  const post = useCallback(
+    async (body: Record<string, unknown>, message: string) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const response = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | (SettingsSnapshot & { error?: string })
+          | null;
+        if (!response.ok || !payload || typeof payload !== "object") {
+          throw new Error(payload?.error ?? "No se pudieron guardar los ajustes.");
+        }
+        setSnapshot(payload);
+        setProvider(payload.activeProvider ?? payload.provider ?? "claude");
+        setDraft({ claude: "", gemini: "" });
+        setNotice(message);
+      } catch (failure) {
+        setError(
+          failure instanceof Error ? failure.message : "No se pudieron guardar los ajustes.",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const save = useCallback(() => {
+    const body: Record<string, unknown> = { provider };
+    if (draft.claude.trim()) body.claude = draft.claude;
+    if (draft.gemini.trim()) body.gemini = draft.gemini;
+    void post(body, "Claves guardadas. Se usarán en el próximo análisis.");
+  }, [draft, post, provider]);
+
+  const removeKey = useCallback(
+    (target: LlmProvider) => {
+      const item = PROVIDERS.find((entry) => entry.id === target);
+      const confirmed = window.confirm(
+        `¿Quitar la clave de ${item?.title ?? target} del panel? El score con ese proveedor dejará de estar disponible.`,
+      );
+      if (!confirmed) return;
+      void post(
+        { remove: [target] },
+        `Clave de ${item?.title ?? target} eliminada del panel.`,
+      );
+    },
+    [post],
+  );
+
+  const activeLabel =
+    PROVIDERS.find((entry) => entry.id === snapshot?.activeProvider)?.title ?? null;
+
+  return (
+    <div className="settings-grid">
+      <section className="card">
+        <h2>
+          <span className="step">1</span>Claves del score con IA
+        </h2>
+        <p className="hint">
+          Se guardan en el servidor del panel y no vuelven al navegador: aquí solo se ve
+          que hay una clave y sus últimos cuatro caracteres. Sin clave, el score sigue
+          sin clave no hay score: ni dividir escenas ni puntuar la galería funcionan hasta que guardes una. Las claves que ya vengan en el
+          entorno del panel se usan solas; guarda una aquí para poder elegir proveedor.
+        </p>
+
+        <div className="settings-provider" role="radiogroup" aria-label="Proveedor del score">
+          <p className="field">¿Con qué clave se puntúa?</p>
+          {PROVIDERS.map((item) => {
+            const status = snapshot?.keys[item.id];
+            return (
+              <label className="settings-option" key={item.id}>
+                <input
+                  type="radio"
+                  name="llm-provider"
+                  value={item.id}
+                  checked={provider === item.id}
+                  disabled={busy || status?.source !== "panel"}
+                  onChange={() => setProvider(item.id)}
+                />
+                <span>{item.title}</span>
+                <span className="settings-option-note">{statusText(status)}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        {PROVIDERS.map((item) => {
+          const status = snapshot?.keys[item.id];
+          return (
+            <div className="control" key={item.id}>
+              <label className="field" htmlFor={`key-${item.id}`}>
+                {item.keyLabel}
+              </label>
+              <div className="field-row">
+                <input
+                  id={`key-${item.id}`}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={busy}
+                  placeholder={
+                    status?.configured
+                      ? "Pega una clave nueva para reemplazarla"
+                      : item.placeholder
+                  }
+                  value={draft[item.id]}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, [item.id]: event.target.value }))
+                  }
+                />
+                {status?.source === "panel" ? (
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => removeKey(item.id)}
+                  >
+                    Quitar
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="actions">
+          <button className="primary" type="button" disabled={busy} onClick={save}>
+            {busy ? "Guardando…" : "Guardar claves"}
+          </button>
+        </div>
+
+        <p className="settings-status">
+          {snapshot?.activeProvider && activeLabel ? (
+            <>
+              <strong>En uso: {activeLabel}</strong> · modelo{" "}
+              {snapshot.model ?? "por defecto del proveedor"} · tope de 0,02 USD por
+              trabajo.
+            </>
+          ) : (
+            <>
+              <strong>Sin clave:</strong> «Puntuar galería» no funciona y los clips se quedan sin
+              score ni título hasta que guardes una.
+            </>
+          )}
+        </p>
+
+        {notice ? (
+          <div className="alert ok" role="status">
+            {notice}
+          </div>
+        ) : null}
+        {error ? (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card">
+        <h2>
+          <span className="step">2</span>Qué hace la clave
+        </h2>
+        <ul className="plain-list">
+          <li>
+            <strong>Puntúa los clips de la galería.</strong> «Puntuar galería» manda una sola
+            petición con la miniatura de cada clip y el mismo modelo para todos: cada clip
+            recibe su score de 0 a 100 y su título. El divisor de escenas no usa la clave y
+            no puntúa: solo corta. El vídeo largo nunca se puntúa; se puntúan sus clips ya
+            cortados.
+          </li>
+          <li>
+            <strong>También pone el nombre del clip.</strong> La misma respuesta trae un
+            título de 3 a 24 caracteres, con gancho de ranking (un chiste corto o una
+            referencia al clip), que se guarda como rótulo editable en la galería. El nombre
+            del archivo solo se usa si el modelo no devuelve un título válido.
+          </li>
+          <li>
+            <strong>Solo se usa al puntuar la galería.</strong> Dividir escenas sigue
+            funcionando sin clave, porque no puntúa. No hay pasada heurística ni títulos
+            derivados del archivo como camino normal.
+          </li>
+          <li>
+            <strong>Se aplica al siguiente análisis.</strong> No hay que reiniciar el panel:
+            cada análisis lee la clave guardada al arrancar.
+          </li>
+        </ul>
+        <p className="hint">
+          Una clave pegada por error se puede reemplazar o quitar sin salir de esta vista;
+          la que estaba guardada nunca se muestra entera.
+        </p>
+      </section>
+    </div>
+  );
+}

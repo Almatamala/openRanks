@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada; solo queda pasar el checklist E2E de §13.3 en el navegador.** **Fase 3 (L3 · Extractora) diseñada y desglosada (P3-1 a P3-8, §12) con su verificación (§13.4); P3-1 a P3-4 construidas, P3-5 a P3-8 pendientes** |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada; solo queda pasar el checklist E2E de §13.3 en el navegador.** **Fase 3 (L3 · Extractora) construida (P3-1 a P3-12) y verificada con el set dorado (P3-8): Spearman 0,81 y p95 ≈ 0,6 s por clip** |
 | **Fecha** | 2-nov-2026 |
 | **Alcance** | **Plan**: en qué orden se construye, qué entrega cada capa, qué está hecho, cómo se verifica y qué falta. El **qué y el por qué** están en el RPD (`docs/rpd/openRanks-rpd.md`) |
 | **Documentos** | **RPD** + **plan** (este). La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven en el RPD; §12–§13 viven aquí |
@@ -24,20 +24,20 @@ navegación).
 | **1** | **L1 · Ensamblador** | Los clips ya listos (normalizados, 9:16, 30 fps, audio a −14 LUFS) **y su unión en un solo vídeo vertical en corte seco** | **Hecho** |
 | **2** | **L2 · Editor de la plantilla** | Sobre la unión, **toda la edición del estándar**: título, subtítulo opcional, escalera de rangos, rótulo por puesto, medallas del podio y atenuado de lo que no tiene el turno. **Render automático y estilo bloqueado** | **Hecho** |
 | **3** | **Fase 2 · Galería y navegación (panel)** | Menú lateral, galería persistente con categorías, selección ordenada de 5 a 10, generación manual, reordenación por arrastre y borrado de los usados | **Hecho (checklist E2E manual pendiente)** |
-| **4** | **Fase 3 · Extractora (L3)** | Ingesta multi-fuente (YouTube, TikTok, Instagram y archivos locales), segmentación en escenas con revisión, score de viralidad de 0 a 100, selección manual o automática y aterrizaje en la galería | **En construcción: P3-1 a P3-4 hechas (entrada, descarga, segmentación y aterrizaje con revisión); faltan score y automático (P3-5 a P3-8)** |
+| **4** | **Fase 3 · Extractora (L3)** | Ingesta multi-fuente (YouTube, TikTok, Instagram y archivos locales), segmentación en escenas con revisión, score de viralidad de 0 a 100, selección manual o automática y aterrizaje en la galería | **Hecho: P3-1 a P3-12 construidas y verificadas (entrada, descarga, segmentación, aterrizaje, score y títulos con LLM, automático, puntuación masiva, set dorado y ajustes de claves)** |
 
 **Contrato entre capas.** Cada capa consume la salida de la anterior como **archivos +
 manifiesto**, nunca como llamadas acopladas. L1 produce `prepared/NN.mp4` + `union.mp4` +
 `manifest.json`; L2 produce `ranking.mp4` + `spec.json`.
 
 La **Fase 3 (L3 · Extractora)** está **diseñada en el RPD** (§4.4, §5.5 y RF-16 a RF-20),
-**desglosada** en tareas (P3-1 a P3-8, §12) con su verificación (§13.4) y **en construcción**:
+**desglosada** en tareas (P3-1 a P3-12, §12) con su verificación (§13.4) y **construida**:
 P3-1 —sección «Extraer clips», casilla de cumplimiento y detección de `yt-dlp`—, P3-2 —descarga
 al área temporal con progreso, límites y cancelación—, P3-3 —análisis y segmentación en escenas—
 y P3-4 —parrilla de revisión y aterrizaje en la galería con deduplicación— ya están en el panel;
-lo que sigue es el score (P3-5). La **publicación (L4) sigue fuera del alcance**. La
-generación automática del panel (RF-15) se activa con la Fase 3 y su criterio ya está fijado en
-RF-19: score 0-100 y el mejor clip al final (#1).
+el set dorado (P3-8) ya está medido. La **publicación (L4) sigue fuera del alcance**. La
+generación automática del panel (RF-15) ya está activa (P3-7) y su criterio está fijado en
+RF-19: 5-10 clips por score y diversidad, con el mejor al final (#1).
 
 ---
 
@@ -63,6 +63,7 @@ Lo construido y verificado, con la pieza donde vive (la Fase 2 se detalla debajo
 | Panel | `web/` (Next.js) | Flujo completo sin terminal: subir (prepara solo), escribir, montar, ver y descargar el ranking |
 | Plantilla guardable | `web/lib/preset.ts`, `openranks/core/overlay.py` | Preset editable y persistente que el motor lee por `OPENRANKS_PRESET_FILE` |
 | Texto recordado | Borrador del navegador (`localStorage`) | El último título y subtítulo usados vuelven al reabrir el panel; sin botón de guardado ni respaldo en disco |
+| Ajustes de claves de IA | `web/lib/api-keys.ts`, `web/components/Settings.tsx`, `web/app/api/settings/` | Clave de Claude o Gemini guardada en el servidor, proveedor elegido y una vista que explica dónde actúa la clave (score del divisor; nunca el nombre del clip) |
 | Pruebas | `tests/` | Núcleo puro sin FFmpeg + integración real con FFmpeg |
 | Pruebas del panel | `web/test/` | Lógica pura de galería, selección y orden, y contrato de la API de la galería, con `node --test` |
 
@@ -100,7 +101,7 @@ exigir tocar esas reglas, se cambia el RPD/ADR primero, no el código por detrá
 | **L1** — Clips listos y unión vertical | normalización 9:16 por clip, unión en corte seco, audio a −14 LUFS | **Hecho** |
 | **L2** — Edición del estándar | overlay ASS, escalera, rótulos, spec, preset editable | **Hecho** |
 | **F2** — Galería y navegación (panel) | menú lateral, galería persistente, categorías, selección 5-10, generación manual, arrastre y borrado de usados | **Hecho (checklist E2E manual pendiente)** |
-| **F3** — Extractora (L3) | ingesta multi-fuente, segmentación en escenas, score de viralidad 0-100, selección manual o automática | **En construcción (P3-1 a P3-4 hechas, P3-5 a P3-8 pendientes)** |
+| **F3** — Extractora (L3) | ingesta multi-fuente, segmentación en escenas, score de viralidad 0-100, selección manual o automática y claves de IA en Ajustes | **Hecho (P3-1 a P3-12)** |
 
 ### 12.1 Entorno local: Python, venv y FFmpeg
 
@@ -192,7 +193,7 @@ siendo los mismos.
 parte automática**: pruebas `node --test` de la lógica pura y del contrato de la API de la
 galería, en CI. Falta pasar el checklist E2E de §13.3 en el navegador.
 
-### F3 — Extractora (L3) · **en construcción: P3-1 a P3-4 hechas, P3-5 a P3-8 pendientes**
+### F3 — Extractora (L3) · **hecha y verificada: P3-1 a P3-12**
 
 Diseñada en el RPD (RF-16 a RF-20, ADR-17 a ADR-20, §5.5 y §7.8). **No toca el montaje**: los
 clips aprobados aterrizan en la galería de la Fase 2 y el flujo sigue siendo seleccionar →
@@ -200,8 +201,8 @@ generar manual o automático → montar → descargar. Lo nuevo es la entrada: d
 clips. El motor de L1/L2 (`prepare` → `join` → `render`) no gana comandos.
 
 Las dos dependencias externas son **opcionales**: `yt-dlp` para el enlace y un **cliente LLM por
-HTTP** para el score. Sin la primera queda el archivo local; sin la segunda, el score heurístico y
-la selección manual. Ninguna entra en las dependencias de Python del repo: `yt-dlp` es una
+HTTP** para el score. Sin la primera queda el archivo local; sin la segunda no hay score ni títulos.
+La selección automática (P3-7) no hace una llamada nueva. Ninguna entra en las dependencias de Python del repo: `yt-dlp` es una
 herramienta externa como FFmpeg y el cliente LLM usa `urllib` de la stdlib.
 
 | Tarea | Entregable | Depende de | Verificación |
@@ -209,27 +210,32 @@ herramienta externa como FFmpeg y el cliente LLM usa `urllib` de la stdlib.
 | **P3-1** | **Sección «Extraer clips»** en el menú lateral, junto a «Montar ranking» y «Galería de videos», con las dos entradas (enlace o archivo local) y la **casilla de cumplimiento** obligatoria justo debajo del enlace: términos de la plataforma y política de privacidad (§11.7), con la plataforma que sale del propio enlace. Validación de plataforma admitida y de URL; detección de `yt-dlp` (`OPENRANKS_YTDLP` → `.venv` del repo → `PATH`) con error accionable. Sin endpoint de descarga todavía. | — | Sin la casilla marcada, «Extraer» está deshabilitado y no hace ninguna petición; sin `yt-dlp` el panel dice qué instalar y no crea trabajo; una URL inválida o de plataforma no admitida falla con mensaje legible y **0 archivos** (lo privado o con DRM se detecta al descargar, P3-2); la sección se alcanza con teclado, la activa está marcada y la UI no enseña rutas; `typecheck`/`build`. |
 | **P3-2** | **Descarga a un área temporal** (`extract/source.*`) con progreso por fase, cancelación y los límites de la fuente: **60 min y 2 GB** (ajustables por entorno) y **una extracción a la vez**. El fallo o la cancelación no dejan restos, y nada descargado entra en la galería. | P3-1 | Un enlace propio completa y deja el archivo solo en el temporal; cancelar a mitad deja **0 archivos** y **0 entradas** en la galería; una fuente por encima de 60 min o 2 GB se rechaza con error accionable antes de llenar el disco; al lanzar una segunda extracción la primera manda y la segunda espera o se rechaza con mensaje; un enlace privado, con DRM o que pide sesión falla con mensaje legible y **0 archivos**; el estado y el log no contienen rutas del host. |
 | **P3-3** | **Análisis y segmentación en escenas**: una pasada sin recodificar con `scdet` (score de **cada** fotograma), `signalstats` (luminancia) y `blackdetect`, **solo imagen** (el audio no se analiza); corte por **umbral adaptativo** al score local, sin que un **destello** parta la escena, con los bordes de un **fundido** como cortes y los tiempos normalizados con el `start_time` del contenedor; umbrales en el preset del extractor; fusión de los tramos de **<1 s** y partición de los de **>30 s**, con el corte **exacto** en el fotograma del cambio; `extract.json` determinista (cortes, umbrales, versiones y hash de la fuente) y miniaturas en `candidates/`. Aviso si no salen **≥5** tramos válidos. | P3-2 | Pruebas puras de umbral adaptativo, destellos, fundidos, fusión, partición y corte exacto: ningún candidato fuera de 1-30 s, sin solapes y mismo resultado en dos pasadas; un destello no parte la escena y un fundido no queda dentro de un clip; integración con FFmpeg sobre un compilado de cortes conocidos recupera **≥80 %** de los cortes con **≤20 %** de falsos positivos; mismo archivo y mismos umbrales ⇒ mismo `extract.json`; cambiar el umbral en el preset cambia la propuesta sin tocar código; con 4 tramos válidos se avisa de que no alcanza para un ranking y no se ofrece generar. |
-| **P3-4** | **Parrilla de revisión y aterrizaje en la galería**: candidatos con miniatura, duración y score (si existe), y aprobar/descartar. Los aprobados se extraen del temporal (**copia** si el corte cae en keyframe, recodificando **solo ese tramo** si no) y entran en `library/` + `library.json` con procedencia, categoría, duración y hash; **deduplicación por hash** (se avisa y se reutiliza la entrada); el temporal se borra al cerrar la revisión. | P3-3 | Aprobar 6 deja exactamente **6 clips** con procedencia y duración en banda; descartar todos no deja nada; reextraer el mismo tramo avisa y reutiliza la entrada (**1 archivo**, no 2); al cerrar la revisión el temporal desaparece y el espacio ocupado es el de los aprobados; los clips aprobados se filtran, seleccionan, generan y montan como cualquier otro de la Fase 2; «Borrar videos utilizados» sigue borrando solo los de ese ranking. |
-| **P3-5** | **Score heurístico 0-100**, local y sin red: movimiento y cambio visual, caras, energía y picos de audio, texto en pantalla, duración y fuerza del primer segundo; **2-3 razones** cortas y fuente `heurístico`; se guarda con **hash del clip, versión del modelo y fecha** y se muestra en la parrilla, en la galería y en el montaje. | P3-4 | El 100 % de los scores está en 0-100 y trae sus razones; el mismo archivo dos veces da el mismo score; **<1 s** por clip; ninguna petición de red; la correlación con el orden humano (**Spearman ≥0,6**, RF-18) se mide en P3-8 sobre el set dorado; el score nunca bloquea la selección ni el montaje. |
-| **P3-6** | **Refinamiento del score con LLM, opcional**: cliente HTTP sin SDK (chat completions con la miniatura en data URL y **JSON Schema**), configurable por `OPENRANKS_LLM_*`; **una sola llamada por trabajo** con el mismo modelo y prompt; estimación de tokens antes de enviar, **tope de 0,02 USD por trabajo** y caché por hash. Sin clave, sin red, por encima del tope o con error del proveedor, el clip se queda con el heurístico y el panel lo avisa. | P3-5 | Una extracción de 10 clips hace **1** llamada y no 10; un score fuera de 0-100, sin razones o con JSON inválido se descarta y cae al heurístico; con la clave ausente, un 5xx o un *timeout* el trabajo completa con scores heurísticos marcados; el coste estimado por trabajo queda **≤0,002 USD** con Haiku y nunca se llama por encima de **0,02 USD**; dos clips con el mismo hash no se vuelven a puntuar; modelo, versión de prompt y fecha quedan en `extract.json`. Se prueba contra un servidor local de prueba, nunca contra el proveedor. |
+| **P3-4** | **Parrilla de revisión y aterrizaje en la galería**: candidatos con miniatura y duración, y aprobar/descartar; el score llega después, al puntuar la galería. Los aprobados se extraen del temporal (**copia** si el corte cae en keyframe, recodificando **solo ese tramo** si no) y entran en `library/` + `library.json` con procedencia, categoría, duración y hash; **deduplicación por hash** (se avisa y se reutiliza la entrada); el temporal se borra al cerrar la revisión. | P3-3 | Aprobar 6 deja exactamente **6 clips** con procedencia y duración en banda; descartar todos no deja nada; reextraer el mismo tramo avisa y reutiliza la entrada (**1 archivo**, no 2); al cerrar la revisión el temporal desaparece y el espacio ocupado es el de los aprobados; los clips aprobados se filtran, seleccionan, generan y montan como cualquier otro de la Fase 2; «Borrar videos utilizados» sigue borrando solo los de ese ranking. |
+| **P3-5** | **Score heurístico 0-100 (retirado en P3-11)**: movimiento y cambio visual, caras, energía y picos de audio, texto en pantalla, duración y primer segundo; 2-3 razones y fuente `heurístico`. Se conserva como historia: el producto ya no lo usa ni lo ofrece como respaldo. | P3-4 | El 100 % de los scores estaba en 0-100 y traía razones; P3-11 retira el cálculo y sus pruebas. |
+| **P3-6** | **Score con LLM**: cliente HTTP sin SDK con **la API nativa de cada proveedor** y **JSON Schema**, configurable por `OPENRANKS_LLM_*` y las claves estándar; **una sola llamada por trabajo**; estimación de tokens, **tope de 0,02 USD**. Desde P3-12 es el **único** camino del score: sin clave, con error o por encima del tope, el trabajo falla con mensaje accionable. | P3-5 | Una tanda de 10 clips de la galería hace **1** llamada; JSON inválido o score fuera de 0-100 deja esos clips sin puntuar con mensaje; coste ≤0,002 USD con Haiku y nunca >0,02 USD; sin caché; el cliente solo lo usa la galería. Se prueba contra un servidor local, nunca contra el proveedor. |
 | **P3-7** | **Selección automática y orden por score (RF-19)**: «Generar automático» deja de estar deshabilitado; elige **5-10** por score y diversidad, cabe en **30-58 s**, no repite clip y **explica la elección**; el orden es ascendente en reproducción, con **el mejor en el #1**. Aceptar deja la misma selección, casillas y ticks que el camino manual, y el operador puede ajustarla después. | P3-5 | Con 10 clips de scores conocidos, el orden de `prepared/NN.mp4` y del `spec.json` es ascendente y el #1 es el de mayor score; nunca elige <5 ni >10, no repite clip y la suma cabe en 30-58 s (o avisa como en L1); aceptar deja casillas y ticks equivalentes al camino manual; sin scores el botón sigue deshabilitado y explica el motivo, y «Generar manual» no cambia. |
-| **P3-8** | **Set dorado, pruebas y documentación de la fase**: set dorado con clips de material propio o licenciado y orden humano, script de evaluación (Spearman, p95 y coste), pruebas puras del extractor (fusión/partición/corte exacto, features del score, normalización y razones, orden ascendente, deduplicación, estimación de coste y cliente LLM contra servidor local), integración real de detección y extracción, contrato de la API de la extracción, CI con `pytest` + `node --test` + `typecheck` + `build`, y RPD/plan actualizados (estado de la fase y variables nuevas en §17.1). | Todas | CI en verde; **Spearman ≥0,6** sobre el set dorado y **p95 <20 s** por trabajo con LLM; coste medido **≤0,002 USD** por trabajo; checklist de §13.4 pasado entero; `extract.json` y manifiestos sin rutas del host; ninguna prueba toca la red del proveedor ni necesita clave. |
+| **P3-8** | **Set dorado, pruebas y documentación de la fase** · **hecha**: set dorado (`benchmark/golden/`, material generado CC0 sustituible por propio o licenciado) con orden humano, script de evaluación (`scripts/evaluate_score.py`: Spearman, p95 y coste), métricas puras con empates de rango (`openranks/metrics.py`), pruebas del manifiesto y del informe, integración de generación y puntuado, contrato de la API de la extracción, CI con `pytest` + `node --test` + `typecheck` + `build`, y RPD/plan actualizados. | Todas | Medido con el heurístico que luego retiró P3-11: **Spearman 0,81** (mínimo 0,6), **p95 ≈ 0,6 s** por clip y **0,0007 USD** en el set de 6. Desde P3-12 la evaluación necesita clave y la CI la omite si no hay secreto. Las pruebas unitarias no tocan la red del proveedor; `extract.json` y manifiestos sin rutas del host. |
+
+| **P3-9** | **Puntuación masiva de la galería**: «Puntuar galería» puntúa con el LLM, en una sola llamada, los clips sin score; devuelve **score y título** (≤24 caracteres, del modelo) y permite **eliminar los que no llegan al umbral** (55 por defecto) con confirmación. Sin clave no se lanza; los ya puntuados no se repiten y los sin score no se borran. | P3-7, P3-11 | Sin clave, 0 peticiones y mensaje que lleva a Ajustes; con clave, todos los pendientes reciben score y título ≤24; el borrado exige `confirm` y deja intactos los sin score. |
+| **P3-10** | **Ajustes de claves de IA**: sección «Ajustes» con la clave de Claude y la de Gemini, el proveedor elegido y el estado sin secretos. Se guardan en el volumen de trabajos y la API solo devuelve si existen y sus últimos cuatro caracteres; un campo vacío conserva la clave y quitarla pide confirmación. «Puntuar galería» las recibe por entorno; el divisor de escenas no usa clave. | P3-6 | La API no devuelve la clave completa; sin clave, dividir escenas sigue funcionando y «Puntuar galería» no produce scores; con Gemini los clips quedan con `source: llm`, modelo y título; quitar sin confirmación no borra. |
+| **P3-11** | **Score y nombres solo con LLM, sin heurística local**: se retira `score_segment` y el `rate` heurístico; el LLM devuelve **score y título** (≤24 caracteres, gancho de ranking, editable). El vídeo largo nunca se puntúa: el score y el título se generan en la galería. Sin clave, dividir escenas sigue funcionando y «Puntuar galería» no arranca. | P3-6, P3-9, P3-10 | Sin clave, 0 scores y mensaje accionable; con clave, score y título ≤24 por clip; el título no es el nombre del archivo; un fallo del proveedor deja los clips sin puntuar, sin scores inventados; no queda ningún camino heurístico; `pytest` y `node --test`. |
+| **P3-12** | **Separar divisor y puntuación; retirar las razones**: `analyze` deja de llamar al LLM y `extract.json` deja de llevar score, título o `llm`; score y título se generan solo en «Puntuar galería» (`openranks rate`). Se eliminan `Score.reasons`, el campo del esquema, la caché y el refinamiento del análisis, los campos de score de la parrilla y la UI de razones. Sin clave, dividir escenas funciona; puntuar no. | P3-9, P3-11 | Sin clave, dividir crea candidatos sin score y puntuar no arranca; con clave, la galería recibe score y título sin razones; `extract.json` no tiene score ni título; no queda código de puntuación en el divisor; `pytest`, `node --test`, `typecheck` y `build`. |
 
 **Decisiones abiertas que condicionan la fase** (RPD §16): la **transcripción** (12) queda fuera de
 P3-6, que puntúa imagen y metadatos hasta que se decida; los **umbrales** (13) arrancan en el preset
 del extractor y se calibran en P3-3/P3-8 por tipo de contenido; la **retención del original** (14)
 es la de P3-4 (se borra al cerrar la revisión) salvo que se decida lo contrario; el **presupuesto y
-la titularidad de la clave** (16) bloquean solo P3-6, que sin clave sigue con el heurístico. La
+la titularidad de la clave** (16) obligan a configurarla: sin clave no hay score ni títulos. La
 ingesta es **una URL por extracción** (11), ya cerrado en RF-16.
 
-**Orden recomendado:** P3-1 → P3-2 → P3-3 → P3-4 → P3-5 → P3-6 → P3-7 → P3-8. Cada tarea deja el
-panel usable sin la siguiente: se puede montar un ranking con score heurístico y selección manual
-antes de que exista el LLM, y P3-6 y P3-7 se pueden intercambiar (el automático solo necesita
-scores). Las variables de P3-1 a P3-4 (`OPENRANKS_YTDLP`, `OPENRANKS_SOURCE_MAX_MINUTES` y
-`OPENRANKS_SOURCE_MAX_MB`) ya están en el anexo §17.1 del RPD; las `OPENRANKS_LLM_*` se añaden
-con P3-6.
+**Orden recomendado:** P3-1 → P3-2 → P3-3 → P3-4 → P3-6 → P3-7 → P3-8 → P3-9 → P3-10 → P3-11
+(P3-5 quedó retirada). Sin clave no hay puntuación ni títulos, así que P3-11 es el camino
+vigente: el panel bloquea el análisis y la puntuación masiva hasta que se configure. Las
+variables de P3-1 a P3-6 (`OPENRANKS_YTDLP`, `OPENRANKS_SOURCE_MAX_MINUTES`,
+`OPENRANKS_SOURCE_MAX_MB`) están en el anexo §17.1 del RPD; las `OPENRANKS_LLM_*` se leen desde
+P3-6.
 
-**Estado (2-nov-2026): P3-1 a P3-4 construidas y probadas.**
+**Estado (12-nov-2026): P3-1 a P3-12 construidas y probadas; la fase queda verificada con el set dorado (P3-8) y las claves de IA ya se guardan desde el panel (P3-10).**
 
 - **P3-1**: la sección «Extraer clips» está en el menú lateral con las dos entradas (enlace o
   archivo local), valida el enlace contra las plataformas admitidas, exige la **casilla de
@@ -254,9 +260,70 @@ con P3-6.
   temporal con `openranks cut`, entran en `library/` con procedencia y duración, se deduplican
   por SHA-256 y pHash, y al cerrar la revisión la fuente y las miniaturas desaparecen. Pruebas:
   `tests/test_cut.py`, `tests/test_phash.py` y `web/test/extract-approve.test.mjs`.
+- **P3-5 (retirado en P3-11)**: existió un score heurístico local con movimiento, caras,
+  audio, texto y duración. El producto ya no lo calcula ni lo ofrece como respaldo; el
+  código (`openranks/score.py`, `score_segment`) y sus pruebas se retiraron.
+- **P3-6**: con clave de Claude, de Gemini o de OpenAI (`ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY` o `OPENRANKS_LLM_API_KEY`), `openranks analyze` manda **una sola** petición por
+  trabajo con todas las miniaturas (mismo modelo y prompt), y devuelve score, título y
+  título. La salida se valida (0-100 y título ≤24); desde P3-11 es el **único** camino:
+  sin clave, sin red, por encima de `OPENRANKS_LLM_MAX_COST_USD` (0,02 USD) o con un
+  5xx/`timeout`, el trabajo **falla con un mensaje accionable** y no inventa scores. La
+  no hay caché ni refinamiento: el cliente solo lo usa «Puntuar galería». Pruebas:
+  `tests/test_extract_ai.py` y `tests/test_rate.py`.
+- **P3-7**: «Generar automático» deja de estar deshabilitado y **propone** 5-10 clips usando el
+  score ya calculado por el LLM y la diversidad de categorías: como mucho dos por
+  categoría mientras haya recambio, total **≤58 s** y, si no llega a 30 s, completa o cambia el
+  peor clip por uno más largo y avisa si aun así no llega. La propuesta explica cada clip y el
+  total; **aceptar** la importa y prepara con el mismo camino que «Generar manual», y
+  **descartar** no toca nada. Sin 5 clips puntuados con duración, el botón está deshabilitado y
+  explica el motivo. El #1 es el de mayor score y cierra el vídeo. Pruebas: `web/test/auto-select.test.mjs`.
 
-**Relación con §12.3.** P3-6 y P3-7 construyen el mínimo que ya fijan RF-18 y RF-19: score
-heurístico, **una** llamada al LLM por trabajo y orden ascendente por score. No necesitan
+- **P3-9**: la barra de la galería gana **«Puntuar galería»**, antes de «Generar automático».
+  Puntúa en una sola llamada los clips que aún no tienen score con `openranks rate` (el LLM
+  con la miniatura de cada clip), asigna a cada clip el **título de edición** que propone el
+  modelo (≤24 caracteres) y devuelve un
+  informe con el score y el veredicto frente al umbral. El borrado de los que no pasan es un
+  segundo paso **confirmado**; los clips sin score no se tocan. Los que ya traen score, por
+  ejemplo del LLM, no se vuelven a puntuar. Pruebas: `tests/test_rate.py`,
+  `web/test/gallery-score.test.mjs` y `web/test/library-score-api.test.mjs`.
+- **P3-8**: el **set dorado** vive en `benchmark/golden/` (`golden.json` con `human_rank`,
+  `README.md` y recetas de material generado CC0) y se evalúa con
+  `scripts/evaluate_score.py` (`--build` genera los clips con FFmpeg, `--json` da el informe,
+  `--min-spearman 0.6` falla por debajo del mínimo). `openranks/metrics.py` trae las métricas
+  puras (Spearman con **empates de rango** y percentiles interpolados) y `openranks/golden.py`
+  el manifiesto, la generación y el informe; `tests/test_metrics.py` y `tests/test_golden.py`
+  cubren ambos, con una integración que genera clips, los puntúa y comprueba que no salen rutas
+  del host. **Medido con el heurístico retirado:** Spearman **0,81** (mínimo 0,6), p95
+  **≈0,6 s** por clip y **0,0007 USD** en el set de 6. La CI corre la evaluación solo si hay
+  clave; el cliente LLM se prueba contra un servidor local, nunca contra la red.
+
+- **P3-10**: la vista **Ajustes** guarda la clave de Claude o la de Gemini en el volumen de
+  trabajos y deja elegir cuál puntúa. La API solo enseña si existe y sus últimos cuatro
+  caracteres; el análisis recibe la clave por entorno (`OPENRANKS_LLM_API_KEY` con el proveedor
+  elegido) y un modelo de otro proveedor no se hereda. «Puntuar galería» usa la misma clave y el
+  título generado por el modelo (P3-11); el nombre del archivo solo es el último respaldo.
+  Pruebas:
+  `web/test/settings.test.mjs`, que también compara los modelos por defecto con
+  `openranks/core/llm.py`.
+
+**Retirado en P3-12 (ya no se usa).**
+
+- **Score heurístico local**: `openranks/score.py`, `score_segment`, `tests/test_score.py` y los pesos
+  del núcleo. No queda ningún camino que puntúe sin clave.
+- **Puntuación dentro del divisor**: `analyze` ya no llama al LLM ni escribe `score`, `title` o `llm`
+  en `extract.json`; dividir y puntuar son procesos separados.
+- **Razones del score**: se retiraron del esquema, del prompt, del resultado (`Score.reasons`), de la
+  caché, de la API de la galería y de la UI. El panel muestra score y título, nada más.
+- **Caché y refinamiento del análisis**: `llm-cache.json`, `refine_scores` y `Refinement` se
+  eliminaron; el cliente LLM solo lo usa `openranks rate`.
+- **Score y título en la parrilla de escenas**: los candidatos se revisan sin score; la puntuación
+  llega al aprobarlos en la galería.
+- **Set dorado offline**: la evaluación con `scripts/evaluate_score.py` necesita clave y la CI la
+  omite si no hay secreto.
+
+**Relación con §12.3.** P3-6 construye el score con **una** llamada al LLM por trabajo y P3-7
+la selección automática sobre esos scores, sin otra llamada; ambas implementan RF-18 y RF-19. No necesitan
 transcripción, embeddings ni RAG, que siguen en el roadmap de §12.3 sin bloquear la fase; si algún
 día entran, lo hacen **sobre** estos scores, no en su lugar.
 
@@ -264,23 +331,23 @@ día entran, lo hacen **sobre** estos scores, no en su lugar.
 
 - **L4 — Integración y publicación**: orquestación de punta a punta, cola, almacenamiento,
   publicación en redes y analítica.
-- **Algoritmo de generación automática**: el criterio ya está definido en el RPD (RF-18, RF-19 y
-  ADR-19: score 0-100 y el mejor clip al final), pero **no hay implementación**: el botón sigue
-  deshabilitado (P2-7) hasta que se construya la Fase 3 (P3-7). El roadmap de IA/LLM está en §12.3 y **no
-  está activo**.
+- **Algoritmo de generación automática**: implementado en P3-7 (RF-19: score 0-100, diversidad y
+  el mejor clip al final). El roadmap de IA/LLM de §12.3 (RAG, embeddings, transcripción, modelos
+  tabulares) sigue sin estar activo y no bloquea esta fase.
 - **v2+**: voz en off/TTS, autopilot por canal, reescritura de bordes, generación de banners por
   IA, multi-idioma y A/B de estilos.
 
 Si se retoma alguna, primero se documenta en el RPD y se añade aquí su entregable y su
 verificación; no se construye por detrás de estas reglas.
 
-### 12.3 Plan de IA y automatización con LLM (futuro, no activo)
+### 12.3 Plan de IA y automatización con LLM (score y automático construidos; resto futuro)
 
-> **No forma parte del alcance actual.** Hoy la única IA en producción es **visión artificial
-> clásica** para el encuadre automático (§L1). No hay LLMs, RAG, embeddings, modelos tabulares
-> ni MLOps con monitoreo. Esta sección ordena el trabajo futuro para que, si se aprueba, entre
-> por el RPD y no por detrás del plan. El proveedor del score de la Fase 3 (IA-2) ya está
-> decidido en el RPD §7.9 y ADR-20: Claude Haiku 5.5, ≈0,0011 USD por trabajo de 10 clips.
+> **Alcance actual.** La Fase 3 ya usa **visión artificial clásica** para el encuadre automático
+> (§L1) y un **LLM por API** para refinar el score (P3-6, Haiku 5.5 por defecto, ≈0,0011 USD
+> por trabajo de 10 clips, RPD §7.9 y ADR-20) y la selección automática (P3-7) es determinista
+> sobre esos scores. RAG, embeddings, transcripción, modelos tabulares
+> y MLOps con monitoreo siguen siendo trabajo futuro: si se aprueban, entran por el RPD y no por
+> detrás del plan.
 
 **Regla de entrada:** antes de implementar cualquier tarea de este bloque se define el RF/ADR
 correspondiente en el RPD, se añaden sus criterios de aceptación y se actualiza §13. Ninguna
@@ -443,7 +510,7 @@ El checklist de abajo es lo único que queda en manos del operador.
 | RF-12 | Pasos 3-6 del checklist; `node --test` del orden, renumeración y límites 5-10. |
 | RF-13 | Paso 8 del checklist; prueba pura del intercambio de posiciones; orden del `ranking.mp4`. |
 | RF-14 | Pasos 10-11 del checklist; conteo exacto de archivos borrados; descarga posterior. |
-| RF-15 | Paso 12 del checklist; el control está deshabilitado y no existe endpoint de generación automática. |
+| RF-15 | Paso 12 del checklist; el control se activa con 5 clips puntuados, propone 5-10 y aceptar deja las casillas como el manual. |
 
 **Checklist E2E (navegador, una sesión):**
 
@@ -460,7 +527,7 @@ El checklist de abajo es lo único que queda en manos del operador.
 | 9 | Montar y descargar | `ranking.mp4` correcto, visible y descargable. |
 | 10 | «Borrar videos utilizados» → cancelar | No se borra ningún archivo ni se limpia ninguna casilla. |
 | 11 | «Borrar videos utilizados» → confirmar | Desaparecen de la galería y del disco exactamente los N clips usados; las casillas quedan vacías; el ranking sigue descargándose. |
-| 12 | «Generar automático» | Visible, deshabilitado y con «Próximamente»; no hace ninguna petición. |
+| 12 | «Generar automático» con 5 clips puntuados | Propone 5-10 por score y diversidad, explica la elección y, al aceptar, deja las casillas y ticks como el manual; sin scores está deshabilitado y explica por qué. |
 
 Los casos borde de §5.4 del RPD se comprueban en los pasos 3, 5, 6, 7 y 10-11; los que no se
 puedan automatizar quedan en este checklist y se revisan antes de cerrar la fase.
@@ -486,25 +553,40 @@ nunca contra el proveedor.
 - **Núcleo puro del extractor (P3-3 y P3-4, ya en CI)**: umbral adaptativo, destellos, fundidos,
   fusión de los tramos de <1 s, partición de los de >30 s y corte exacto (`tests/test_scenes.py`);
   recorte del tramo aprobado (`tests/test_cut.py`) y huella perceptual (`tests/test_phash.py`).
-  El score heurístico y el cliente LLM añadirán las pruebas de `tests/test_score.py` y
-  `tests/test_extract_ai.py` con P3-5 y P3-6.
+  El cliente LLM se prueba en `tests/test_extract_ai.py` contra un servidor local: una llamada
+  por trabajo, validación de score y título, tope de coste y fallo accionable sin
+  respaldo heurístico.
+- **Set dorado (P3-8)**: `benchmark/golden/golden.json` declara seis clips de material generado
+  (CC0) con su `human_rank`; `scripts/evaluate_score.py --build` los crea con FFmpeg, los puntúa
+  con `openranks rate`, calcula Spearman, p95 y coste estimado, y `--min-spearman 0.6` lo
+  convierte en un fallo de CI. El manifiesto se valida (versión, ≥2 clips, `id` únicos,
+  `human_rank` entero, positivo y sin repetir). Las métricas puras viven en
+  `openranks/metrics.py` y se prueban en `tests/test_metrics.py`; el manifiesto, el informe y la
+  generación, en `tests/test_golden.py`. Material propio o licenciado sustituye a los clips
+  generados sin tocar el código, y el orden humano se fija **antes** de medir.
 - **Integración** (`integration`, FFmpeg de verdad): `tests/test_scenes_e2e.py` sobre un compilado
   sintético con cortes conocidos —**≥80 %** de cortes recuperados, **≤20 %** de falsos positivos,
   ningún candidato fuera de 1-30 s— y `tests/test_cut.py` con un tramo en keyframe y otro fuera de
-  keyframe. Con P3-5 se suma el score heurístico sobre clips reales de 2 s.
+  keyframe. El score con LLM se prueba contra un servidor local; la integración cubre segmentación y corte.
 - **Contrato con el panel**: `node --test` de la parrilla (aprobar/descartar, deduplicación por
   hash, procedencia y duración, borrado del temporal en `web/test/extract-approve.test.mjs`) y de
   la API de la extracción con `Request` normales y el índice en un directorio temporal, como
   `web/test/library-api.test.mjs`. El typecheck comprueba que el panel no ofrece plataformas,
   límites ni acciones que el motor rechaza.
+- **Ajustes de claves (P3-10)**: `web/test/settings.test.mjs` comprueba que la API nunca devuelve
+  la clave completa, que un campo vacío no borra, que quitar es explícito y confirmado, qué
+  variables recibe el motor según el proveedor elegido y que los modelos por defecto coinciden
+  con `openranks/core/llm.py`.
 
 | RF | Cómo se verifica |
 | --- | --- |
 | RF-16 | Pasos 1-5 del checklist; contrato de la API con URL inválida o no admitida (**0 archivos**), casilla sin marcar y `yt-dlp` ausente; `typecheck`/`build`. |
 | RF-17 | Pasos 6-7 del checklist; pruebas puras de fusión, partición y corte exacto; integración de detección (≥80 % de cortes, ningún candidato fuera de banda, determinismo). |
-| RF-18 | Pasos 8 y 12 del checklist; pruebas del heurístico (0-100, razones, determinismo, <1 s); Spearman ≥0,6 sobre el set dorado; cliente LLM contra servidor local (JSON inválido → heurístico, tope de coste, caché por hash). |
-| RF-19 | Pasos 10-11 del checklist; prueba pura del orden ascendente con el mejor en #1; el automático respeta 5-10, no repite clip y la suma cabe en 30-58 s. |
+| RF-18 | Pasos 8 y 12 del checklist; sin clave no hay score; con clave, 0-100 y título ≤24; el vídeo largo no se puntúa; Spearman ≥0,6 con clave; cliente LLM contra servidor local (JSON inválido → fallo, tope, Claude y Gemini). |
+| RF-19 | Paso 12 del checklist; `web/test/auto-select.test.mjs` cubre 5-10, diversidad, orden con el mejor en #1, exclusión de duplicados, 30-58 s y determinismo. |
 | RF-20 | Pasos 6-9 del checklist; 6 aprobados = 6 entradas con procedencia y score sin rutas del host; reextracción sin duplicado (1 archivo); temporal borrado; «Borrar videos utilizados» intacto. |
+| RF-21 | `web/test/gallery-score.test.mjs` y `web/test/library-score-api.test.mjs`: sin clave no se lanza; título del LLM ≤24; borrado solo con `confirm` y solo de los puntuados bajo el umbral. |
+| RF-22 | `web/test/settings.test.mjs`: la API no devuelve la clave completa, el campo vacío conserva la guardada, quitar es explícito, el motor recibe el proveedor elegido y sin clave no hay score. |
 
 **Checklist E2E (navegador, una sesión):**
 
@@ -521,7 +603,7 @@ nunca contra el proveedor.
 | 9 | Ir a la galería | Los clips aprobados se filtran, seleccionan y generan como los de la Fase 2; «Borrar videos utilizados» borra solo los de ese ranking. |
 | 10 | Con 5-10 seleccionados, «Generar automático» | Propuesta de 5-10 con la elección explicada y la suma dentro de 30-58 s; aceptar deja casillas y ticks como el camino manual. |
 | 11 | Montar y descargar | El vídeo abre con el clip de menor score y cierra con el mejor, que ocupa el #1. |
-| 12 | Repetir con el LLM sin configurar o caído | Los clips llevan score heurístico marcado como tal, el panel lo avisa y el montaje no se bloquea; «Generar manual» no cambia. |
+| 12 | Repetir con el LLM sin configurar o caído | Sin clave, «Dividir en escenas» y «Puntuar galería» no arrancan y llevan a Ajustes; con el proveedor caído, el trabajo falla con mensaje legible y sin scores inventados; «Generar manual» no cambia. |
 
 Los casos borde del extractor —fuente demasiado larga, sin cortes suficientes, tramo duplicado— se
 cubren en los pasos 3, 5, 6 y 8. Lo que no se pueda automatizar (la parrilla real con material de
@@ -545,18 +627,18 @@ y se revisa antes de cerrar la fase.
   (`assets/banners/`, §9.2) y **música/sfx** con la cama a −14 LUFS (en MVP van desactivados,
   §9.2, y requieren assets propios). Los efectos de sonido entre clips tienen su desglose en
   §12.5 (no activos).
-- **La generación automática** del panel sigue deshabilitada (ADR-16): su criterio ya está en el
-  RPD (RF-18, RF-19, ADR-19) y el botón se activa al construir la Fase 3.
-- **El plan de IA y automatización con LLM** está documentado como roadmap candidato en §12.3,
-  pero **no está activo**. Antes de implementar cada tarea se define su RF/ADR en el RPD.
+- **La generación automática** del panel ya está activa (P3-7): propone 5-10 por score y
+  diversidad, con el criterio de RF-19 y ADR-19, y aceptar usa el camino manual.
+- **El score con LLM y la selección automática** están construidos (P3-6 y P3-7); el resto del
+  plan de IA de §12.3 (RAG, embeddings, transcripción, modelos tabulares) sigue como roadmap
+  candidato y no está activo. Antes de implementar cada tarea se define su RF/ADR en el RPD.
 - **Emoji a color en el render** queda como mejora futura en §12.4 (no activa): libass no pinta
   fuentes de color, y la vía elegida —PNG compuestos por FFmpeg— exige assets, posiciones por
   token en el spec y un grafo de filtros.
 - **La Fase 3 (L3 · Extractora)** está **diseñada en el RPD** —fuentes, segmentación al estilo
-  CapCut, score 0-100 y orden con el mejor al final—, desglosada en tareas (P3-1 a P3-8) con su
-  verificación (§13.4) y **en construcción**: **P3-1 a P3-4 ya están hechas** (entrada con
-  casilla de cumplimiento, descarga al área temporal, segmentación en escenas y revisión con
-  aterrizaje en la galería) y el siguiente paso es P3-5 (score heurístico). No toca el montaje de
-  L1/L2.
+  CapCut, score 0-100 y orden con el mejor al final—, desglosada en tareas (P3-1 a P3-12) con su
+  verificación (§13.4) y **construida**: **P3-1 a P3-12 ya están hechas** (entrada,
+  descarga, segmentación, revisión con aterrizaje, score y títulos con LLM, automático, puntuación
+  masiva, set dorado verificado en P3-8 y claves de IA en Ajustes). No toca el montaje de L1/L2.
 - **L4 sigue fuera del alcance** (ADR-7): no se construye ni se documenta con más detalle hasta
   que se retome.

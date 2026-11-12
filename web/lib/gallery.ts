@@ -3,7 +3,7 @@
  * la API (`lib/library.ts`, que es la que toca disco) y el panel
  * (`components/Gallery.tsx`) sin duplicar reglas. Se puede probar sin navegador.
  */
-import { POSITIONS_MAX, POSITIONS_MIN } from "./limits";
+import { LIMITS, POSITIONS_MAX, POSITIONS_MIN } from "./limits";
 
 /** Un clip de la galería, tal y como lo devuelve la API (nunca con rutas del host). */
 export interface LibraryItem {
@@ -24,6 +24,23 @@ export interface LibraryItem {
   phash?: string | null;
   /** Id del clip más antiguo con el mismo plano: lo calcula el listado, no se guarda. */
   duplicateOf?: string | null;
+  /** Score 0-100 con el que entró en la galería (P3-5). */
+  score?: number | null;
+  /**
+   * **Quién** produjo el score: `llm` (análisis con
+   * un proveedor, P3-6). No confundir con `score_model`, que dice **con qué** se calculó.
+   */
+  score_source?: string | null;
+  /**
+   * **Con qué** se calculó: el id del modelo que
+   * respondió (`claude-haiku-…`). Dos clips pueden compartir `score_source` y tener
+   * `score_model` distinto si se puntuaron con versiones diferentes del mismo camino.
+   */
+  score_model?: string | null;
+  /** Fecha ISO en que se guardó el score. */
+  scored_at?: string | null;
+  /** Título corto con el que el clip entra en la edición (el rótulo de su puesto). */
+  label?: string | null;
 }
 
 /** Los mismos formatos que la subida de puestos (RF-11.2). */
@@ -55,6 +72,16 @@ export function extensionOf(name: string): string | null {
 }
 
 /**
+ * Nombre para mostrar en el panel: sin la extensión del archivo. Todos los clips de la
+ * galería son vídeo, así que el formato no aporta nada en la tarjeta. El nombre guardado
+ * no cambia: esto solo afecta a lo que se pinta.
+ */
+export function displayName(name: string): string {
+  const base = String(name ?? "").trim().split(/[\\/]/).pop() ?? "";
+  return base.replace(/\.[a-z0-9]{1,5}$/i, "") || base;
+}
+
+/**
  * Categoría normalizada: se recorta y se colapsa el espacio sobrante; vacía es
  * «Sin categoría» (`null`). Se comparan sin distinguir mayúsculas (RF-11.3).
  */
@@ -65,6 +92,17 @@ export function normalizeCategory(raw: unknown): string | null {
 }
 
 /** Clave de comparación: dos grafías que solo cambian en mayúsculas son la misma. */
+/**
+ * Título de edición normalizado: se recorta, se colapsa el espacio y se limita al ancho
+ * de un rótulo (`LIMITS.labelChars`). Vacío es `null`.
+ */
+export function normalizeLabel(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  return Array.from(text).slice(0, LIMITS.labelChars).join("").trim() || null;
+}
+
 export function categoryKey(category: string | null): string {
   return (category ?? "").normalize("NFC").toLocaleLowerCase("es");
 }

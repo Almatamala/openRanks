@@ -14,6 +14,7 @@ import {
   writeStatus,
 } from "./jobs";
 import { libraryFilePath, readLibrary, type LibraryItem } from "./library";
+import { titleFromName } from "./gallery-score";
 import { isRunning, prepareClip } from "./pipeline";
 
 /** Fallo previsto de la importación, con el código HTTP que le toca. */
@@ -27,6 +28,11 @@ export class ImportError extends Error {
 }
 
 export interface ImportedClip {
+  /** Título sugerido con el que el clip entra en la edición (P3-9). */
+  label: string;
+  /** Score del LLM con el que el clip entró en la galería, si lo tiene (P3-6). */
+  score?: number | null;
+  score_source?: string | null;
   position: number;
   name: string;
   ext: string;
@@ -134,6 +140,9 @@ export async function importFromLibrary(ids: unknown, currentJobId: unknown): Pr
       position: index + 1,
       name: item.name,
       ext: item.ext,
+      label: item.label ?? titleFromName(item.name),
+      score: item.score ?? null,
+      score_source: item.score_source ?? null,
     })),
   };
 }

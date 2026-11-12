@@ -3,21 +3,20 @@
 | Campo | Valor |
 | --- | --- |
 | **Producto** | `openRanks` — montaje y edición automática de shorts de ranking a partir de clips ya cortados |
-| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada**; solo queda el checklist E2E en el navegador. **Fase 3 (L3 · Extractora) en construcción: P3-1 a P3-4 hechas** (entrada con casilla de cumplimiento, descarga al área temporal, segmentación en escenas y revisión con aterrizaje en la galería), **sin score ni automático todavía** (§4.4, §5.5, RF-16 a RF-20) |
+| **Estado** | **Fase 1 (L1, L2 y panel) construida y verificada.** **Fase 2 (galería y navegación) construida y probada**; solo queda el checklist E2E en el navegador. **Fase 3 (L3 · Extractora) construida (P3-1 a P3-12) y verificada con el set dorado cuando hay clave** (Spearman 0,81 y p95 ≈ 0,6 s por clip, medidos con el heurístico ya retirado) (§4.4, §5.5, RF-15 a RF-22) |
 | **Fecha** | 2-nov-2026 |
 | **Alcance** | **RPD**: qué es el producto, por qué, con qué reglas y con qué criterios de producto. El **plan de ejecución** (orden, entregables, estado y verificación) vive en `docs/plan/openRanks-plan.md` |
 | **Documentos** | **RPD** (este) + **plan**. La numeración `§` es **compartida y estable**: §1–§11 y §14–§17 viven aquí; §12–§13 viven en el plan. Así las referencias del código no se mueven al separar los documentos |
-| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada hasta la Fase 3** (ADR-16, ADR-19); (9) **extractora con fuentes múltiples y casilla de cumplimiento** (ADR-17, ADR-21); (10) **escenas al estilo CapCut, con revisión humana** (ADR-18); (11) **score de viralidad 0-100 y el mejor clip al final (#1)** (ADR-19); (12) **score con Claude Haiku 5.5 y cliente intercambiable** (ADR-20); (13) **divisor manual de escenas en la galería** (ADR-22) |
+| **Decisiones vigentes** | (1) **interfaz única y cómoda** (ADR-9); (2) **estilo bloqueado y render automático** (ADR-8); (3) **montaje siempre de corte seco** (ADR-10); (4) **encuadre automático** por detección del área útil (ADR-11); (5) **galería persistente y orden de selección = #1** (ADR-12, ADR-13); (6) **una categoría libre por clip** (ADR-14); (7) **borrado de usados explícito y confirmado** (ADR-15); (8) **generación automática aplazada hasta la Fase 3** (ADR-16, ADR-19); (9) **extractora con fuentes múltiples y casilla de cumplimiento** (ADR-17, ADR-21); (10) **escenas al estilo CapCut, con revisión humana** (ADR-18); (11) **score de viralidad 0-100 y el mejor clip al final (#1)** (ADR-19); (12) **score con Claude Haiku 5.5 y cliente intercambiable** (ADR-20); (13) **divisor manual de escenas en la galería** (ADR-22); (14) **claves del score guardadas desde Ajustes** (ADR-23) |
 
 **Nomenclatura.** El servicio se llama `openRanks` (nombre anterior del borrador: *petrank*).
 El nicho de mascotas es **el primer preset de estilo**, no el alcance del producto.
 
 Este documento describe **lo que el producto hace hoy**, incluida la **Fase 2** y lo ya
 construido de la **Fase 3 (L3 · Extractora)**: la ingesta, la descarga, la segmentación en
-escenas y la parrilla de revisión con aterrizaje en la galería (P3-1 a P3-4). El **score de
-viralidad** y la **selección automática** (P3-5 a P3-7) tienen sus requisitos (RF-18 y RF-19)
-y criterios cerrados aquí, pero todavía no hay código. Lo que sigue siendo futuro se marca como
-tal; lo que aún no tiene diseño cerrado está en §16. La publicación (L4) sigue **fuera del
+escenas, la parrilla de revisión con aterrizaje en la galería y el score de viralidad (P3-1 a P3-12). El **score**
+(score y títulos con LLM, RF-18) y la **selección automática** (RF-19) están construidos; falta su verificación con el
+set dorado (P3-8). Lo que sigue siendo futuro se marca como tal; lo que aún no tiene diseño cerrado está en §16. La publicación (L4) sigue **fuera del
 alcance** (§4.2).
 
 ---
@@ -46,8 +45,8 @@ una categoría y permite filtrarlos; el operador selecciona entre 5 y 10 y el or
 fija los puestos (#1 para el primero). **Generar manual** importa los clips al trabajo, los
 prepara y abre el montaje con las casillas ya puestas. En el montaje, el borde izquierdo de
 cada casilla permite reordenar por arrastre. Al terminar, **Borrar videos utilizados** elimina
-de la galería los clips de ese ranking, con confirmación. **Generar automático** queda visible
-y deshabilitado: su algoritmo no forma parte de esta fase.
+de la galería los clips de ese ranking, con confirmación. **Generar automático** se activa con la
+Fase 3 (RF-19): propone la selección por score y diversidad.
 
 Objetivos de la Fase 2:
 
@@ -58,19 +57,20 @@ Objetivos de la Fase 2:
 5. **Dejar preparada** la generación automática sin prometer un comportamiento que aún no
    existe.
 
-**Fase 3 — extractora (en construcción).** El operador pega un enlace (YouTube, TikTok,
+**Fase 3 — extractora (construida y verificada).** El operador pega un enlace (YouTube, TikTok,
 Instagram u otra plataforma admitida) o elige un archivo local; openRanks detecta los cortes de
 imagen, propone los tramos dentro de la banda del producto y el operador aprueba los que valen.
 Cada clip entra en la **galería actual** con su procedencia, su categoría y su procedencia
-visible. El **score de viralidad de 0 a 100** y la selección automática (LLM) están diseñados
-pero aún no construidos (P3-5 a P3-7): mientras tanto la selección es manual y el orden sigue el
-criterio de retención ya fijado: el vídeo **abrirá con el clip más flojo y cerrará con el
-mejor**, que ocupará el #1.
+visible. El **score de viralidad de 0 a 100** está construido (solo con LLM, que también
+propone el título del clip, P3-6 y P3-11) y la **selección automática** (P3-7) propone 5-10 clips por
+score y diversidad. El orden mantiene el criterio de retención: el vídeo **abre con el clip
+más flojo y cierra con el mejor**, que ocupa el #1.
 
 Las fases 1 y 2 son **CPU-only**: motor Python de stdlib pura y FFmpeg/libass, sin ASR ni modelos
-locales. La Fase 3 añade **dos dependencias externas opcionales**: `yt-dlp` para la descarga y un
-**LLM por API** para el score y la selección automática. Sin la primera sigue funcionando la
-extracción de archivos locales; el score heurístico y el LLM llegan con P3-5 y P3-6.
+locales. La Fase 3 añade **dos dependencias externas**: `yt-dlp` para la descarga y una **clave de
+LLM** para el score y los títulos; la selección automática reutiliza esos scores sin una
+llamada extra. Sin `yt-dlp` sigue funcionando el archivo local; sin clave no hay score ni
+títulos (P3-11) y el automático no tiene de dónde elegir.
 
 ---
 
@@ -154,11 +154,12 @@ Reglas de composición:
 | 11 | **Selección ordenada de 5 a 10** clips y **generación manual** del ranking | **Hecho** |
 | 12 | **Reordenación por arrastrar y soltar** desde el borde izquierdo de cada casilla | **Hecho** |
 | 13 | **Borrado de los videos utilizados** tras un render correcto, con confirmación | **Hecho** |
-| 14 | **Generación automática** del ranking a partir de una selección | **Fase 3**: criterio definido en RF-19 (score 0-100 y el mejor clip al final); hoy el botón está visible y deshabilitado (ADR-16) |
+| 14 | **Generación automática** del ranking a partir de una selección | **Hecha** (RF-15 y RF-19, P3-7): propone 5-10 por score y diversidad, con el #1 al final |
 | 15 | **Divisor manual de escenas** de un clip de la galería, con precisión de milisegundos | **Hecho** (RF-11.8, ADR-22) |
 | 16 | **Ingesta por enlace** (YouTube, TikTok, Instagram) o archivo local, con cumplimiento declarado | **Hecho** (RF-16, P3-1 y P3-2) |
 | 17 | **Segmentación en escenas y parrilla de revisión**, con aterrizaje en la galería y deduplicación | **Hecho** (RF-17 y RF-20, P3-3 y P3-4) |
-| 18 | **Score de viralidad 0-100** y **selección automática** por score | **Fase 3**, pendiente (RF-18 y RF-19, P3-5 a P3-7) |
+| 18 | **Score de viralidad 0-100** y **selección automática** por score | **Hecha** (RF-18 y RF-19, P3-5 a P3-7) |
+| 19 | **Puntuación masiva de la galería** y descarte de los clips por debajo del umbral (55 por defecto) antes del automático | **Hecha** (RF-21, P3-9) |
 
 ### 4.2 Fuera del alcance actual
 
@@ -173,21 +174,22 @@ Reglas de composición:
   a segundo.
 - Garantizar monetización: es una decisión de la plataforma (ver §11).
 
-### 4.4 Fase 3 — L3 · Extractora (**en construcción: P3-1 a P3-4 hechas**)
+### 4.4 Fase 3 — L3 · Extractora (**hecha y verificada con el set dorado: P3-1 a P3-11**)
 
-Diseño cerrado (ADR-17 a ADR-20) y **en construcción**: el panel ya tiene la sección **«Extraer
+Diseño cerrado (ADR-17 a ADR-20) y **construido**: el panel ya tiene la sección **«Extraer
 clips»**, la casilla de cumplimiento (P3-1), la **descarga al área temporal** con progreso,
 límites y cancelación (P3-2), la **segmentación en escenas** (P3-3) y la **parrilla de revisión
-con aterrizaje en la galería** y deduplicación (P3-4). Faltan el score de viralidad (P3-5/P3-6),
-la selección automática (P3-7) y su verificación con el set dorado (P3-8).
+con aterrizaje en la galería** y deduplicación (P3-4). El **score** (P3-5 y P3-6) y la
+**selección automática** (P3-7), la puntuación masiva de la galería (P3-9) y el **set dorado**
+(P3-8) están hechos: la correlación medida es **0,81** y el p95, **≈0,6 s** por clip.
 
 | # | Capacidad | Estado |
 | --- | --- | --- |
 | 15 | **Ingesta multi-fuente**: enlace de YouTube, TikTok, Instagram u otra plataforma admitida, o archivo local; descarga con `yt-dlp` | Hecha (RF-16, P3-1 y P3-2) |
 | 16 | **Segmentación en escenas** solo por cambio de imagen, filtrada a la banda 1-30 s y revisada por el operador | Hecha (RF-17, P3-3) |
-| 17 | **Score de viralidad 0-100** visible en cada clip, con razones: heurístico y, opcionalmente, LLM | Diseñada (RF-18, P3-5 y P3-6) |
-| 18 | **Selección manual o automática** de 5 a 10 puestos y **orden con el mejor clip al final (#1)** | Diseñada (RF-19, P3-7) |
-| 19 | **Aterrizaje en la galería actual** con categoría y procedencia; reutiliza selección, generación y borrado de la Fase 2; el score se suma con P3-5 | Hecha salvo el score (RF-20, P3-4) |
+| 17 | **Score de viralidad 0-100** visible en cada clip, con título, generados por el LLM | **Hecha** (RF-18, P3-5 y P3-6) |
+| 18 | **Selección manual o automática** de 5 a 10 puestos y **orden con el mejor clip al final (#1)** | Hecha (RF-19, P3-7) |
+| 19 | **Aterrizaje en la galería actual** con categoría y procedencia; reutiliza selección, generación y borrado de la Fase 2; el score se suma con P3-5 y P3-6 | Hecha (RF-20, P3-4) |
 
 ---
 
@@ -236,8 +238,9 @@ Historias de usuario:
    primero seleccionado recibe el **#1** (el mejor, cierra el vídeo), el segundo el #2, etc. Al
    llegar a **10** no se puede seleccionar ningún clip más; con menos de **5**, «Generar
    manual» está deshabilitado y la interfaz indica cuántos faltan.
-4. Con **5 a 10** seleccionados, pulsa **Generar manual**. «Generar automático» está visible
-   pero deshabilitado («próximamente»).
+4. Con **5 a 10** seleccionados, pulsa **Generar manual**. «Generar automático» está activo si
+   hay al menos 5 clips con score: propone una selección por score y diversidad y, al
+   aceptarla, la importa igual que el camino manual.
 5. Si hay un montaje en curso sin descargar, el panel pide **confirmación antes de reemplazar
    las casillas**. Si el operador cancela, vuelve a la galería sin cambiar nada.
 6. Al confirmar, el panel **reutiliza el trabajo actual** (o crea uno si no hay), fija sus
@@ -289,7 +292,7 @@ Historias de usuario:
 | Clip con dos escenas pegadas | El divisor manual lo parte por el fotograma marcado, con precisión de milisegundos: quedan dos clips con la categoría y la procedencia del original y el original se borra. |
 | Punto de corte fuera de los límites | Si una de las dos partes duraría menos de medio segundo, el divisor lo explica y no toca el original. |
 
-### 5.5 Flujo de la Fase 3 (L3 · Extractora) — construido hasta la revisión; score y automático pendientes
+### 5.5 Flujo de la Fase 3 (L3 · Extractora) — P3-1 a P3-11 construidas y verificadas
 
 1. El operador abre **Extraer clips** (sección nueva del menú lateral, junto a «Montar ranking» y
    «Galería de videos»),   pega el enlace del compilado (YouTube, TikTok, Instagram u otra plataforma
@@ -305,7 +308,8 @@ Historias de usuario:
 5. El operador **aprueba o descarta** candidatos en una parrilla. Aprobar un candidato crea su clip
    en la **galería actual**, con procedencia, categoría y score; descartarlo no deja nada.
 6. Con los clips en la galería, el flujo es el de la Fase 2: seleccionar 5-10 y **Generar manual**.
-   «Generar automático» sigue deshabilitado hasta P3-7, que elegirá y ordenará por score (RF-19).
+   «Generar automático» ya está activo: propone 5-10 por score y diversidad (RF-19), explica la
+   elección y, al aceptar, usa el mismo camino que el manual.
 7. El orden de reproducción es ascendente en score: **el vídeo abre con el clip más flojo y cierra
    con el mejor**, que ocupa el #1.
 
@@ -314,10 +318,9 @@ Historias de usuario:
 ## 6. Requisitos funcionales
 
 Se conservan los identificadores **RF-0, RF-6, RF-7 y RF-9** para no romper las referencias
-del código. La Fase 2 añade **RF-10 a RF-15**; RF-15 no está activo. La Fase 3 añade **RF-16 a
-RF-20**: están definidos y sus criterios de aceptación son medibles, pero **ninguno está activo**
-hasta que se construya esa capa. Los requisitos de las capas fuera de alcance siguen sin estar
-activos.
+del código. La Fase 2 añade **RF-10 a RF-15** y la Fase 3 **RF-16 a RF-20**: todos están
+construidos y sus criterios se miden; la verificación con el set dorado (P3-8) está hecha.
+Los requisitos de las capas fuera de alcance siguen sin estar activos.
 
 ### RF-0 — Ensamblado de los clips ya listos (L1) · **hecho**
 
@@ -462,7 +465,7 @@ funciona con teclado y con lector de pantalla.
 4. **Filtro.** Un control permite ver «Todas» o una categoría concreta. Filtrar no borra la
    selección: un clip seleccionado que deja de coincidir con el filtro sigue contando y se
    indica en el contador.
-5. **Tarjeta de clip.** Muestra nombre original, categoría, duración y estado de selección; los
+5. **Tarjeta de clip.** Muestra nombre original, duración y estado de selección (la categoría ya la fija el filtro); los
    datos visibles nunca incluyen rutas del host ni ids internos.
 6. **Reutilización.** Un mismo clip puede usarse en varios rankings; seleccionarlo no lo
    consume ni lo bloquea.
@@ -502,8 +505,8 @@ desaparece.
 5. La selección vive en la sesión del panel mientras no se genera; al recargar antes de generar
    se pierde, pero los clips siguen en la galería (persistirla es una decisión pendiente,
    §16.9). Una vez generado, el orden queda en el trabajo.
-6. **Generar automático** está visible pero **deshabilitado** con la etiqueta «Próximamente»
-   (RF-15); no se puede activar ni ejecutar.
+6. **Generar automático** (RF-15 y RF-19) propone 5-10 clips por score y diversidad cuando hay
+   al menos 5 puntuados; aceptar usa el mismo camino que «Generar manual».
 7. **El selector de puestos sigue activo después de generar.** Aumentar el tamaño añade
    casillas vacías, que se rellenan subiendo clips; reducirlo deja fuera los puestos
    sobrantes. Los clips que se conservan no se preparan otra vez.
@@ -552,18 +555,20 @@ de estar disponibles; el mismo intercambio se puede hacer con el teclado.
 desaparecido de la galería y del disco, las casillas están vacías y el `ranking.mp4` se sigue
 pudiendo descargar. Cancelar deja los N clips, las casillas y el ranking como estaban.
 
-### RF-15 — Generación automática (futura) · **no activa; llega con P3-7**
+### RF-15 — Generación automática · **hecha (P3-7)**
 
-1. El botón **Generar automático** está visible en la galería, deshabilitado y acompañado de
-   «Próximamente».
-2. No tiene endpoint, no crea trabajos, no modifica la selección y no se puede activar por
-   teclado ni por API.
-3. El criterio de orden automático (scoring, diversidad, duración, categorías) **no está
-   definido**; se documentará en el RPD antes de implementarlo.
+1. El botón **Generar automático** vive en la galería, junto a «Generar manual», y se activa
+   cuando hay al menos **5 clips con score y duración medida**; si no, queda deshabilitado y
+   explica el motivo.
+2. Al pulsarlo **propone** una selección de 5-10 clips por score y diversidad, con el total y
+   las score y título visibles. No crea trabajos ni modifica la selección hasta que el operador acepta.
+3. **Aceptar** importa y prepara esa selección con el mismo camino que «Generar manual»
+   (casillas, ticks y navegación a Montar); **descartar** no cambia nada.
 
-**Criterio de aceptación.** El control tiene `disabled`/`aria-disabled`, un clic no produce
-ninguna petición ni cambio de estado y no aparece ninguna ruta de generación automática en la
-API.
+**Criterio de aceptación.** Con 5 clips puntuados el botón está activo; sin scores suficientes
+está deshabilitado y explica por qué; la propuesta nunca sale de 5-10, no repite clip y suma
+30-58 s (o avisa por debajo de 30 s); aceptar deja las mismas casillas y ticks que el camino
+manual, y descartar conserva la selección anterior.
 
 ### RF-16 — Ingesta multi-fuente · **hecha (Fase 3)**
 
@@ -617,59 +622,64 @@ de 1-30 s. Aprobar 6 candidatos deja exactamente **6 clips** en la galería, con
 su duración dentro de la banda, y el temporal se borra; descartarlos todos no deja nada. Cambiar el
 umbral del preset cambia la propuesta sin tocar código.
 
-### RF-18 — Score de viralidad 0-100 · **diseñada; pendiente (P3-5 y P3-6)**
+### RF-18 — Score de viralidad 0-100 · **construida (P3-9 y P3-12)**
 
-1. Todo clip tiene un **score de 0 a 100** visible en su tarjeta (parrilla de revisión, galería y
-   montaje), con **2 o 3 razones** cortas y la fuente del score (`heurístico` o `llm`).
-2. **Base heurística local**, siempre disponible y sin coste: movimiento y cambio visual, presencia
-   de caras, energía y picos de audio, texto en pantalla, duración y fuerza del primer segundo.
-3. **Refinamiento LLM opcional**: lee miniaturas, metadatos y, si está configurada, la
-   transcripción; devuelve score y razones con un JSON Schema. Usa **el mismo modelo y prompt para
-   todos los clips de un trabajo**, para que los scores sean comparables entre sí.
-4. El score se guarda con la **versión del modelo, la fecha y el hash del clip**: mismo archivo y
-   mismos parámetros ⇒ mismo score heurístico; el del LLM es reproducible por estar guardado, no
-   por volver a llamarlo.
-5. Si el LLM no está configurado, falla o tarda: el clip se queda con el score **heurístico**, el
-   panel lo avisa y **nada bloquea** la selección ni el render.
-6. Coste y latencia: heurístico **< 1 s** por clip; el LLM puntúa el trabajo en **una sola
-   llamada** (comparabilidad entre clips), con **p95 < 20 s**, modelo por defecto **Claude Haiku
-   5.5** y **tope de 0,02 USD por trabajo**; con ese modelo, un trabajo de 10 clips cuesta
-   ≈ **0,0011 USD** (§7.9).
+1. El score se calcula **solo en la galería**, al pulsar «Puntuar galería», sobre clips ya
+   cortados. El **divisor de escenas no puntúa**: cortar y puntuar son procesos separados y
+   pueden ejecutarse en momentos distintos.
+2. El vídeo largo **nunca** recibe score: primero se divide en escenas (RF-17), el operador
+   aprueba las que valen y después la galería las puntúa.
+3. Cada clip recibe un **score 0-100** y un **título corto** (3-24 caracteres, gancho de
+   ranking, editable). **No hay razones**: el panel muestra solo el score, la fuente y el
+   modelo. Sin heurístico ni respaldo local.
+4. La clave es **obligatoria para puntuar**. Sin clave, «Puntuar galería» no se lanza y los
+   clips se quedan sin score; el divisor sigue funcionando porque no usa LLM.
+5. Una sola llamada por tanda, con el mismo modelo y prompt para todos. Tope de **0,02 USD
+   por trabajo**; sin clave, sin red o con error del proveedor, el panel muestra un mensaje
+   accionable y no inventa scores.
+6. El título lo propone el mismo LLM; el nombre del archivo solo es el último respaldo si la
+   respuesta no trae un título válido. Se guarda como etiqueta editable en la galería.
+7. Coste y latencia: p95 < 20 s, Claude Haiku 5.5 por defecto y ≈0,0011 USD por trabajo de 10
+   clips (§7.9).
 
-**Criterio de aceptación.** Un set dorado de clips con orden humano da una **correlación de
-Spearman ≥ 0,6** con el score. El 100 % de los scores está en 0-100 y trae sus razones. El mismo
-clip procesado dos veces da el mismo score heurístico. Con el LLM caído el flujo completa y los
-scores quedan marcados como heurísticos. El coste medido por trabajo no pasa de **0,002 USD** con
-el modelo por defecto y nunca del tope de **0,02 USD**.
+**Criterio de aceptación.** Sin clave, «Puntuar galería» no produce scores y explica dónde
+configurarla; «Dividir en escenas» sigue funcionando. Con clave, cada clip recibe score 0-100
+y título ≤24, sin razones. El vídeo largo nunca aparece puntuado. Un fallo del proveedor deja
+los clips sin puntuar y muestra el error.
 
-### RF-19 — Selección y orden por score · **diseñada; pendiente (P3-7)**
+### RF-19 — Selección y orden por score · **hecha (P3-7)**
 
-1. Dos caminos, con el score siempre a la vista: **manual** (el operador selecciona en la galería,
-   como RF-12) y **automático** (con LLM decide a partir de los scores y la diversidad; sin LLM
-   ordena por score heurístico y diversidad). En ambos casos elige 5-10, cabe en 30-58 s y explica
-   la elección.
-2. El automático **propone**; el operador acepta, ajusta o descarta. Aceptar deja la misma
-   selección ordenada que el camino manual: nada se monta sin pasar por el panel (ADR-9).
-3. **Orden de retención**: los puestos se ordenan por score **ascendente en el sentido de
-   reproducción**. El vídeo **abre con el clip de menor score** (#5, #6…) y **cierra con el mejor,
-   que ocupa el #1**. Es la lectura operativa de ADR-13: el mejor es el #1 y el #1 va al final.
-4. El botón **«Generar automático»** del panel (RF-15) **se activa con esta fase** y usa los mismos
-   scores; «Generar manual» no cambia.
-5. Sin scores todavía no hay automático: el botón queda deshabilitado y explica el motivo.
+1. Dos caminos, con el score a la vista: **manual** (RF-12) y **automático** (P3-7). El
+   automático usa el score del LLM que ya trae cada clip y **no hace una
+   llamada nueva al proveedor**.
+2. Solo entran clips con score entero 0-100, duración medida y sin duplicado de plano. Se
+   ordenan por score descendente y se eligen hasta 10, con **un máximo de dos por categoría**
+   mientras haya recambio; si así no se llega a 5, se completa sin ese tope. La suma se mantiene
+   en **≤58 s**; si queda por debajo de **30 s** se intenta completar o cambiar el peor clip por
+   uno más largo y, si aun así no llega, se propone con un aviso (como L1).
+3. El automático **propone** con el detalle de cada clip (score, fuente, duración, categoría y
+   título) y el total. **Aceptar** importa y prepara la selección con el mismo camino que el
+   manual (casillas y ticks); **descartar** no cambia nada.
+4. **Orden de retención**: la propuesta va del **#1 (mayor score)** al último. La reproducción
+   recorre los puestos del último al #1: el vídeo **abre con el clip más flojo y cierra con el
+   mejor**. Es la lectura operativa de ADR-13.
+5. Sin al menos 5 clips puntuados con duración, el botón queda deshabilitado y explica el
+   motivo; «Generar manual» no cambia.
 
-**Criterio de aceptación.** Con 10 clips de scores conocidos, el orden del `ranking.mp4` es
-ascendente y el #1 es el de mayor score. El automático nunca elige menos de 5 ni más de 10, no
-repite clip y su elección cabe en 30-58 s. Aceptar la propuesta deja casillas y ticks como el
-camino manual. Sin scores, «Generar automático» está deshabilitado y explica por qué; «Generar
+**Criterio de aceptación.** Con 10 clips de scores conocidos, el `spec.json` reproduce los
+puestos en orden ascendente de score y el #1 es el de mayor score. El automático nunca elige
+menos de 5 ni más de 10, no repite clip y su elección cabe en 30-58 s (o avisa por debajo de
+30 s). Aceptar deja casillas y ticks como el camino manual; descartar conserva la selección.
+Sin scores suficientes, «Generar automático» está deshabilitado y explica por qué; «Generar
 manual» sigue igual.
 
-### RF-20 — Galería, procedencia y deduplicación · **hecha salvo el score (Fase 3)**
+### RF-20 — Galería, procedencia y deduplicación · **hecha (Fase 3)**
 
 1. Los clips aprobados entran en la **galería actual** (`library/` + `library.json`) y se comportan
    como cualquier otro: filtro por categoría, selección 5-10, generar y borrar usados (RF-11 a
    RF-14).
 2. Cada clip guarda **procedencia** (plataforma y URL de la fuente, sin campos que teclear) y su
-   **score** (este último llega con P3-5); la tarjeta los muestra sin enseñar rutas del host
+   **score** (P3-5 y P3-6); la tarjeta los muestra sin enseñar rutas del host
    (§10.3).
 3. **Deduplicación por hash**: si el tramo ya está en la galería, se avisa y se reutiliza la
    entrada en vez de duplicar el archivo.
@@ -683,6 +693,48 @@ visibles y sin rutas del host. Volver a extraer el mismo tramo no crea duplicado
 la entrada. El temporal desaparece y el espacio ocupado es el de los tramos aprobados. «Borrar
 videos utilizados» sigue borrando solo los clips de ese ranking.
 
+### RF-21 — Puntuación masiva de la galería · **hecha (P3-9 y P3-12)**
+
+1. **«Puntuar galería»** es el único sitio donde se puntúa. Puntúa con el LLM, en una sola
+   llamada, los clips que aún no tienen score; cada uno recibe **score 0-100** y **título
+   corto** (≤24 caracteres), generado por el modelo.
+2. La clave es **obligatoria**: sin clave en Ajustes no se lanza y el panel lo explica. No hay
+   heurística local, ni razones, ni título derivado del archivo como camino normal.
+3. Los clips que ya traen score **no se vuelven a puntuar**; los que no tienen score no se
+   borran. El umbral de descarte es **55** por defecto (`OPENRANKS_SCORE_MIN`).
+4. El borrado de los que no pasan el umbral es un **segundo paso confirmado**: cancelar no
+   cambia nada y «Generar manual» no se ve afectado. El automático (RF-19) solo ve a los que
+   pasan.
+5. Un fallo del proveedor no inventa scores: los clips afectados quedan sin puntuar y el panel
+   muestra el error. El título se guarda con el score y se edita en la galería.
+
+**Criterio de aceptación.** Sin clave, 0 peticiones y mensaje que lleva a Ajustes. Con clave,
+todos los pendientes reciben score y título ≤24, sin razones. El borrado exige `confirm`,
+elimina solo los puntuados por debajo del umbral y deja intactos los sin score.
+
+### RF-22 — Claves de IA gestionadas desde Ajustes · **hecha (P3-10 y P3-12)**
+
+1. La vista **Ajustes** guarda la clave de **Claude** y la de **Gemini**, y deja elegir cuál
+   se usa. La clave del entorno sigue valiendo cuando no hay ninguna guardada; la del panel
+   manda cuando existe.
+2. Se guardan en el **volumen de trabajos**, fuera del repo, de los manifiestos y de los logs.
+   La API **nunca devuelve la clave completa**: solo si existe, de dónde sale y sus últimos
+   cuatro caracteres. Un campo vacío conserva la clave anterior; quitarla es explícito.
+3. **La clave solo se usa al puntuar la galería.** El divisor de escenas (`openranks analyze`)
+   no recibe clave ni LLM: solo corta. «Puntuar galería» (`openranks rate`) sí la recibe por
+   entorno con el proveedor elegido y su modelo por defecto.
+4. El tope de 0,02 USD por trabajo sigue vigente. Sin clave, sin red o con error del
+   proveedor, la puntuación falla con un mensaje accionable; no hay respaldo heurístico.
+5. **Nombres:** la misma llamada que puntúa propone el título corto de cada clip. El panel lo
+   guarda como etiqueta editable; el nombre del archivo solo se usa si el modelo no devuelve
+   un título válido.
+
+**Criterio de aceptación.** Guardar una clave la deja configurada con sus últimos cuatro
+caracteres y la API no devuelve el resto. Sin clave, dividir escenas funciona y «Puntuar
+galería» no produce scores. Con clave de Gemini, los clips de la galería reciben score,
+`source: llm`, modelo y título. Quitar una clave pide confirmación.
+
+
 ---
 
 ## 7. Diseño técnico
@@ -692,7 +744,7 @@ videos utilizados» sigue borrando solo los clips de ese ranking.
 El código implementa **L1, L2 y el panel**. La **Fase 2** añade a esa misma arquitectura una
 galería persistente y la navegación lateral; **el motor no cambia**: la galería guarda
 originales y, al generar, los copia al `input/` del trabajo para que `prepare` → `join` →
-`render` sigan siendo los mismos. La **Fase 3** está construida hasta la revisión (§7.8, P3-1 a P3-4); la
+`render` sigan siendo los mismos. La **Fase 3** está construida y verificada con el set dorado (§7.8, P3-1 a P3-11); la
 publicación (L4) sigue fuera del alcance y no hay módulos de cola, almacenamiento objeto ni
 publicación. La extracción se documentó primero y se construye por tareas propias en el plan
 (§12, F3).
@@ -777,7 +829,7 @@ contenedor manda el de apt). El panel fija `OPENRANKS_PRESET_FILE` en el directo
 La galería de la Fase 2 queda dentro del **mismo volumen** (`/data/jobs/library/`), así que
 sobrevive a reinicios y despliegues sin configuración adicional.
 
-### 7.8 Fase 3 — diseño técnico (construido hasta la revisión: P3-1 a P3-4)
+### 7.8 Fase 3 — diseño técnico (construido y verificado con el set dorado: P3-1 a P3-11)
 
 ```
 enlace ──► yt-dlp ──► temporal ──► análisis (ffprobe + scdet / blackdetect)
@@ -792,19 +844,19 @@ enlace ──► yt-dlp ──► temporal ──► análisis (ffprobe + scdet 
 ```
 
 - **Mismas piezas que L1/L2**: motor Python de stdlib pura y FFmpeg. Se suman `yt-dlp` (herramienta
-  externa, detectada como FFmpeg) y un **cliente LLM por HTTP** (chat completions con imagen,
-  sin SDK); ninguno es obligatorio para L1/L2. Proveedor, modelo y coste: §7.9.
+  externa, detectada como FFmpeg) y un **cliente LLM por HTTP** sin SDK, con adaptador nativo de
+  Claude, Gemini y OpenAI; ninguno es obligatorio para L1/L2. Proveedor, modelo y coste: §7.9.
 - **Un trabajo por extracción** en el mismo directorio de trabajos: `extract/source.*` (temporal),
-  `extract.json` (cortes, umbrales y versiones; los scores se suman con P3-5) y `candidates/`
+  `extract.json` (cortes, umbrales y versiones; sin score: la puntuación vive en la galería) y `candidates/`
   (miniaturas). Los clips aprobados se copian a `library/`, así que la Fase 2 no cambia.
 - **Sin cola ni base de datos**: una extracción a la vez por panel y progreso por fase con el mismo
   mecanismo que L1/L2.
 - **Determinismo y trazabilidad**: mismo archivo + mismos umbrales ⇒ mismos cortes. El manifiesto
-  guarda hash de la fuente, versión de `yt-dlp` y de FFmpeg, umbrales, modelo y prompt del LLM, y
-  los scores con sus razones; nunca rutas absolutas.
-- **Dependencia del roadmap de IA**: el score por LLM y la selección automática son las tareas
-  IA-1 e IA-2 de §12.3 del plan. Sin ellas, la capa funciona con el score heurístico y la
-  selección manual.
+  guarda hash de la fuente, versión de `yt-dlp` y de FFmpeg y umbrales; la galería guarda el
+  score, el título, el modelo y la fecha. Nunca rutas absolutas.
+- **Dependencia del roadmap de IA**: el score por LLM es la tarea IA-2 de §12.3 del plan; la
+  selección automática (P3-7) es determinista sobre esos scores y no añade otra llamada. Sin
+  clave no hay score; el panel pide configurarla en Ajustes.
 
 ### 7.9 Proveedor del LLM del score: comparación, decisión y coste
 
@@ -812,10 +864,13 @@ enlace ──► yt-dlp ──► temporal ──► análisis (ffprobe + scdet 
 Los otros dos candidatos se miden con el mismo set dorado y se cambian sin tocar código:
 `gpt-6-luna` (OpenAI) y `Gemini 3.8 Flash`.
 
-El cliente habla **chat completions con la imagen en data URL y salida JSON**, que es lo que
-exponen los tres proveedores (Google y Anthropic publican una capa compatible con OpenAI; se
-comprueba con la prueba de humo al implementar). Cambiar de proveedor es cambiar URL, clave y
-modelo, no código.
+El cliente habla **la API nativa de cada proveedor** con el mismo prompt y esquema: Claude
+(`messages` con la imagen en base64), Gemini (`generateContent` con `inline_data`) y OpenAI
+(`chat completions` con la imagen en data URL). Basta **la clave que ya esté en la máquina**:
+`ANTHROPIC_API_KEY` para Claude, `GEMINI_API_KEY`/`GOOGLE_API_KEY` para Gemini u
+`OPENAI_API_KEY`; `OPENRANKS_LLM_API_KEY` también vale y manda. El proveedor se deduce del
+modelo (`claude-…`, `gemini-…`, `gpt-…`) o se fuerza con `OPENRANKS_LLM_PROVIDER`. Cambiar de
+proveedor es cambiar la clave, el modelo y, si hace falta, la URL, no el código.
 
 **Unidad de coste.** Un trabajo = **10 clips puntuados en una sola llamada** (mismo modelo y
 prompt para todos, RF-18): 1 miniatura de 512x512 por clip (≈350-400 tokens de imagen) + 40 tokens
@@ -832,7 +887,7 @@ consultados el 28-oct-2026 (sin lote ni caché; el procesamiento por lotes abara
 | GPT-6.1 Terra (OpenAI) | 1,00 / 5,00 | 0,0110 USD | 11,00 USD | Gama media; no aporta nada al score que no dé Luna por 10× menos |
 | Local (Qwen-VL en CPU) | 0 | 0 | 0 | **Descartado**: sin GPU no cumple el p95 de 20 s por trabajo |
 
-**Por qué Haiku 5.5.** El score es **clasificar y extraer** (0-100 + razones) a partir de una
+**Por qué Haiku 5.5.** El score es **clasificar y extraer** (0-100 + título) a partir de una
 miniatura, que es exactamente el uso para el que el modelo está posicionado, y el coste por
 trabajo queda en **una décima de céntimo**: a este volumen (decenas de trabajos por semana) la
 diferencia con los demás candidatos es calderilla, así que decide la calidad, no el precio.
@@ -841,8 +896,8 @@ Haiku, Luna y Gemini 3.8 Flash se comparan con el set dorado (RF-18) y se cambia
 
 **Control de coste.** Una llamada por trabajo, resultado cacheado por hash de clip, estimación de
 tokens antes de enviar y tope **0,02 USD por trabajo** (`OPENRANKS_LLM_MAX_COST_USD`, 18× el
-coste típico con Haiku). Si se supera el tope, no se llama al LLM y el trabajo sigue con el score
-heurístico. El tope mensual y quién paga la clave quedan en §16.16.
+coste típico con Haiku). Si se supera el tope, no se llama al LLM y el trabajo falla con un mensaje
+accionable; no hay respaldo local. El tope mensual y quién paga la clave quedan en §16.16.
 
 **Lo que este coste no incluye.** La transcripción: `gpt-transcribe` cuesta 0,0045 USD/minuto de
 audio, así que un compilado de 10 minutos son **0,045 USD**, unas **40 veces** el score de 10
@@ -852,7 +907,7 @@ presupuesto del score.
 **Datos y privacidad.** Las miniaturas salen del servidor al proveedor: solo de material con
 derechos declarados (RF-16, §11.7), sin datos personales añadidos, y con la política del
 proveedor de no entrenar con los datos de su API por defecto. Si el operador prefiere no salir de
-su máquina, se queda el score heurístico local.
+su máquina, no hay score: la clave es obligatoria.
 
 ---
 
@@ -870,8 +925,9 @@ trabajos:
 - `render/`: `prepared/NN.mp4` con los clips ya preparados, `union.mp4`, `ranking.mp4`,
   `spec.json` y `manifest.json`.
 - `log.txt`: la traza del trabajo.
-- `library.json`: índice de la **galería** (Fase 2) con `id`, `file`, `original_name`,
-  `category`, `bytes` y `added_at`.
+- `library.json`: índice de la **galería** (`{version: 1, items: [...]}`) con `id`, `name`, `ext`,
+  `bytes` y `category`, más los opcionales `duration_s`, `sha256`, `phash`, `score`,
+  `score_source`, `score_model`, `scored_at` y `label`. El índice conserva el score, su fuente, su modelo y el título; el análisis no deja score.
 - `library/<id>.<ext>`: los clips **originales** de la galería. Al generar un ranking se
   copian a `input/` del trabajo; borrarlos de la galería no afecta a los trabajos ya creados.
 
@@ -1008,7 +1064,7 @@ un mismo par texto + preset produce siempre el mismo MP4.
 
 ### 10.3 Seguridad y privacidad
 
-- Claves y rutas sensibles solo por entorno, nunca en el repo ni en los manifiestos.
+- Claves y rutas sensibles nunca en el repo ni en los manifiestos. La del score puede guardarse desde **Ajustes** en el volumen de trabajos (RF-22) o seguir viniendo por entorno; la API solo devuelve si existe y sus últimos cuatro caracteres.
 - Los jobs del panel no se sirven por ruta libre: la API solo entrega los artefactos que ella
   misma lista.
 - Los manifiestos guardan nombres de archivo y hashes, nunca rutas del host.
@@ -1075,8 +1131,8 @@ el panel reconstruye el estado desde el servidor, no desde el cliente.
 | R9 | **Galería grande o lenta** | Bajo | Se guardan solo originales, se lista con paginación si supera 200 clips y el filtro se resuelve en el servidor |
 | R10 | **Ingesta de material ajeno** (derechos y términos de la plataforma) | Alto: retirada del vídeo o del canal | Casilla de cumplimiento (términos y privacidad) antes de extraer (§11.7), con plataforma y URL guardadas por clip y visibles en la galería; ni vídeos privados ni DRM |
 | R11 | **La plataforma bloquea la descarga o `yt-dlp` se queda viejo** | Medio: una extracción falla | Versión mínima de la herramienta, error accionable con la orden de actualización y prueba de humo con una URL por plataforma |
-| R12 | **Score de viralidad engañoso** | Medio: se elige un clip flojo | Set dorado con orden humano y correlación mínima (RF-18), razones visibles y revisión humana antes de montar (RF-19) |
-| R13 | **Coste o latencia del LLM** | Medio: el flujo se encarece o espera | Score heurístico local como base, llamadas en lote con tope por trabajo, caché por hash de clip y degradación a heurístico si falla |
+| R12 | **Score de viralidad engañoso** | Medio: se elige un clip flojo | Set dorado con orden humano y correlación mínima (RF-18), score y título visibles y revisión humana antes de montar (RF-19) |
+| R13 | **Coste o latencia del LLM** | Medio: el flujo se encarece o espera | Sin respaldo local: el trabajo falla con mensaje accionable, con tope por trabajo |
 | R14 | **Escenas mal cortadas** (fundidos, destellos, planos muy cortos) | Medio: candidatos inútiles | Banda 1-30 s con fusión y partición, corte exacto en el fotograma del cambio de imagen y revisión con miniaturas, con dividir/unir en la parrilla y divisor manual en la galería (ADR-18, ADR-22) |
 
 ---
@@ -1098,13 +1154,14 @@ capa.
 | ADR-13 | **El orden de selección asigna #1, #2, #3…**: el primero elegido es el mejor y cierra el vídeo | Decisión del operador (23-oct-2026). El operador elige de mejor a peor, que es el orden mental del ranking; el #1 ya es el mejor en todo el producto y el arrastre permite corregir después. Con score (Fase 3) el orden lo fija el score y no el clic (RF-19) |
 | ADR-14 | **Una categoría de texto libre por clip**, creada al escribirla y sugerida por autocompletado; sin entidad ni pantalla de categorías | Decisión del operador (23-oct-2026). Evita administración y mantiene el flujo en la propia tarjeta. El filtro y las sugerencias salen de los datos; al borrar el último clip de una categoría, esta desaparece |
 | ADR-15 | **Borrado de usados explícito y confirmado**, solo tras un render correcto: elimina los clips de la galería y del disco, limpia las casillas y **no toca** el ranking generado | Decisión del operador (23-oct-2026). Es la única acción destructiva del flujo y debe requerir intención clara; conservar el `ranking.mp4` evita que el operador pierda lo que acaba de descargar |
-| ADR-16 | **Generación automática aplazada**: el botón existe visible y deshabilitado («Próximamente»), sin endpoint ni criterio de orden | Decisión del operador (23-oct-2026). Promete la dirección del producto sin inventar un scoring que aún no está definido; se diseñará en el RPD antes de implementarlo; ADR-19 ya fija el criterio para la Fase 3 |
+| ADR-16 | **Generación automática aplazada** (superada por ADR-19 y P3-7): el botón existía visible y deshabilitado («Próximamente»), sin endpoint ni criterio de orden | Decisión del operador (23-oct-2026). Promete la dirección del producto sin inventar un scoring que aún no está definido; se diseñará en el RPD antes de implementarlo; ADR-19 ya fija el criterio para la Fase 3 |
 | ADR-17 | **La Fase 3 (L3 · Extractora) entra en el alcance**: ingesta de YouTube, TikTok u otra plataforma admitida y archivos locales, con **declaración de derechos obligatoria** antes de descargar (hoy, una sola casilla de cumplimiento: ADR-21) | Decisión del operador (28-oct-2026). El cuello de botella del producto es conseguir los clips, y la descarga de TikTok pasa de v2+ a esta fase. La declaración de derechos y la procedencia guardada mantienen §11: no se sortean DRM ni muros de pago y se sigue exigiendo material propio o licenciado |
 | ADR-18 | **Segmentación por escenas y movimiento (como el «Split scenes» de CapCut), con revisión humana**: el sistema propone tramos dentro de la banda 1-30 s y el operador aprueba los que entran en la galería | Decisión del operador (28-oct-2026). CapCut demuestra que cortar por plano ahorra el trabajo manual, pero un compilado ajeno tiene planos que no valen: proponer y aprobar conserva la comodidad sin publicar relleno. La segunda señal de audio cubre lo que la imagen no ve (fundidos, reacciones) |
 | ADR-19 | **Score de viralidad 0-100 por clip y orden con el mejor al final**: selección manual o automática con el score a la vista; el vídeo abre con el clip más flojo y cierra con el mejor, que es el #1. Activa «Generar automático» cuando exista la Fase 3 | Decisión del operador (28-oct-2026). El cierre con el mejor clip es lo que retiene hasta el final, aunque el orden parezca contraintuitivo (mejor = último). El score hace comparables los clips entre trabajos y da al camino automático un criterio explícito: resuelve la pregunta abierta 10 de §16 y da contenido al botón de RF-15 |
-| ADR-20 | **Proveedor del score: Claude Haiku 5.5 por defecto, con cliente intercambiable** por entorno (`OPENRANKS_LLM_MODEL`, `OPENRANKS_LLM_BASE_URL`, `OPENRANKS_LLM_API_KEY`) y tope de 0,02 USD por trabajo | Decisión del operador (28-oct-2026), con precios de lista del 28-oct-2026 (§7.9). El score es una tarea de clasificación y extracción sobre una imagen, y Haiku 5.5 la cubre a 0,0011 USD por trabajo de 10 clips, por debajo de Gemini 3.8 Flash (0,0083), GLM-5V-Turbo (0,0108) y GPT-6.1 Terra (0,0110). El cliente configurable evita atarse a un proveedor: el set dorado (Spearman ≥ 0,6, p95 < 20 s) decide si hay que cambiar a GPT-6 Luna o Gemini 3.8 Flash |
+| ADR-20 | **Proveedor del score: Claude Haiku 5.5 por defecto, con cliente intercambiable** por entorno (`OPENRANKS_LLM_MODEL`, `OPENRANKS_LLM_BASE_URL`, `OPENRANKS_LLM_PROVIDER`, `OPENRANKS_LLM_API_KEY` o la clave estándar del proveedor) y tope de 0,02 USD por trabajo | Decisión del operador (28-oct-2026), con precios de lista del 28-oct-2026 (§7.9). El score es una tarea de clasificación y extracción sobre una imagen, y Haiku 5.5 la cubre a 0,0011 USD por trabajo de 10 clips, por debajo de Gemini 3.8 Flash (0,0083), GLM-5V-Turbo (0,0108) y GPT-6.1 Terra (0,0110). El cliente configurable evita atarse a un proveedor: el set dorado (Spearman ≥ 0,6, p95 < 20 s) decide si hay que cambiar a GPT-6 Luna o Gemini 3.8 Flash |
 | ADR-21 | **La entrada de la extractora pide una sola casilla de cumplimiento** (términos de la plataforma y política de privacidad) en vez de autor, fecha y licencia; la procedencia que se guarda es la que no hay que teclear: plataforma y URL | Decisión del operador (28-oct-2026). Tres campos por extracción frenaban el flujo sin aportar un dato que el sistema no sepa ya; la casilla deja el cumplimiento en el operador y la procedencia en un dato automático. §11.7 se sigue exigiendo: sin la casilla no se descarga |
 | ADR-22 | **Divisor manual de escenas en la galería**: un clip con dos escenas pegadas se parte por un punto que marca el operador, con precisión de milisegundos; las dos mitades lo sustituyen y conservan categoría y procedencia | Decisión del operador (2-nov-2026). El detector automático no siempre separa dos planos que viven en el mismo archivo, y volver a subir el clip por separado rompe el flujo de la galería. Cortar por tiempo es exacto y previsible, y no compite con la segmentación automática de la Fase 3 (ADR-18): la corrige cuando hace falta |
+| ADR-23 | **Las claves de Claude y de Gemini se guardan desde la vista Ajustes del panel**, en el volumen de trabajos, y el operador elige cuál se usa para el score; la API nunca devuelve la clave completa | Decisión del operador (12-nov-2026). P3-6 ya usaba claves del entorno, pero exigía terminal y reiniciar el panel, contra ADR-9. Guardarlas en el volumen (fuera del repo y de los manifiestos) mantiene §10.3 sin secretos versionados; el campo vacío conserva la clave y quitarla es explícito. El tope por trabajo no cambia; la caché del análisis se retiró |
 
 ---
 
@@ -1143,7 +1200,12 @@ capa.
 15. **LLM**: resuelto en ADR-20 y §7.9 (Claude Haiku 5.5 por defecto, ≈0,0011 USD por trabajo de
     10 clips, tope de 0,02 USD por trabajo y cliente intercambiable).
 16. **Presupuesto y titularidad de la clave del LLM**: quién la paga y qué tope mensual; el diseño
-    asume clave propia del operador y el tope por trabajo de §7.9.
+    asume clave propia del operador (de Claude o de Gemini: las dos valen sin tocar código) y el
+    tope por trabajo de §7.9. Desde ADR-23 la clave se puede guardar desde Ajustes; desde P3-11 es
+    obligatoria para puntuar y el LLM también propone el título del clip.
+17. **Nombre del clip con LLM**: resuelto en P3-11. El mismo LLM que puntúa propone un
+    título de ≤24 caracteres, con gancho de ranking, editable en la galería; el nombre del
+    archivo solo es el último respaldo si la respuesta no trae un título válido.
 
 ---
 
@@ -1170,15 +1232,20 @@ capa.
 | `OPENRANKS_YTDLP` | — | Binario de `yt-dlp` para extraer de un enlace (si no, `.venv` del repo y luego `PATH`); sin él la sección avisa de qué instalar |
 | `OPENRANKS_SOURCE_MAX_MINUTES` | `60` | Duración máxima de la fuente que se puede extraer |
 | `OPENRANKS_SOURCE_MAX_MB` | `2048` | Tamaño máximo del archivo que se descarga |
-| `OPENRANKS_LLM_API_KEY` | — | Clave del proveedor del score (Fase 3); sin ella se usa el heurístico |
-| `OPENRANKS_LLM_MODEL` | Claude Haiku 5.5 | Modelo del score; el cliente es intercambiable (ADR-20) |
-| `OPENRANKS_LLM_BASE_URL` | el del proveedor | Endpoint del cliente LLM |
+| `OPENRANKS_LLM_API_KEY` | — | Clave del proveedor del score; obligatoria: sin ninguna clave no hay score ni títulos |
+| `OPENRANKS_LLM_PROVIDER` | `auto` | `anthropic` \| `gemini` \| `openai`; `auto` lo deduce del modelo |
+| `ANTHROPIC_API_KEY` | — | Clave de Claude, si no se usa `OPENRANKS_LLM_API_KEY` |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Clave de Gemini, si no se usa `OPENRANKS_LLM_API_KEY` |
+| `OPENAI_API_KEY` | — | Clave de OpenAI, si no se usa `OPENRANKS_LLM_API_KEY` |
+| `OPENRANKS_LLM_MODEL` | el del proveedor (Claude Haiku 5.5) | Modelo del score; el cliente es intercambiable (ADR-20) |
+| `OPENRANKS_LLM_BASE_URL` | el del proveedor | Endpoint de la API nativa del proveedor |
 | `OPENRANKS_LLM_MAX_COST_USD` | `0.02` | Tope de coste estimado por trabajo antes de llamar al LLM |
+| `OPENRANKS_SCORE_MIN` | `55` | Umbral de la puntuación masiva de la galería: por debajo se ofrecen para eliminar antes del automático |
 
 La Fase 2 **no añade variables de entorno**: la galería vive en `OPENRANKS_JOBS_DIR/library/` y
 la sirve el propio panel. El arranque local, la utilidad del venv y el orden de resolución de
-Python/FFmpeg están en el plan, §12.1. La Fase 3 **ya usa `OPENRANKS_YTDLP` y los dos límites de la fuente**
-(P3-1 a P3-4); las `OPENRANKS_LLM_*` están previstas y el motor todavía no las lee (P3-6).
+Python/FFmpeg están en el plan, §12.1. La Fase 3 **ya usa `OPENRANKS_YTDLP`, los dos límites de la fuente y las `OPENRANKS_LLM_*`**
+(P3-1 a P3-12); sin clave de LLM no hay score ni títulos: el panel pide configurarla en Ajustes. Las claves guardadas en **Ajustes** no crean variables nuevas: el panel las inyecta al análisis como `OPENRANKS_LLM_API_KEY` con el `OPENRANKS_LLM_PROVIDER` del proveedor elegido y su modelo por defecto; la clave del entorno sigue valiendo cuando no hay ninguna guardada.
 
 ### 17.2 Referencias de la Fase 3
 

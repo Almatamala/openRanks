@@ -318,7 +318,8 @@ label.field {
   margin-bottom: 6px;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   width: 100%;
   background: #0b0d12;
   border: 1px solid var(--border);
@@ -331,7 +332,9 @@ input[type="text"] {
 
 /* El foco de los campos tampoco se pinta en celeste: mismo acento que el resto del panel. */
 input[type="text"]:focus,
-input[type="text"]:focus-visible {
+input[type="text"]:focus-visible,
+input[type="password"]:focus,
+input[type="password"]:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.16);
@@ -344,9 +347,56 @@ input[type="text"]:focus-visible {
   align-items: stretch;
 }
 
-.field-row input[type="text"] {
+.field-row input[type="text"],
+.field-row input[type="password"] {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Ajustes: claves del score con IA. */
+.settings-grid {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+
+.settings-grid .control {
+  margin-top: 14px;
+}
+
+.settings-provider {
+  margin-top: 18px;
+}
+
+.settings-provider .field {
+  margin-bottom: 8px;
+}
+
+.settings-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 15px;
+}
+
+.settings-option-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-status {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.settings-status strong {
+  color: var(--text);
 }
 
 
@@ -713,6 +763,75 @@ pre.log {
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+/* Propuesta automática (P3-7): lista explicada, sin vídeo. */
+.auto-dialog {
+  width: min(760px, 96vw);
+}
+
+.auto-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.auto-position {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.auto-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.auto-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auto-role {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.auto-total {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .auto-item {
+    grid-template-columns: auto 1fr;
+  }
+
+  .auto-role {
+    grid-column: 2;
+    text-align: left;
+  }
 }
 
 footer.note {
@@ -1486,25 +1605,41 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Duración y puntaje en la misma línea, cada uno en su extremo. */
+.gallery-facts {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Score del LLM (P3-6): solo el número, en amarillo, y «pts». */
+.gallery-score {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gallery-score-number {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-score {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .gallery-meta {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
-}
-
-/* La categoría solo se lee: se cambia con el lápiz de la barra. */
-.gallery-category {
-  margin: 0;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.gallery-category-label {
-  color: var(--muted);
-}
-
-.gallery-category.empty {
-  color: var(--muted);
 }
 
 .error-text {
@@ -2003,6 +2138,15 @@ code {
   margin: 4px 0 0;
   font-size: 13px;
   font-weight: 700;
+}
+
+/* El score va debajo de la duración: se lee antes de decidir, sin bloquear nada. */
+.score-number {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .candidate-meta {

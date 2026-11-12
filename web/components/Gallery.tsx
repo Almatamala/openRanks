@@ -2,12 +2,19 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { DEFAULT_SCORE_MIN, titleFromName, type ScoreReport } from "@/lib/gallery-score";
 import { formatDuration } from "@/lib/progress";
 import CategoryPicker from "@/components/CategoryPicker";
+import {
+  autoReadiness,
+  suggestAutoSelection,
+  type AutoProposal,
+} from "@/lib/auto-select";
 import {
   canGenerate,
   canSelect,
   categoryKey,
+  displayName,
   extensionOf,
   filterItems,
   LIBRARY_EXTENSIONS,
@@ -126,6 +133,13 @@ function Gallery({
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [autoProposal, setAutoProposal] = useState<AutoProposal | null>(null);
+  // P3-9: puntuación de toda la galería antes del automático. El informe enseña score y
+  // título de edición; eliminar los que no pasan es un segundo paso confirmado.
+  const [scoring, setScoring] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
   const uploadInput = useRef<HTMLInputElement | null>(null);
 
   // Callback estable: las tarjetas memorizadas no se re-renderizan al cambiar la selección.
@@ -327,8 +341,8 @@ function Gallery({
 
   // «Generar manual» (RF-12.3): con un montaje abierto se confirma antes de reemplazarlo.
   // Si el operador cancela, no se crea ni se modifica ningún trabajo y la selección sigue.
-  const generate = useCallback(async () => {
-    if (!canGenerate(selected) || generating || montageBusy) return;
+  const runGenerate = useCallback(async (ids: string[]) => {
+    if (!canGenerate(ids) || generating || montageBusy) return;
     if (hasMontage) {
       const confirmed = window.confirm(
         "Ya hay un montaje abierto: al generar se reemplazan sus puestos y sus clips, y el ranking anterior dejará de estar disponible. ¿Quieres continuar?",
@@ -338,7 +352,8 @@ function Gallery({
     setGenerating(true);
     setGenerateError(null);
     try {
-      await onGenerate(selected);
+      setSelected(ids);
+      await onGenerate(ids);
       setSelected([]);
     } catch (failure) {
       setGenerateError(
@@ -349,7 +364,107 @@ function Gallery({
     } finally {
       setGenerating(false);
     }
-  }, [generating, hasMontage, montageBusy, onGenerate, selected]);
+  }, [generating, hasMontage, montageBusy, onGenerate]);
+
+  const generate = useCallback(() => {
+    void runGenerate(selected);
+  }, [runGenerate, selected]);
+
+  // «Generar automático» (P3-7): propone una selección por score y diversidad y, al
+  // aceptar, la importa con el mismo camino que «Generar manual» (casillas y ticks).
+  const openAuto = useCallback(() => {
+    if (!items) return;
+    const result = suggestAutoSelection(items);
+    if (!result.ok) {
+      setGenerateError(result.reason);
+      return;
+    }
+    setGenerateError(null);
+    setAutoProposal(result.proposal);
+  }, [items]);
+
+  const acceptAuto = useCallback(() => {
+    if (!autoProposal) return;
+    const ids = autoProposal.clips.map((clip) => clip.id);
+    setAutoProposal(null);
+    setGenerateError(null);
+    void runGenerate(ids);
+  }, [autoProposal, runGenerate]);
+
+  // «Puntuar galería» (P3-9): puntúa los clips que aún no tienen score y devuelve el
+  // informe con el umbral. No borra nada: eso es el botón del propio informe.
+  const runScoring = useCallback(async () => {
+    if (scoring || dropping || !items || items.length === 0) return;
+    setScoring(true);
+    setScoreError(null);
+    setGenerateError(null);
+    try {
+      const response = await fetch("/api/library/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "score" }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | (ScoreReport & { error?: string })
+        | null;
+      if (!response.ok || !payload || !Array.isArray(payload.clips)) {
+        throw new Error(payload?.error ?? "No se pudo puntuar la galería.");
+      }
+      setScoreReport(payload);
+      await load();
+    } catch (failure) {
+      setScoreError(
+        failure instanceof Error ? failure.message : "No se pudo puntuar la galería.",
+      );
+    } finally {
+      setScoring(false);
+    }
+  }, [dropping, items, load, scoring]);
+
+  // Borrado confirmado de los clips que no llegan al umbral: se van de la galería y de la
+  // selección, y el automático se queda solo con los que pasan.
+  const dropFailed = useCallback(async () => {
+    if (!scoreReport || dropping) return;
+    const failures = scoreReport.clips.filter((clip) => !clip.pass);
+    if (failures.length === 0) return;
+    const confirmed = window.confirm(
+      failures.length === 1
+        ? `Se eliminará 1 clip de la galería porque no llega al umbral de ${scoreReport.threshold}. Esta acción no se puede deshacer.`
+        : `Se eliminarán ${failures.length} clips de la galería porque no llegan al umbral de ${scoreReport.threshold}. Esta acción no se puede deshacer.`,
+    );
+    if (!confirmed) return;
+
+    setDropping(true);
+    setScoreError(null);
+    try {
+      const response = await fetch("/api/library/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "drop",
+          threshold: scoreReport.threshold,
+          confirm: true,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        removed?: { id: string }[];
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "No se pudieron eliminar los clips.");
+      }
+      const removed = new Set((payload?.removed ?? []).map((clip) => clip.id));
+      setSelected((current) => current.filter((id) => !removed.has(id)));
+      setScoreReport(null);
+      await load();
+    } catch (failure) {
+      setScoreError(
+        failure instanceof Error ? failure.message : "No se pudieron eliminar los clips.",
+      );
+    } finally {
+      setDropping(false);
+    }
+  }, [dropping, load, scoreReport]);
 
   // Divisor manual: el automático no siempre separa dos escenas que van en el mismo
   // archivo, así que el punto de corte lo marca el operador.
@@ -574,6 +689,7 @@ function Gallery({
   const hasUncategorized = items?.some((item) => item.category === null) ?? false;
   const missing = missingForGeneration(selected);
   const ready = canGenerate(selected);
+  const autoState = autoReadiness(items);
 
   const summary =
     selected.length === 0
@@ -930,13 +1046,13 @@ function Gallery({
               className="split-dialog"
               role="dialog"
               aria-modal="true"
-              aria-label={`Dividir ${splitTarget.name} en dos escenas`}
+              aria-label={`Dividir ${displayName(splitTarget.name)} en dos escenas`}
               onKeyDown={(event) => {
                 if (event.key === "Escape") closeSplit();
               }}
             >
               <header className="split-head">
-                <h3>Dividir «{splitTarget.name}» en dos escenas</h3>
+                <h3>Dividir «{displayName(splitTarget.name)}» en dos escenas</h3>
                 <button
                   className="secondary small split-close"
                   type="button"
@@ -966,7 +1082,7 @@ function Gallery({
                 controls
                 playsInline
                 preload="auto"
-                aria-label={`Vídeo de ${splitTarget.name}`}
+                aria-label={`Vídeo de ${displayName(splitTarget.name)}`}
                 onLoadedMetadata={(event) => {
                   const value = event.currentTarget.duration;
                   if (!Number.isFinite(value) || value <= 0) return;
@@ -1131,7 +1247,7 @@ function Gallery({
                     tabIndex={0}
                     draggable
                     style={{ flexGrow: mergeWeights[index] ?? 1, flexBasis: 0 }}
-                    aria-label={`Clip ${index + 1} de ${mergeItems.length}: ${item.name}. Pulsa para ir a él o arrástralo para cambiar el orden.`}
+                    aria-label={`Clip ${index + 1} de ${mergeItems.length}: ${displayName(item.name)}. Pulsa para ir a él o arrástralo para cambiar el orden.`}
                     onClick={() => seekMerge(index)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -1169,7 +1285,7 @@ function Gallery({
                   >
                     <span className="merge-order-position">#{index + 1}</span>
                     <span className="merge-order-info">
-                      <span className="merge-order-name">{item.name}</span>
+                      <span className="merge-order-name">{displayName(item.name)}</span>
                       <span className="merge-order-duration">
                         {mergeSeconds(item) > 0 ? formatDuration(mergeSeconds(item)) : "—"}
                       </span>
@@ -1198,6 +1314,200 @@ function Gallery({
           </div>
         ) : null}
 
+        {autoProposal ? (
+          <div className="split-layer">
+            <div className="split-backdrop" onClick={() => setAutoProposal(null)} />
+            <div
+              className="split-dialog auto-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Propuesta de selección automática"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setAutoProposal(null);
+              }}
+            >
+              <header className="split-head">
+                <h3>Propuesta automática · {autoProposal.clips.length} clips</h3>
+                <button
+                  className="secondary small split-close"
+                  type="button"
+                  aria-label="Cerrar la propuesta automática"
+                  title="Cerrar"
+                  onClick={() => setAutoProposal(null)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </header>
+              <p className="hint">
+                Elegidos por score, con un máximo de dos clips por categoría y hasta 58 s.
+                El #1 es el de mayor score y cierra el vídeo; la reproducción va del último
+                al #1.
+              </p>
+              <ol className="auto-list" aria-label="Clips propuestos, del #1 al último">
+                {autoProposal.clips.map((clip, index) => (
+                  <li key={clip.id} className="auto-item">
+                    <span className="auto-position">#{index + 1}</span>
+                    <span className="auto-info">
+                      <span className="auto-name">{clip.label}</span>
+                      <span className="auto-meta">
+                        {displayName(clip.name)} · Score {clip.score}/100 · {clip.score_source ?? "llm"}{" "}
+                        · {formatDuration(clip.duration_s)} · {clip.category ?? "Sin categoría"}
+                      </span>
+                    </span>
+                    <span className="auto-role">
+                      {index === 0
+                        ? "Cierra el vídeo"
+                        : index === autoProposal.clips.length - 1
+                          ? "Abre el vídeo"
+                          : ""}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="auto-total">
+                Total: {formatDuration(autoProposal.total_s)} · {autoProposal.clips.length}{" "}
+                clips
+              </p>
+              {autoProposal.ignored > 0 ? (
+                <p className="hint">
+                  {autoProposal.ignored === 1
+                    ? "1 clip sin score, sin duración o duplicado no entró en el cálculo."
+                    : `${autoProposal.ignored} clips sin score, sin duración o duplicados no entraron en el cálculo.`}
+                </p>
+              ) : null}
+              {autoProposal.warnings.map((warning) => (
+                <p key={warning} className="hint error-text" role="alert">
+                  {warning}
+                </p>
+              ))}
+              <div className="actions split-actions">
+                <button className="primary" type="button" onClick={acceptAuto}>
+                  Generar con esta selección
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => setAutoProposal(null)}
+                >
+                  Descartar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {scoreReport ? (
+          <div className="split-layer">
+            <div className="split-backdrop" onClick={() => setScoreReport(null)} />
+            <div
+              className="split-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Resultado de puntuar la galería"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setScoreReport(null);
+              }}
+            >
+              <header className="split-head">
+                <h3>Galería puntuada · umbral {scoreReport.threshold}</h3>
+                <button
+                  className="secondary small split-close"
+                  type="button"
+                  aria-label="Cerrar el informe de puntuación"
+                  title="Cerrar"
+                  onClick={() => setScoreReport(null)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </header>
+              <p className="hint">
+                {scoreReport.clips.length} clips con score: se quedan{" "}
+                {scoreReport.clips.filter((clip) => clip.pass).length} y no pasan el umbral{" "}
+                {scoreReport.clips.filter((clip) => !clip.pass).length}. El título de cada uno
+                es el que llevará su puesto en la edición.
+              </p>
+              {scoreReport.failed.length > 0 ? (
+                <div className="alert error" role="alert">
+                  <p>No se pudieron puntuar {scoreReport.failed.length} clips:</p>
+                  <ul className="plain-list">
+                    {scoreReport.failed.map((failure) => (
+                      <li key={failure.name}>
+                        {displayName(failure.name)}: {failure.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <ol className="auto-list" aria-label="Clips puntuados, de mayor a menor score">
+                {scoreReport.clips.map((clip) => (
+                  <li key={clip.id} className="auto-item">
+                    <span className="auto-position">{clip.score}</span>
+                    <span className="auto-info">
+                      <span className="auto-name">{clip.label}</span>
+                      <span className="auto-meta">
+                        {displayName(clip.name)} · {clip.source ?? "llm"}
+                      </span>
+                    </span>
+                    <span className={`auto-role${clip.pass ? "" : " error-text"}`}>
+                      {clip.pass ? "Se queda" : "No pasa"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <div className="actions split-actions">
+                {scoreReport.clips.some((clip) => !clip.pass) ? (
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={dropping}
+                    onClick={() => void dropFailed()}
+                  >
+                    {dropping
+                      ? "Eliminando…"
+                      : `Eliminar ${scoreReport.clips.filter((clip) => !clip.pass).length} que no pasan`}
+                  </button>
+                ) : null}
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => setScoreReport(null)}
+                >
+                  Cerrar
+                </button>
+              </div>
+              {scoreError ? (
+                <div className="alert error" role="alert">
+                  {scoreError}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {content}
 
         {/* Barra inferior pegada al viewport: los botones de generar no se pierden al
@@ -1212,20 +1522,52 @@ function Gallery({
             >
               {generating ? "Preparando los clips…" : "Generar manual"}
             </button>
-            {/* RF-15 / P2-7: visible y deshabilitado; sin endpoint ni efectos. */}
+            {/* RF-21 / P3-9: puntúa toda la galería antes del automático. */}
             <button
               className="secondary"
               type="button"
-              disabled
-              aria-disabled="true"
-              aria-label="Generar automático, próximamente"
-              title="La generación automática estará disponible próximamente."
+              disabled={
+                !items ||
+                items.length === 0 ||
+                scoring ||
+                dropping ||
+                generating ||
+                montageBusy
+              }
+              title={`Puntúa todos los clips de la galería y devuelve su score y su título; por debajo de ${DEFAULT_SCORE_MIN} se pueden eliminar`}
+              onClick={() => void runScoring()}
             >
-              Generar automático · Próximamente
+              {scoring ? "Puntuando la galería…" : "Puntuar galería"}
+            </button>
+            {/* RF-19 / P3-7: propone 5-10 por score y diversidad; aceptar genera. */}
+            <button
+              className="secondary"
+              type="button"
+              disabled={!autoState.ready || generating || montageBusy}
+              aria-disabled={!autoState.ready || generating || montageBusy}
+              aria-label="Generar automático por score y diversidad"
+              title={
+                !autoState.ready
+                  ? autoState.reason
+                  : montageBusy
+                    ? "El montaje está en marcha; espera a que termine."
+                    : "Propone de 5 a 10 clips por score y diversidad"
+              }
+              onClick={openAuto}
+            >
+              Generar automático
             </button>
           </div>
           {montageBusy ? (
             <p className="hint">El montaje está en marcha: cuando termine podrás generar otro ranking.</p>
+          ) : null}
+          {autoState.reason && items !== null ? (
+            <p className="hint">{autoState.reason}</p>
+          ) : null}
+          {scoreError ? (
+            <div className="alert error" role="alert">
+              {scoreError}
+            </div>
           ) : null}
           {generateError ? (
             <div className="alert error" role="alert">
@@ -1303,9 +1645,19 @@ function GalleryToolIcon({
 }
 
 /**
- * Tarjeta de un clip: miniatura reproducible igual que en el montaje, nombre original,
- * duración y categoría de solo lectura (se cambia con el lápiz de la barra). Se elige
- * pulsando cualquier parte que no sea el vídeo, y el puesto se ve en la esquina.
+ * El título de edición solo se pinta si dice algo distinto del nombre del archivo: cuando
+ * el sistema lo deriva del nombre, repetirlo en la tarjeta no aporta nada.
+ */
+function showsEditionTitle(item: LibraryItem): boolean {
+  if (!item.label) return false;
+  return item.label.trim().toLocaleUpperCase("es") !== titleFromName(item.name);
+}
+
+/**
+ * Tarjeta de un clip: miniatura reproducible igual que en el montaje, nombre original y
+ * duración. La categoría no se repite aquí: el filtro ya la fija y se cambia con el lápiz
+ * de la barra. Se elige pulsando cualquier parte que no sea el vídeo, y el puesto se ve
+ * en la esquina.
  */
 const GalleryCard = memo(function GalleryCard({
   item,
@@ -1341,7 +1693,7 @@ const GalleryCard = memo(function GalleryCard({
           controls
           playsInline
           preload="metadata"
-          aria-label={`Vista previa de ${item.name}`}
+          aria-label={`Vista previa de ${displayName(item.name)}`}
           onLoadedMetadata={(event) => {
             event.currentTarget.currentTime = 0.1;
             const value = event.currentTarget.duration;
@@ -1357,29 +1709,37 @@ const GalleryCard = memo(function GalleryCard({
           type="button"
           aria-pressed={picked}
           aria-label={
-            picked ? `Quitar ${item.name} del ranking` : `Elegir ${item.name} para el ranking`
+            picked
+              ? `Quitar ${displayName(item.name)} del ranking`
+              : `Elegir ${displayName(item.name)} para el ranking`
           }
           disabled={disabled}
           onClick={() => onToggle(item.id)}
         >
-          {item.name}
+          {displayName(item.name)}
         </button>
       </h3>
-      <p className="gallery-meta">
-        {item.duration_s != null
-          ? `Duración: ${formatDuration(item.duration_s)}`
-          : duration === null
-            ? "Duración: —"
-            : `Duración: ${formatDuration(duration)}`}
-      </p>
+      {/* La duración a un extremo y el puntaje al otro: el score se lee de un vistazo. */}
+      <div className="gallery-facts">
+        <p className="gallery-meta">
+          {item.duration_s != null
+            ? `Duración: ${formatDuration(item.duration_s)}`
+            : duration === null
+              ? "Duración: —"
+              : `Duración: ${formatDuration(duration)}`}
+        </p>
+        {item.score != null ? (
+          <p className="gallery-score" aria-label={`Puntaje ${item.score} de 100`}>
+            <strong className="gallery-score-number">{item.score}</strong> pts
+          </p>
+        ) : null}
+      </div>
+      {showsEditionTitle(item) ? (
+        <p className="gallery-meta gallery-title">Título en la edición: {item.label}</p>
+      ) : null}
       {item.duplicateOf ? (
         <p className="gallery-meta gallery-duplicate">Posible duplicado de otro clip</p>
       ) : null}
-
-      <p className={`gallery-category ${item.category ? "" : "empty"}`}>
-        <span className="gallery-category-label">Categoría:</span>{" "}
-        {item.category ?? "Sin categoría"}
-      </p>
     </li>
   );
 });

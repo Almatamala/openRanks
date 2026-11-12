@@ -39,6 +39,24 @@ def _resolve(name: str, env_var: str) -> str | None:
     return shutil.which(name)
 
 
+@pytest.fixture(autouse=True)
+def _sin_proveedor_llm(monkeypatch):
+    """Ninguna prueba toca la red del proveedor: el cliente LLM se prueba en local."""
+    for name in (
+        "OPENRANKS_LLM_API_KEY",
+        "OPENRANKS_LLM_BASE_URL",
+        "OPENRANKS_LLM_MODEL",
+        "OPENRANKS_LLM_MAX_COST_USD",
+        "OPENRANKS_LLM_PROVIDER",
+        # Claves estándar del proveedor: si la máquina las tiene, el cliente las usa.
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(scope="session")
 def ffmpeg_bin() -> str:
     binary = _resolve("ffmpeg", "OPENRANKS_FFMPEG")
