@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs
 import path from "node:path";
 
 import { SELECTION_MAX, SELECTION_MIN } from "./gallery";
+import { HttpError } from "./http-error";
 import {
   bindingPath,
   createJob,
@@ -14,18 +15,11 @@ import {
   writeStatus,
 } from "./jobs";
 import { libraryFilePath, readLibrary, type LibraryItem } from "./library";
-import { titleFromName } from "./gallery-score";
+import { labelFor } from "./gallery-score";
 import { isRunning, prepareClip } from "./pipeline";
 
-/** Fallo previsto de la importación, con el código HTTP que le toca. */
-export class ImportError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
+/** Fallo previsto de la importación; el código HTTP lo aporta la base. */
+export class ImportError extends HttpError {}
 
 export interface ImportedClip {
   /** Título sugerido con el que el clip entra en la edición (P3-9). */
@@ -140,7 +134,7 @@ export async function importFromLibrary(ids: unknown, currentJobId: unknown): Pr
       position: index + 1,
       name: item.name,
       ext: item.ext,
-      label: item.label ?? titleFromName(item.name),
+      label: labelFor(item),
       score: item.score ?? null,
       score_source: item.score_source ?? null,
     })),

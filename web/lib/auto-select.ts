@@ -13,7 +13,7 @@
  * La lista resultante va del **#1 (mejor)** al último: el #1 es el que cierra el vídeo.
  */
 import { categoryKey, SELECTION_MAX, SELECTION_MIN, type LibraryItem } from "./gallery";
-import { titleFromName } from "./gallery-score";
+import { labelFor } from "./gallery-score";
 
 /** Techo duro del vídeo unido (RPD §3). */
 export const AUTO_MAX_TOTAL_S = 58;
@@ -68,7 +68,7 @@ function toClip(item: LibraryItem & { score: number; duration_s: number }): Auto
   return {
     id: item.id,
     name: item.name,
-    label: item.label ?? titleFromName(item.name),
+    label: labelFor(item),
     score: item.score,
     category: item.category,
     duration_s: item.duration_s,

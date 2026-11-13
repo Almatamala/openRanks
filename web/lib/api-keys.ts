@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { HttpError } from "./http-error";
 import { JOBS_DIR } from "./paths";
 
 /**
@@ -60,16 +61,8 @@ const KEY_MIN_LENGTH = 16;
 const KEY_MAX_LENGTH = 512;
 const KEY_PATTERN = /^[\x21-\x7e]+$/;
 
-/** Error con su código HTTP, para que la API no invente el estado. */
-export class SettingsError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = "SettingsError";
-    this.status = status;
-  }
-}
+/** Ajuste inválido del panel; el código HTTP lo aporta la base. */
+export class SettingsError extends HttpError {}
 
 interface StoredKey {
   key: string;
@@ -87,8 +80,6 @@ export interface KeyStatus {
   configured: boolean;
   /** De dónde sale: del panel o del entorno del proceso. */
   source: "panel" | "environment" | null;
-  /** Últimos cuatro caracteres de la clave guardada, para reconocerla. */
-  hint: string | null;
   savedAt: string | null;
 }
 
@@ -127,10 +118,6 @@ function isUsableKey(value: string): boolean {
     !value.includes('"') &&
     !value.includes("'")
   );
-}
-
-function hintOf(key: string): string {
-  return key.slice(-4);
 }
 
 function readStored(): StoredSettings {
@@ -225,7 +212,6 @@ export function readSettings(env: NodeJS.ProcessEnv = process.env): SettingsSnap
     keys[provider] = {
       configured: Boolean(saved) || fromEnv[provider],
       source: saved ? "panel" : fromEnv[provider] ? "environment" : null,
-      hint: saved ? hintOf(saved.key) : null,
       savedAt: saved?.savedAt ?? null,
     };
   }

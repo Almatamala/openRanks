@@ -958,7 +958,7 @@ export default function Page() {
                     ? "openRanks · galería de videos"
                     : section === "extraer"
                       ? "openRanks · divisor de escenas"
-                      : "openRanks · ajustes"}
+                      : "openRanks · configuración"}
               </h1>
               {section === "montar" ? (
                 <p>
@@ -1251,7 +1251,7 @@ export default function Page() {
           />
         </section>
 
-        <section className="view" hidden={section !== "ajustes"} aria-label="Ajustes">
+        <section className="view" hidden={section !== "ajustes"} aria-label="Configuración">
           <Settings active={section === "ajustes"} />
         </section>
 

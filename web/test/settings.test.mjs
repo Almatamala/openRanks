@@ -51,7 +51,7 @@ test("guardar la clave de Claude la activa sin devolverla entera", () => {
   assert.equal(snapshot.model, keys.PROVIDER_MODEL.claude);
   assert.equal(snapshot.keys.claude.configured, true);
   assert.equal(snapshot.keys.claude.source, "panel");
-  assert.equal(snapshot.keys.claude.hint, CLAUDE.slice(-4));
+  assert.equal("hint" in snapshot.keys.claude, false);
   assert.equal(JSON.stringify(snapshot).includes(CLAUDE), false);
 });
 
@@ -67,7 +67,7 @@ test("Gemini se guarda con su propio modelo y proveedor", () => {
 
   assert.equal(snapshot.activeProvider, "gemini");
   assert.equal(snapshot.model, keys.PROVIDER_MODEL.gemini);
-  assert.equal(snapshot.keys.gemini.hint, GEMINI.slice(-4));
+  assert.equal("hint" in snapshot.keys.gemini, false);
   assert.equal(snapshot.keys.claude.configured, true);
 
   const env = keys.llmEnv({});
@@ -149,6 +149,18 @@ test("quitar todo deja el panel sin claves", async () => {
   const body = await response.json();
   assert.equal(body.activeProvider, null);
   assert.equal(body.stored, false);
+});
+
+test("se puede guardar solo una clave y usarla sin la del otro proveedor", () => {
+  keys.saveSettings({ remove: "all" });
+  const snapshot = keys.saveSettings({ gemini: GEMINI });
+
+  assert.equal(snapshot.keys.gemini.source, "panel");
+  assert.equal(snapshot.keys.claude.configured, false);
+  assert.equal(snapshot.activeProvider, "gemini");
+  assert.equal(keys.llmEnv({}).OPENRANKS_LLM_PROVIDER, "gemini");
+
+  keys.saveSettings({ remove: "all" });
 });
 
 test("los modelos por defecto coinciden con el motor de Python", () => {

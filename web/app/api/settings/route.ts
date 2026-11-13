@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Ajustes del panel (RF-22): qué claves de IA hay configuradas y cuál se usa para el
- * score. La respuesta **nunca** incluye una clave completa: solo si existe, de dónde
- * sale y sus últimos cuatro caracteres.
+ * score. La respuesta **nunca** incluye la clave ni un fragmento de ella: solo si existe
+ * y de dónde sale.
  */
 export async function GET() {
   return NextResponse.json(readSettings(), {

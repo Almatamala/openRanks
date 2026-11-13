@@ -10,7 +10,6 @@ import {
   DEFAULT_SCORE_MIN,
   needsScore,
   parseScoreThreshold,
-  partitionByScore,
   titleFromName,
 } from "../lib/gallery-score.ts";
 
@@ -52,16 +51,6 @@ test("necesita score solo si no es un entero 0-100", () => {
   assert.equal(needsScore(item("c", null)), true);
   assert.equal(needsScore(item("d", 55.5)), true);
   assert.equal(needsScore(item("e", -1)), true);
-});
-
-test("el reparto separa los que se quedan, los que no pasan y los sin score", () => {
-  const items = [item("alto", 80), item("limite", 55), item("bajo", 54), item("sin", null)];
-  const partition = partitionByScore(items, 55);
-
-  assert.equal(partition.threshold, 55);
-  assert.deepEqual(partition.kept.map((entry) => entry.id), ["alto", "limite"]);
-  assert.deepEqual(partition.dropped.map((entry) => entry.id), ["bajo"]);
-  assert.deepEqual(partition.unscored.map((entry) => entry.id), ["sin"]);
 });
 
 test("el informe ordena de mayor a menor y explica a quién se lleva", () => {

@@ -3,3 +3,6 @@ node_modules/
 .jobs/
 out/
 *.tsbuildinfo
+
+# Next lo regenera en cada `dev`/`build` (y cambia sus imports según la versión).
+next-env.d.ts

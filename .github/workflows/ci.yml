@@ -10,8 +10,9 @@ jobs:
     env:
       # libass resuelve la fuente por nombre; "Arial" no existe en los runners.
       OPENRANKS_FONT: DejaVu Sans
-      # El score ya no tiene respaldo local: el set dorado solo corre si hay clave.
-      OPENRANKS_LLM_API_KEY: ${{ secrets.OPENRANKS_LLM_API_KEY }}
+      # `secrets` no se puede leer en el `if` de un paso: el job publica solo si hay clave
+      # y el secreto se pasa únicamente al paso que lo usa.
+      OPENRANKS_LLM_KEY_SET: ${{ secrets.OPENRANKS_LLM_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,10 +33,16 @@ jobs:
         run: python -m pytest -q
 
       # Set dorado del score (P3-8): genera los clips y exige el mínimo de correlación de
-      # RF-18. Necesita una clave de LLM; sin el secreto, el paso se omite.
+      # RF-18. Necesita una clave de LLM; sin el secreto, el paso se omite y se avisa.
       - name: Set dorado del score
-        if: env.OPENRANKS_LLM_API_KEY != ''
+        if: env.OPENRANKS_LLM_KEY_SET == 'true'
+        env:
+          OPENRANKS_LLM_API_KEY: ${{ secrets.OPENRANKS_LLM_API_KEY }}
         run: python scripts/evaluate_score.py --build --min-spearman 0.6
+
+      - name: Set dorado omitido
+        if: env.OPENRANKS_LLM_KEY_SET != 'true'
+        run: echo "::warning::Sin OPENRANKS_LLM_API_KEY no se midió el set dorado (RF-18)."
 
   panel:
     runs-on: ubuntu-latest

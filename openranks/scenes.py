@@ -507,15 +507,11 @@ def analyze(
             + ": compara las dos antes de aprobarlas."
         )
 
-    # El divisor solo corta: no llama al LLM ni puntúa. El score y el título se generan
-    # después, en la galería («Puntuar galería»), para no mezclar dos procesos lentos.
-    source_hash = sha256_file(source_path)
-
     analysis = SceneAnalysis(
         source=source_path,
         out_dir=target,
         info=info,
-        source_sha256=source_hash,
+        source_sha256=sha256_file(source_path),
         thresholds=limits,
         detection=detection,
         candidates=tuple(candidates),

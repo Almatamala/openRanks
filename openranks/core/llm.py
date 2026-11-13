@@ -88,9 +88,6 @@ IMAGE_TOKENS = 400
 METADATA_TOKENS = 40
 OUTPUT_TOKENS_PER_CLIP = 120
 
-# Fuente del score cuando lo puso el LLM (RF-18.1).
-SOURCE_LLM = "llm"
-
 # Precios de lista por 1M de tokens (entrada, salida), consultados el 28-oct-2026.
 PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
     "claude-haiku-5.5": (0.10, 0.50),
@@ -473,10 +470,10 @@ def parse_scores(
         if len(title) < 3:
             title = ""
 
+        # La fuente (`llm`) es la de por defecto del propio `Score`: un solo sitio.
         scores[index] = Score(
             value=int(round(float(value))),
             title=title,
-            source=SOURCE_LLM,
             model_version=model,
         )
     return scores

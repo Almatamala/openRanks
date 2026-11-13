@@ -82,6 +82,17 @@ export function displayName(name: string): string {
 }
 
 /**
+ * Texto de un rótulo: una sola línea, sin espacios de sobra y recortado al ancho de un
+ * rótulo (`LIMITS.labelChars`). Lo comparten la etiqueta guardada y el título sugerido.
+ */
+export function clipLabel(raw: string): string {
+  return Array.from(String(raw ?? "").replace(/\s+/g, " ").trim())
+    .slice(0, LIMITS.labelChars)
+    .join("")
+    .trim();
+}
+
+/**
  * Categoría normalizada: se recorta y se colapsa el espacio sobrante; vacía es
  * «Sin categoría» (`null`). Se comparan sin distinguir mayúsculas (RF-11.3).
  */
@@ -98,9 +109,7 @@ export function normalizeCategory(raw: unknown): string | null {
  */
 export function normalizeLabel(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const text = raw.replace(/\s+/g, " ").trim();
-  if (!text) return null;
-  return Array.from(text).slice(0, LIMITS.labelChars).join("").trim() || null;
+  return clipLabel(raw) || null;
 }
 
 export function categoryKey(category: string | null): string {

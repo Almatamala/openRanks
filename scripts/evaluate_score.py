@@ -3,8 +3,9 @@
     python scripts/evaluate_score.py --build          # genera los clips de partida
     python scripts/evaluate_score.py --json           # informe legible por máquina
 
-Mide con `openranks rate` —el mismo camino que usa «Puntuar galería» en el panel— el
-score de cada clip del set, lo compara con el orden humano (Spearman ≥ 0,6, RF-18) y
+Mide con `openranks rate` —el mismo camino que usa «Puntuar galería» en el panel, con
+**una sola llamada** para todo el set— el score de cada clip, lo compara con el orden
+humano (Spearman ≥ 0,6, RF-18) y
 resume el p95 por clip y el coste estimado del refinamiento con LLM.
 
 Necesita una clave real: el score ya no tiene respaldo local (P3-11) y este script no
@@ -86,20 +87,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # Una sola llamada para todo el set, como en «Puntuar galería» (P3-6). El motor no
+    # cronometra clip a clip, así que la latencia por clip es la del lote repartida.
+    started = time.perf_counter()
+    try:
+        rated_clips = rate_many([clip.file for clip in clips])
+    except RateError as exc:
+        print(f"no se pudo puntuar el set dorado: {exc}", file=sys.stderr)
+        return 1
+    per_clip_ms = (time.perf_counter() - started) * 1000.0 / len(clips)
+
     scores: list[int] = []
-    times: list[float] = []
-    for clip in clips:
-        started = time.perf_counter()
-        try:
-            rated = rate_many([clip.file])[0]
-        except RateError as exc:
-            print(f"no se pudo puntuar el set dorado: {exc}", file=sys.stderr)
-            return 1
-        times.append((time.perf_counter() - started) * 1000.0)
+    for clip, rated in zip(clips, rated_clips):
         if rated.score is None:
             print(f"no se pudo puntuar {clip.id}: {rated.error}", file=sys.stderr)
             return 1
         scores.append(int(rated.score))
+    times = [per_clip_ms] * len(clips)
 
     settings = LlmSettings.from_env()
     try:

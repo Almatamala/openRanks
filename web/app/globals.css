@@ -1241,11 +1241,6 @@ code {
   letter-spacing: -0.01em;
 }
 
-.sidebar-brand-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 /* En pantallas estrechas el menú se pliega detrás de este control etiquetado. */
 .sidebar-toggle {
   display: none;
@@ -1265,8 +1260,9 @@ code {
 }
 
 .sidebar-item {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 10px 12px;
   text-align: left;
@@ -1293,9 +1289,9 @@ code {
   font-weight: 700;
 }
 
-.sidebar-item-note {
-  font-size: 12px;
-  color: var(--muted);
+.sidebar-item-icon {
+  flex: none;
+  opacity: 0.9;
 }
 
 /* La sección inactiva no se desmonta: se oculta para no perder el montaje. */

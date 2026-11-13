@@ -1,13 +1,15 @@
 import { spawn } from "node:child_process";
 
+import { HttpError } from "./http-error";
 import {
   buildScoreReport,
+  labelFor,
   needsScore,
   parseScoreThreshold,
-  titleFromName,
   type ScoreFailure,
   type ScoreReport,
 } from "./gallery-score";
+import { clipLabel } from "./gallery";
 import { llmEnv, readSettings } from "./api-keys";
 import { libraryFilePath, libraryListing, readLibrary, removeLibraryItem, setScore, type LibraryItem } from "./library";
 import { PROJECT_ROOT, resolveEngine, type Engine } from "./paths";
@@ -27,15 +29,8 @@ import { PROJECT_ROOT, resolveEngine, type Engine } from "./paths";
 const RATE_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-export class ScoreError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = "ScoreError";
-    this.status = status;
-  }
-}
+/** Fallo previsto del score; el código HTTP lo aporta la base. */
+export class ScoreError extends HttpError {}
 
 interface RatedClip {
   score: number;
@@ -43,29 +38,21 @@ interface RatedClip {
   source: string | null;
   model: string | null;
   duration_s: number | null;
-  error: string | null;
 }
 
-function readRatedClip(value: unknown): RatedClip | null {
+/** Un clip puntuado o el motivo por el que no se puede usar; nunca un clip de relleno. */
+type RatedClipResult = { clip: RatedClip } | { error: string };
+
+function readRatedClip(value: unknown): RatedClipResult | null {
   if (!value || typeof value !== "object") return null;
   const clip = value as Record<string, unknown>;
 
   const error = typeof clip.error === "string" && clip.error.trim() ? clip.error.trim() : null;
+  if (error) return { error };
+
   const score = clip.score;
-  if (
-    typeof score !== "number" ||
-    !Number.isInteger(score) ||
-    score < 0 ||
-    score > 100
-  ) {
-    return {
-      score: 0,
-      title: "",
-      source: null,
-      model: null,
-      duration_s: null,
-      error: error ?? "el motor no devolvió un score válido",
-    };
+  if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
+    return { error: "el motor no devolvió un score válido" };
   }
 
   const duration =
@@ -74,14 +61,15 @@ function readRatedClip(value: unknown): RatedClip | null {
       : null;
 
   return {
-    score,
-    title: typeof clip.title === "string" ? clip.title.trim().slice(0, 24) : "",
-    source: typeof clip.source === "string" && clip.source.trim() ? clip.source.trim() : null,
-    model: typeof clip.model_version === "string" && clip.model_version.trim()
-      ? clip.model_version.trim()
-      : null,
-    duration_s: duration,
-    error,
+    clip: {
+      score,
+      title: typeof clip.title === "string" ? clipLabel(clip.title) : "",
+      source: typeof clip.source === "string" && clip.source.trim() ? clip.source.trim() : null,
+      model: typeof clip.model_version === "string" && clip.model_version.trim()
+        ? clip.model_version.trim()
+        : null,
+      duration_s: duration,
+    },
   };
 }
 
@@ -208,20 +196,20 @@ export async function scoreLibrary(rawThreshold?: unknown): Promise<ScoreReport>
 
     for (const [position, item] of pending.entries()) {
       const rated = readRatedClip(byIndex.get(position + 1));
-      if (!rated || rated.error) {
+      if (!rated || "error" in rated) {
         failed.push({
           name: item.name,
-          error: rated?.error ?? "el motor no devolvió nada para este clip",
+          error: rated ? rated.error : "el motor no devolvió nada para este clip",
         });
         continue;
       }
       const saved = setScore(item.id, {
-        score: rated.score,
-        score_source: rated.source,
-        score_model: rated.model,
+        score: rated.clip.score,
+        score_source: rated.clip.source,
+        score_model: rated.clip.model,
         scored_at: new Date().toISOString(),
-        duration_s: rated.duration_s,
-        label: item.label ?? (rated.title || titleFromName(item.name)),
+        duration_s: rated.clip.duration_s,
+        label: labelFor(item, rated.clip.title),
       });
       if (!saved) {
         failed.push({ name: item.name, error: "no se pudo guardar el score en la galería" });

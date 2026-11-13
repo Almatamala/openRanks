@@ -36,7 +36,7 @@ const PROVIDERS: {
 function statusText(status: KeyStatus | undefined): string {
   if (!status?.configured) return "Sin clave";
   if (status.source === "panel") {
-    return `Guardada en el panel · termina en ${status.hint ?? "····"}`;
+    return "Guardada en el panel";
   }
   return "Definida en el entorno del panel";
 }
@@ -101,11 +101,16 @@ export default function Settings({ active }: { active: boolean }) {
   );
 
   const save = useCallback(() => {
-    const body: Record<string, unknown> = { provider };
+    const body: Record<string, unknown> = {};
     if (draft.claude.trim()) body.claude = draft.claude;
     if (draft.gemini.trim()) body.gemini = draft.gemini;
+    // Solo se pide un proveedor cuando hay con qué puntuar: el que ya tiene clave o el
+    // que se acaba de pegar. Guardar una clave no obliga a tener también la otra.
+    if (snapshot?.keys[provider]?.source === "panel" || draft[provider].trim()) {
+      body.provider = provider;
+    }
     void post(body, "Claves guardadas. Se usarán en el próximo análisis.");
-  }, [draft, post, provider]);
+  }, [draft, post, provider, snapshot]);
 
   const removeKey = useCallback(
     (target: LlmProvider) => {
@@ -128,14 +133,13 @@ export default function Settings({ active }: { active: boolean }) {
   return (
     <div className="settings-grid">
       <section className="card">
-        <h2>
-          <span className="step">1</span>Claves del score con IA
-        </h2>
+        <h2>Claves del score con IA</h2>
         <p className="hint">
           Se guardan en el servidor del panel y no vuelven al navegador: aquí solo se ve
-          que hay una clave y sus últimos cuatro caracteres. Sin clave, el score sigue
-          sin clave no hay score: ni dividir escenas ni puntuar la galería funcionan hasta que guardes una. Las claves que ya vengan en el
-          entorno del panel se usan solas; guarda una aquí para poder elegir proveedor.
+          que hay una clave guardada. Las claves que ya vengan en el entorno del panel se
+          usan solas; guarda una aquí para poder elegir proveedor. Sin clave no hay score:
+          «Puntuar galería» deja los clips sin puntuar. Dividir escenas, en cambio, sigue
+          funcionando sin clave, porque solo corta y no puntúa.
         </p>
 
         <div className="settings-provider" role="radiogroup" aria-label="Proveedor del score">
@@ -231,39 +235,6 @@ export default function Settings({ active }: { active: boolean }) {
         ) : null}
       </section>
 
-      <section className="card">
-        <h2>
-          <span className="step">2</span>Qué hace la clave
-        </h2>
-        <ul className="plain-list">
-          <li>
-            <strong>Puntúa los clips de la galería.</strong> «Puntuar galería» manda una sola
-            petición con la miniatura de cada clip y el mismo modelo para todos: cada clip
-            recibe su score de 0 a 100 y su título. El divisor de escenas no usa la clave y
-            no puntúa: solo corta. El vídeo largo nunca se puntúa; se puntúan sus clips ya
-            cortados.
-          </li>
-          <li>
-            <strong>También pone el nombre del clip.</strong> La misma respuesta trae un
-            título de 3 a 24 caracteres, con gancho de ranking (un chiste corto o una
-            referencia al clip), que se guarda como rótulo editable en la galería. El nombre
-            del archivo solo se usa si el modelo no devuelve un título válido.
-          </li>
-          <li>
-            <strong>Solo se usa al puntuar la galería.</strong> Dividir escenas sigue
-            funcionando sin clave, porque no puntúa. No hay pasada heurística ni títulos
-            derivados del archivo como camino normal.
-          </li>
-          <li>
-            <strong>Se aplica al siguiente análisis.</strong> No hay que reiniciar el panel:
-            cada análisis lee la clave guardada al arrancar.
-          </li>
-        </ul>
-        <p className="hint">
-          Una clave pegada por error se puede reemplazar o quitar sin salir de esta vista;
-          la que estaba guardada nunca se muestra entera.
-        </p>
-      </section>
     </div>
   );
 }

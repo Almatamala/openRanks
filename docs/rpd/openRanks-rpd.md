@@ -718,8 +718,8 @@ elimina solo los puntuados por debajo del umbral y deja intactos los sin score.
    se usa. La clave del entorno sigue valiendo cuando no hay ninguna guardada; la del panel
    manda cuando existe.
 2. Se guardan en el **volumen de trabajos**, fuera del repo, de los manifiestos y de los logs.
-   La API **nunca devuelve la clave completa**: solo si existe, de dónde sale y sus últimos
-   cuatro caracteres. Un campo vacío conserva la clave anterior; quitarla es explícito.
+   La API **nunca devuelve la clave ni un fragmento de ella**: solo si existe y de dónde
+   sale. Un campo vacío conserva la clave anterior; quitarla es explícito.
 3. **La clave solo se usa al puntuar la galería.** El divisor de escenas (`openranks analyze`)
    no recibe clave ni LLM: solo corta. «Puntuar galería» (`openranks rate`) sí la recibe por
    entorno con el proveedor elegido y su modelo por defecto.
@@ -729,8 +729,8 @@ elimina solo los puntuados por debajo del umbral y deja intactos los sin score.
    guarda como etiqueta editable; el nombre del archivo solo se usa si el modelo no devuelve
    un título válido.
 
-**Criterio de aceptación.** Guardar una clave la deja configurada con sus últimos cuatro
-caracteres y la API no devuelve el resto. Sin clave, dividir escenas funciona y «Puntuar
+**Criterio de aceptación.** Guardar una clave la deja configurada y la API confirma que
+existe sin devolverla, ni entera ni en parte. Sin clave, dividir escenas funciona y «Puntuar
 galería» no produce scores. Con clave de Gemini, los clips de la galería reciben score,
 `source: llm`, modelo y título. Quitar una clave pide confirmación.
 
@@ -1064,7 +1064,7 @@ un mismo par texto + preset produce siempre el mismo MP4.
 
 ### 10.3 Seguridad y privacidad
 
-- Claves y rutas sensibles nunca en el repo ni en los manifiestos. La del score puede guardarse desde **Ajustes** en el volumen de trabajos (RF-22) o seguir viniendo por entorno; la API solo devuelve si existe y sus últimos cuatro caracteres.
+- Claves y rutas sensibles nunca en el repo ni en los manifiestos. La del score puede guardarse desde **Ajustes** en el volumen de trabajos (RF-22) o seguir viniendo por entorno; la API solo devuelve si existe y de dónde sale, nunca la clave ni un fragmento suyo.
 - Los jobs del panel no se sirven por ruta libre: la API solo entrega los artefactos que ella
   misma lista.
 - Los manifiestos guardan nombres de archivo y hashes, nunca rutas del host.

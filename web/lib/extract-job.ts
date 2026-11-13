@@ -888,6 +888,7 @@ export async function startAnalysis(id: string): Promise<ExtractionStatus> {
       503,
     );
   }
+
   const argv = [
     ...engine.python.args,
     "-m",
@@ -907,7 +908,6 @@ export async function startAnalysis(id: string): Promise<ExtractionStatus> {
   try {
     child = nodeSpawn(engine.python.command, argv, {
       cwd: PROJECT_ROOT,
-      // El divisor no usa claves ni LLM: solo FFmpeg. La puntuación vive en la galería.
       env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       windowsHide: true,
     });

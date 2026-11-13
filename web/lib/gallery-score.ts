@@ -6,8 +6,7 @@
  * Los que no llegan al umbral (55 por defecto) se pueden eliminar de la galería para
  * que el automático solo elija entre los que valen.
  */
-import { LIMITS } from "./limits";
-import type { LibraryItem } from "./gallery";
+import { clipLabel, displayName, type LibraryItem } from "./gallery";
 
 /** Umbral por defecto acordado con el operador; se puede ajustar por entorno. */
 export const DEFAULT_SCORE_MIN = 55;
@@ -28,17 +27,20 @@ export function parseScoreThreshold(raw: unknown): number {
  * Es el respaldo determinista cuando el clip no trae uno guardado.
  */
 export function titleFromName(name: string): string {
-  const base = String(name ?? "").trim().split(/[\\/]/).pop() ?? "";
-  const withoutExtension = base.replace(/\.[a-z0-9]{1,5}$/i, "");
-  const words = withoutExtension
-    .replace(/[_\-.]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const title = Array.from(words.toLocaleUpperCase("es"))
-    .slice(0, LIMITS.labelChars)
-    .join("")
-    .trim();
-  return title || "CLIP";
+  const words = displayName(name).replace(/[_\-.]+/g, " ");
+  return clipLabel(words.toLocaleUpperCase("es")) || "CLIP";
+}
+
+/**
+ * Rótulo con el que el clip entra en la edición: manda el guardado; si el motor dio un
+ * título en esta pasada, ese; y si no, el nombre del archivo. Mismo criterio en todos
+ * los caminos (aprobar, automático, puntuación e informe).
+ */
+export function labelFor(
+  item: Pick<LibraryItem, "name" | "label">,
+  preferred?: string | null,
+): string {
+  return item.label ?? (preferred?.trim() || titleFromName(item.name));
 }
 
 /** ¿Le falta un score válido (entero 0-100) a este clip? */
@@ -48,35 +50,6 @@ export function needsScore(item: LibraryItem): boolean {
     (item.score as number) >= 0 &&
     (item.score as number) <= 100
   );
-}
-
-/** Reparto de la galería por el umbral: los que se quedan, los que se van y los sin score. */
-export interface ScorePartition {
-  threshold: number;
-  kept: LibraryItem[];
-  dropped: LibraryItem[];
-  unscored: LibraryItem[];
-}
-
-export function partitionByScore(
-  items: LibraryItem[],
-  threshold: unknown = DEFAULT_SCORE_MIN,
-): ScorePartition {
-  const value = parseScoreThreshold(threshold);
-  const kept: LibraryItem[] = [];
-  const dropped: LibraryItem[] = [];
-  const unscored: LibraryItem[] = [];
-
-  for (const item of items) {
-    if (needsScore(item)) {
-      unscored.push(item);
-      continue;
-    }
-    if ((item.score as number) >= value) kept.push(item);
-    else dropped.push(item);
-  }
-
-  return { threshold: value, kept, dropped, unscored };
 }
 
 /** Un clip ya puntuado, tal y como lo enseña el informe del panel. */
@@ -124,7 +97,7 @@ export function buildScoreReport(
     .map((item) => ({
       id: item.id,
       name: item.name,
-      label: item.label ?? titleFromName(item.name),
+      label: labelFor(item),
       score: item.score as number,
       threshold: value,
       pass: (item.score as number) >= value,
