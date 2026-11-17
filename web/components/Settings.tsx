@@ -44,7 +44,10 @@ function statusText(status: KeyStatus | undefined): string {
 export default function Settings({ active }: { active: boolean }) {
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
   const [provider, setProvider] = useState<LlmProvider>("claude");
-  const [draft, setDraft] = useState<Record<LlmProvider, string>>({ claude: "", gemini: "" });
+  const [draft, setDraft] = useState<Record<LlmProvider, string>>({
+    claude: "",
+    gemini: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,8 +105,9 @@ export default function Settings({ active }: { active: boolean }) {
 
   const save = useCallback(() => {
     const body: Record<string, unknown> = {};
-    if (draft.claude.trim()) body.claude = draft.claude;
-    if (draft.gemini.trim()) body.gemini = draft.gemini;
+    for (const item of PROVIDERS) {
+      if (draft[item.id].trim()) body[item.id] = draft[item.id];
+    }
     // Solo se pide un proveedor cuando hay con qué puntuar: el que ya tiene clave o el
     // que se acaba de pegar. Guardar una clave no obliga a tener también la otra.
     if (snapshot?.keys[provider]?.source === "panel" || draft[provider].trim()) {
@@ -212,7 +216,7 @@ export default function Settings({ active }: { active: boolean }) {
           {snapshot?.activeProvider && activeLabel ? (
             <>
               <strong>En uso: {activeLabel}</strong> · modelo{" "}
-              {snapshot.model ?? "por defecto del proveedor"} · tope de 0,02 USD por
+              {snapshot.model ?? "por defecto del proveedor"} · sin tope de coste por
               trabajo.
             </>
           ) : (

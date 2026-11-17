@@ -894,10 +894,11 @@ diferencia con los demás candidatos es calderilla, así que decide la calidad, 
 Haiku, Luna y Gemini 3.8 Flash se comparan con el set dorado (RF-18) y se cambia
 `OPENRANKS_LLM_MODEL` si alguno supera claramente la correlación de 0,6 o no cumple el p95.
 
-**Control de coste.** Una llamada por trabajo, resultado cacheado por hash de clip, estimación de
-tokens antes de enviar y tope **0,02 USD por trabajo** (`OPENRANKS_LLM_MAX_COST_USD`, 18× el
-coste típico con Haiku). Si se supera el tope, no se llama al LLM y el trabajo falla con un mensaje
-accionable; no hay respaldo local. El tope mensual y quién paga la clave quedan en §16.16.
+**Control de coste.** Una llamada por trabajo, estimación de tokens antes de enviar y, por
+defecto, **sin tope**: una galería grande no se rechaza por coste. `OPENRANKS_LLM_MAX_COST_USD`
+sigue disponible para fijar un tope explícito por trabajo (`0` = sin tope); si se supera, no se
+llama al LLM y el trabajo falla con un mensaje accionable. El proveedor se elige desde Ajustes
+entre Claude y Gemini. El tope mensual y quién paga la clave quedan en §16.16.
 
 **Lo que este coste no incluye.** La transcripción: `gpt-transcribe` cuesta 0,0045 USD/minuto de
 audio, así que un compilado de 10 minutos son **0,045 USD**, unas **40 veces** el score de 10
@@ -1239,7 +1240,7 @@ capa.
 | `OPENAI_API_KEY` | — | Clave de OpenAI, si no se usa `OPENRANKS_LLM_API_KEY` |
 | `OPENRANKS_LLM_MODEL` | el del proveedor (Claude Haiku 5.5) | Modelo del score; el cliente es intercambiable (ADR-20) |
 | `OPENRANKS_LLM_BASE_URL` | el del proveedor | Endpoint de la API nativa del proveedor |
-| `OPENRANKS_LLM_MAX_COST_USD` | `0.02` | Tope de coste estimado por trabajo antes de llamar al LLM |
+| `OPENRANKS_LLM_MAX_COST_USD` | `0` | Tope de coste estimado por trabajo antes de llamar al LLM; `0` = sin tope |
 | `OPENRANKS_SCORE_MIN` | `55` | Umbral de la puntuación masiva de la galería: por debajo se ofrecen para eliminar antes del automático |
 
 La Fase 2 **no añade variables de entorno**: la galería vive en `OPENRANKS_JOBS_DIR/library/` y

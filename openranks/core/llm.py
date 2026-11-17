@@ -45,7 +45,11 @@ PROVIDER_AUTO = "auto"
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_OPENAI = "openai"
-PROVIDERS = (PROVIDER_ANTHROPIC, PROVIDER_GEMINI, PROVIDER_OPENAI)
+PROVIDERS = (
+    PROVIDER_ANTHROPIC,
+    PROVIDER_GEMINI,
+    PROVIDER_OPENAI,
+)
 
 # Cada proveedor tiene su dirección, su cabecera de clave y su cuerpo. El adaptador
 # traduce el mismo prompt y esquema a los tres, para no atarse a ninguno (ADR-20).
@@ -76,8 +80,9 @@ MODEL_PREFIXES = (
     ("o4", PROVIDER_OPENAI),
 )
 ANTHROPIC_VERSION = "2023-06-01"
-# Tope de coste **por trabajo** antes de llamar al LLM (RF-18.6).
-MAX_COST_USD = 0.02
+# Tope de coste **por trabajo** antes de llamar al LLM. 0 (por defecto) = sin tope: el
+# gasto lo decide la clave que el operador elija, y una galería grande no se rechaza.
+MAX_COST_USD = 0.0
 # p95 objetivo por trabajo (RF-18.6). Un trabajo hace una sola llamada.
 TIMEOUT_S = 20.0
 
@@ -144,7 +149,9 @@ class LlmSettings:
 
     api_key: str | None = None
     model: str = DEFAULT_MODEL
-    base_url: str = DEFAULT_BASE_URL
+    # `None` deja que mande la URL de fábrica del proveedor elegido (Claude, Gemini u
+    # OpenAI).
+    base_url: str | None = None
     max_cost_usd: float = MAX_COST_USD
     timeout_s: float = TIMEOUT_S
     provider: str = PROVIDER_ANTHROPIC
@@ -192,9 +199,14 @@ class LlmSettings:
         return bool(self.api_key)
 
     @property
+    def resolved_base_url(self) -> str:
+        """URL base del proveedor: la explícita o la de fábrica del proveedor."""
+        return self.base_url or PROVIDER_DEFAULT_BASE_URL[self.provider]
+
+    @property
     def endpoint(self) -> str:
         """URL de la llamada, acepte la base del proveedor con o sin el sufijo."""
-        base = self.base_url.rstrip("/")
+        base = self.resolved_base_url.rstrip("/")
         if self.provider == PROVIDER_GEMINI:
             if base.endswith(":generateContent"):
                 return base
@@ -283,7 +295,7 @@ def build_prompt(clips: Sequence[ClipFrame]) -> str:
     return "\n".join(lines)
 
 
-# Instrucción de sistema, igual para los tres proveedores.
+# Instrucción de sistema, igual para todos los proveedores.
 SYSTEM_PROMPT = (
     "Puntúas clips para un ranking y les pones títulos cortos con gancho. Eres "
     "consistente y comparativo; nunca inventas señales que no se vean en la imagen."

@@ -2,7 +2,13 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { DEFAULT_SCORE_MIN, titleFromName, type ScoreReport } from "@/lib/gallery-score";
+import {
+  DEFAULT_SCORE_MIN,
+  needsScore,
+  titleFromName,
+  type ScoreMode,
+  type ScoreReport,
+} from "@/lib/gallery-score";
 import { formatDuration } from "@/lib/progress";
 import CategoryPicker from "@/components/CategoryPicker";
 import {
@@ -38,6 +44,9 @@ const FORMATS = LIBRARY_EXTENSIONS.map((ext) => ext.slice(1).toUpperCase()).join
 
 /** Tarjetas que se montan de una vez: con muchas más, la galería se arrastra. */
 const PAGE_SIZE = 24;
+
+/** Clips con miniatura en la ventana de «Puntuar galería»: se pagina igual que la galería. */
+const SCORE_PICK_PAGE = 24;
 
 /**
  * `12.345` → `0:12.345`: el divisor corta por milisegundos, así que la línea de tiempo
@@ -140,6 +149,10 @@ function Gallery({
   const [dropping, setDropping] = useState(false);
   const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  // Antes de puntuar se elige qué se evalúa —los no puntuados o todos— y se ven los
+  // clips de la pasada. El informe llega después, como siempre.
+  const [scorePrompt, setScorePrompt] = useState<ScoreMode | null>(null);
+  const [scorePickLimit, setScorePickLimit] = useState(SCORE_PICK_PAGE);
   const uploadInput = useRef<HTMLInputElement | null>(null);
 
   // Callback estable: las tarjetas memorizadas no se re-renderizan al cambiar la selección.
@@ -391,9 +404,20 @@ function Gallery({
     void runGenerate(ids);
   }, [autoProposal, runGenerate]);
 
-  // «Puntuar galería» (P3-9): puntúa los clips que aún no tienen score y devuelve el
-  // informe con el umbral. No borra nada: eso es el botón del propio informe.
-  const runScoring = useCallback(async () => {
+  // «Puntuar galería» (P3-9) abre la ventana con los clips de la pasada: solo los no
+  // puntuados por defecto o todos, para comparar claves y modelos.
+  const openScoring = useCallback(() => {
+    if (!items || items.length === 0) return;
+    const pending = items.filter(needsScore).length;
+    setScorePickLimit(SCORE_PICK_PAGE);
+    setScoreError(null);
+    setGenerateError(null);
+    setScorePrompt(pending === 0 ? "all" : "pending");
+  }, [items]);
+
+  // Puntúa con el modo elegido y devuelve el informe con el umbral. No borra nada: eso
+  // es el botón del propio informe.
+  const runScoring = useCallback(async (mode: ScoreMode) => {
     if (scoring || dropping || !items || items.length === 0) return;
     setScoring(true);
     setScoreError(null);
@@ -402,7 +426,7 @@ function Gallery({
       const response = await fetch("/api/library/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "score" }),
+        body: JSON.stringify({ action: "score", mode }),
       });
       const payload = (await response.json().catch(() => null)) as
         | (ScoreReport & { error?: string })
@@ -411,6 +435,7 @@ function Gallery({
         throw new Error(payload?.error ?? "No se pudo puntuar la galería.");
       }
       setScoreReport(payload);
+      setScorePrompt(null);
       await load();
     } catch (failure) {
       setScoreError(
@@ -690,6 +715,14 @@ function Gallery({
   const missing = missingForGeneration(selected);
   const ready = canGenerate(selected);
   const autoState = autoReadiness(items);
+
+  // Datos de la ventana «Puntuar galería»: cuántos entran en cada modo y la página de
+  // miniaturas que se ve. Un clip ya puntuado entra con «Todos» y se respeta con «Solo
+  // los no puntuados».
+  const pendingCount = items ? items.filter(needsScore).length : 0;
+  const scoredCount = items ? items.length - pendingCount : 0;
+  const scorePickShown = items ? items.slice(0, scorePickLimit) : [];
+  const scorePickRemaining = items ? Math.max(0, items.length - scorePickShown.length) : 0;
 
   const summary =
     selected.length === 0
@@ -1408,6 +1441,150 @@ function Gallery({
           </div>
         ) : null}
 
+        {scorePrompt ? (
+          <div className="split-layer">
+            <div className="split-backdrop" onClick={() => setScorePrompt(null)} />
+            <div
+              className="split-dialog auto-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Elegir qué clips se puntúan"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setScorePrompt(null);
+              }}
+            >
+              <header className="split-head">
+                <h3>Puntuar la galería</h3>
+                <button
+                  className="secondary small split-close"
+                  type="button"
+                  aria-label="Cerrar la elección de clips"
+                  title="Cerrar"
+                  onClick={() => setScorePrompt(null)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </header>
+              <p className="hint">
+                {items?.length ?? 0} clips en la galería · {pendingCount} sin puntuar ·{" "}
+                {scoredCount} ya puntuados. Elige qué se evalúa; el informe dirá en qué
+                queda cada uno.
+              </p>
+              <div className="settings-provider" role="radiogroup" aria-label="Qué clips se puntúan">
+                <label className="settings-option">
+                  <input
+                    type="radio"
+                    name="score-mode"
+                    value="pending"
+                    checked={scorePrompt === "pending"}
+                    disabled={pendingCount === 0}
+                    onChange={() => setScorePrompt("pending")}
+                  />
+                  <span>Solo los no puntuados</span>
+                  <span className="settings-option-note">
+                    {pendingCount === 0
+                      ? "no queda ninguno sin puntuar"
+                      : `${pendingCount} ${pendingCount === 1 ? "clip" : "clips"}`}
+                  </span>
+                </label>
+                <label className="settings-option">
+                  <input
+                    type="radio"
+                    name="score-mode"
+                    value="all"
+                    checked={scorePrompt === "all"}
+                    onChange={() => setScorePrompt("all")}
+                  />
+                  <span>Todos los clips</span>
+                  <span className="settings-option-note">
+                    {items?.length ?? 0} clips · vuelve a puntuar los {scoredCount} que ya
+                    lo estaban
+                  </span>
+                </label>
+              </div>
+              <ul className="score-pick-list" aria-label="Clips de la pasada">
+                {scorePickShown.map((item) => {
+                  const included = scorePrompt === "all" || needsScore(item);
+                  return (
+                    <li key={item.id} className={`score-pick${included ? "" : " skipped"}`}>
+                      <video
+                        className="score-pick-video"
+                        src={fileUrl(item.id)}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        aria-label={`Vista previa de ${displayName(item.name)}`}
+                        onLoadedMetadata={(event) => {
+                          event.currentTarget.currentTime = 0.1;
+                        }}
+                      />
+                      <span className="auto-info">
+                        <span className="auto-name">{displayName(item.name)}</span>
+                        <span className="auto-meta">
+                          {item.score != null ? `Score ${item.score}` : "Sin puntuar"}
+                          {item.label ? ` · ${item.label}` : ""}
+                        </span>
+                      </span>
+                      <span className="auto-role">{included ? "Se puntúa" : "Se respeta"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {scorePickRemaining > 0 ? (
+                <div className="gallery-more">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setScorePickLimit((value) => value + SCORE_PICK_PAGE)}
+                  >
+                    Mostrar {Math.min(scorePickRemaining, SCORE_PICK_PAGE)} más · quedan{" "}
+                    {scorePickRemaining}
+                  </button>
+                </div>
+              ) : null}
+              <div className="actions split-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={
+                    scoring || (scorePrompt === "pending" && pendingCount === 0)
+                  }
+                  onClick={() => void runScoring(scorePrompt)}
+                >
+                  {scoring
+                    ? "Puntuando…"
+                    : `Puntuar ${scorePrompt === "pending" ? pendingCount : items?.length ?? 0} clips`}
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={scoring}
+                  onClick={() => setScorePrompt(null)}
+                >
+                  Cancelar
+                </button>
+              </div>
+              {scoreError ? (
+                <div className="alert error" role="alert">
+                  {scoreError}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {scoreReport ? (
           <div className="split-layer">
             <div className="split-backdrop" onClick={() => setScoreReport(null)} />
@@ -1447,8 +1624,12 @@ function Gallery({
               <p className="hint">
                 {scoreReport.clips.length} clips con score: se quedan{" "}
                 {scoreReport.clips.filter((clip) => clip.pass).length} y no pasan el umbral{" "}
-                {scoreReport.clips.filter((clip) => !clip.pass).length}. El título de cada uno
-                es el que llevará su puesto en la edición.
+                {scoreReport.clips.filter((clip) => !clip.pass).length}. En esta pasada se
+                puntuaron {scoreReport.scored}
+                {scoreReport.alreadyScored > 0
+                  ? ` y se respetaron ${scoreReport.alreadyScored}`
+                  : ""}
+                . El título de cada uno es el que llevará su puesto en la edición.
               </p>
               {scoreReport.failed.length > 0 ? (
                 <div className="alert error" role="alert">
@@ -1534,8 +1715,8 @@ function Gallery({
                 generating ||
                 montageBusy
               }
-              title={`Puntúa todos los clips de la galería y devuelve su score y su título; por debajo de ${DEFAULT_SCORE_MIN} se pueden eliminar`}
-              onClick={() => void runScoring()}
+              title={`Puntúa la galería y devuelve el score y el título de cada clip; por debajo de ${DEFAULT_SCORE_MIN} se pueden eliminar`}
+              onClick={openScoring}
             >
               {scoring ? "Puntuando la galería…" : "Puntuar galería"}
             </button>

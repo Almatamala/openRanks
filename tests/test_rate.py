@@ -54,6 +54,49 @@ def test_un_clip_ilegible_no_tumba_la_tanda(tmp_path, monkeypatch):
     assert clips[0].score is None
 
 
+def test_sin_tope_una_tanda_grande_no_se_rechaza(tmp_path, monkeypatch):
+    clip = tmp_path / "gato.mp4"
+    clip.write_bytes(b"x")
+
+    monkeypatch.setattr(rate_module, "resolve_binary", lambda *_: "bin")
+    monkeypatch.setattr(
+        rate_module,
+        "probe",
+        lambda *_: SimpleNamespace(video_codec="h264", usable_duration_s=10.0),
+    )
+    monkeypatch.setattr(
+        rate_module,
+        "sample_at",
+        lambda _ffmpeg, _src, _at, destination: Path(destination).write_bytes(b"jpg"),
+    )
+    monkeypatch.setattr(rate_module, "estimate_cost", lambda *_: 12.0)
+    monkeypatch.setattr(
+        rate_module,
+        "post_json",
+        lambda *_: {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"scores": [{"index": 1, "value": 60, "title": "GATO"}]}'
+                    }
+                }
+            ]
+        },
+    )
+
+    # Sin tope (0) el coste estimado es solo informativo.
+    libre = LlmSettings(api_key="clave", model="gemini-3.8-flash")
+    clips = rate_module.rate_many([clip], settings=libre)
+    assert clips[0].score == 60
+
+    # Un tope explícito por entorno sigue vigente.
+    with pytest.raises(rate_module.RateError, match="tope"):
+        rate_module.rate_many(
+            [clip],
+            settings=LlmSettings(api_key="clave", model="gemini-3.8-flash", max_cost_usd=0.02),
+        )
+
+
 def test_puntua_la_tanda_en_una_llamada_y_devuelve_titulo(tmp_path, monkeypatch):
     clip = tmp_path / "gatos_graciosos.mp4"
     clip.write_bytes(b"x")

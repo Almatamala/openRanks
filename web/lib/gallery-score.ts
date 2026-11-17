@@ -43,6 +43,17 @@ export function labelFor(
   return item.label ?? (preferred?.trim() || titleFromName(item.name));
 }
 
+/**
+ * Qué clips entran en la pasada de puntuación: los que aún no tienen score o **todos**,
+ * incluidos los ya puntuados (otra clave u otro modelo), para poder compararlos.
+ */
+export type ScoreMode = "pending" | "all";
+
+/** Modo normalizado: cualquier cosa que no sea `all` es la pasada de siempre. */
+export function parseScoreMode(raw: unknown): ScoreMode {
+  return typeof raw === "string" && raw.trim().toLowerCase() === "all" ? "all" : "pending";
+}
+
 /** ¿Le falta un score válido (entero 0-100) a este clip? */
 export function needsScore(item: LibraryItem): boolean {
   return !(
@@ -76,7 +87,7 @@ export interface ScoreReport {
   failed: ScoreFailure[];
   /** Clips puntuados en esta pasada. */
   scored: number;
-  /** Clips que ya traían score y solo se han etiquetado. */
+  /** Clips que ya traían score y no se volvieron a puntuar en esta pasada. */
   alreadyScored: number;
 }
 

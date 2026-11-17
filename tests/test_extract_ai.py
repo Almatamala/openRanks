@@ -61,9 +61,11 @@ def test_settings_read_the_environment_and_fall_back_on_invalid_values():
     assert settings.endpoint == "https://ejemplo.test/v1/chat/completions"
     assert settings.max_cost_usd == 0.5
 
+    # Sin tope explícito no hay tope: una galería grande no se rechaza por coste.
+    assert LlmSettings.from_env({}).max_cost_usd == 0.0
     fallback = LlmSettings.from_env({"OPENRANKS_LLM_MAX_COST_USD": "no"})
     assert not fallback.configured
-    assert fallback.max_cost_usd == 0.02
+    assert fallback.max_cost_usd == 0.0
 
 
 def test_haiku_ten_clips_stays_under_the_price_target():

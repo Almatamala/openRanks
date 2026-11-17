@@ -57,7 +57,10 @@ def _http_message(status: int) -> str:
     if status == 404:
         return "el proveedor no reconoce el modelo"
     if status == 429:
-        return "el proveedor pidió esperar"
+        return (
+            "el proveedor limitó las peticiones (cuota de la clave o velocidad): "
+            "espera un poco y vuelve a puntuar"
+        )
     if status >= 500:
         return "el proveedor falló"
     return f"respuesta HTTP {status}"

@@ -264,11 +264,13 @@ P3-6.
   audio, texto y duración. El producto ya no lo calcula ni lo ofrece como respaldo; el
   código (`openranks/score.py`, `score_segment`) y sus pruebas se retiraron.
 - **P3-6**: con clave de Claude, de Gemini o de OpenAI (`ANTHROPIC_API_KEY`,
-  `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY` o `OPENRANKS_LLM_API_KEY`), `openranks analyze` manda **una sola** petición por
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY` o
+  `OPENRANKS_LLM_API_KEY`), `openranks analyze` manda **una sola** petición por
   trabajo con todas las miniaturas (mismo modelo y prompt), y devuelve score, título y
   título. La salida se valida (0-100 y título ≤24); desde P3-11 es el **único** camino:
-  sin clave, sin red, por encima de `OPENRANKS_LLM_MAX_COST_USD` (0,02 USD) o con un
-  5xx/`timeout`, el trabajo **falla con un mensaje accionable** y no inventa scores. La
+  sin clave, sin red, por encima de un `OPENRANKS_LLM_MAX_COST_USD` explícito (por defecto
+  no hay tope) o con un 5xx/`timeout`, el trabajo **falla con un mensaje accionable** y no
+  inventa scores. La
   no hay caché ni refinamiento: el cliente solo lo usa «Puntuar galería». Pruebas:
   `tests/test_extract_ai.py` y `tests/test_rate.py`.
 - **P3-7**: «Generar automático» deja de estar deshabilitado y **propone** 5-10 clips usando el

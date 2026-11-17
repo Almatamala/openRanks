@@ -8,8 +8,9 @@ export const dynamic = "force-dynamic";
 /**
  * Puntuación masiva de la galería (RF-21, P3-9).
  *
- * - `{ action: "score" }`: puntúa los clips que no tienen score y devuelve el informe
- *   con el umbral aplicado. No borra nada.
+ * - `{ action: "score", mode? }`: puntúa y devuelve el informe con el umbral aplicado.
+ *   `mode: "all"` vuelve a puntuar también los que ya tenían score; sin `mode`, solo
+ *   los que no lo tienen. No borra nada.
  * - `{ action: "drop", threshold, confirm: true }`: elimina los clips puntuados por
  *   debajo del umbral. Sin `confirm` no se borra nada.
  */
@@ -21,7 +22,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El cuerpo no es JSON válido." }, { status: 400 });
   }
 
-  const payload = (body ?? {}) as { action?: unknown; threshold?: unknown; confirm?: unknown };
+  const payload = (body ?? {}) as {
+    action?: unknown;
+    threshold?: unknown;
+    confirm?: unknown;
+    mode?: unknown;
+  };
   const action = payload.action ?? "score";
 
   try {
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Esa acción de puntuación no existe." }, { status: 400 });
     }
 
-    return NextResponse.json(await scoreLibrary(payload.threshold));
+    return NextResponse.json(await scoreLibrary(payload.threshold, payload.mode));
   } catch (error) {
     if (error instanceof ScoreError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

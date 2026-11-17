@@ -9,6 +9,7 @@ import {
   buildScoreReport,
   DEFAULT_SCORE_MIN,
   needsScore,
+  parseScoreMode,
   parseScoreThreshold,
   titleFromName,
 } from "../lib/gallery-score.ts";
@@ -33,6 +34,14 @@ test("el umbral por defecto es 55 y un valor raro no lo deja sin límite", () =>
   assert.equal(parseScoreThreshold(-5), 0);
   assert.equal(parseScoreThreshold(150), 100);
   assert.equal(parseScoreThreshold("no-es-un-numero"), 55);
+});
+
+test("solo «all» vuelve a puntuar los clips ya puntuados", () => {
+  assert.equal(parseScoreMode(undefined), "pending");
+  assert.equal(parseScoreMode("pending"), "pending");
+  assert.equal(parseScoreMode("cualquiera"), "pending");
+  assert.equal(parseScoreMode("ALL"), "all");
+  assert.equal(parseScoreMode(" all "), "all");
 });
 
 test("el título de edición sale del nombre y cabe en un rótulo", () => {

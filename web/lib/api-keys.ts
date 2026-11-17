@@ -9,9 +9,9 @@ import { JOBS_DIR } from "./paths";
  *
  * El motor (`openranks/core/llm.py`) ya sabía leer la clave del entorno; lo que faltaba
  * era poder dejarla puesta sin editar variables ni reiniciar la terminal. Este módulo
- * guarda **solo** la clave de Claude y la de Gemini en el volumen de trabajos y devuelve
- * al panel un estado sin secretos: qué proveedor está configurado, con qué modelo y si
- * la clave es del panel o del entorno. La clave completa no sale de aquí nunca.
+ * guarda **solo** la clave de Claude y la de Gemini en el volumen de trabajos y devuelve al panel un estado sin secretos: qué proveedor
+ * está configurado, con qué modelo y si la clave es del panel o del entorno. La clave
+ * completa no sale de aquí nunca.
  *
  * La regla de §10.3 cambia solo en un punto: la clave puede vivir en el volumen de
  * trabajos, nunca en el repo, ni en un manifiesto, ni en la respuesta de la API.
@@ -42,10 +42,10 @@ const PROVIDER_ENGINE: Record<LlmProvider, string> = {
   gemini: "gemini",
 };
 
-/** Prefijo del modelo que pertenece a cada proveedor. */
-const MODEL_PREFIX: Record<LlmProvider, string> = {
-  claude: "claude",
-  gemini: "gemini",
+/** ¿El modelo es de este proveedor? Claude y Gemini no comparten prefijo. */
+const MODEL_BELONGS: Record<LlmProvider, (model: string) => boolean> = {
+  claude: (model) => model.startsWith("claude"),
+  gemini: (model) => model.startsWith("gemini"),
 };
 
 /** Variables estándar de cada proveedor, para reconocer una clave del entorno. */
@@ -196,7 +196,7 @@ export function modelFor(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const inherited = (env.OPENRANKS_LLM_MODEL ?? "").trim();
-  return inherited.toLowerCase().startsWith(MODEL_PREFIX[provider])
+  return MODEL_BELONGS[provider](inherited.toLowerCase())
     ? inherited
     : PROVIDER_MODEL[provider];
 }
@@ -302,7 +302,9 @@ export function saveSettings(
     const asked = typeof input.provider === "string" ? input.provider.trim() : "";
     if (asked) {
       const parsed = normalizeProvider(asked);
-      if (!parsed) throw new SettingsError("Proveedor no admitido: elige Claude o Gemini.");
+      if (!parsed) {
+        throw new SettingsError("Proveedor no admitido: elige Claude o Gemini.");
+      }
       provider = parsed;
     } else {
       provider = null;

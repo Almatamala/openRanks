@@ -5,6 +5,7 @@ import {
   buildScoreReport,
   labelFor,
   needsScore,
+  parseScoreMode,
   parseScoreThreshold,
   type ScoreFailure,
   type ScoreReport,
@@ -17,10 +18,11 @@ import { PROJECT_ROOT, resolveEngine, type Engine } from "./paths";
 /**
  * Puntuación masiva de la galería (F3 · P3-9).
  *
- * El score se pide al motor con **una** pasada del comando `rate` para todos los clips
- * que aún no tienen score: una sola llamada al LLM con la miniatura de cada uno. La
- * clave es obligatoria; sin ella no se lanza nada. Los clips que ya venían puntuados (al
- * aprobarlos) no se vuelven a puntuar y su título generado se respeta.
+ * El score se pide al motor con **una** pasada del comando `rate` para los clips que
+ * entran en la pasada: una sola llamada al LLM con la miniatura de cada uno. La clave es
+ * obligatoria; sin ella no se lanza nada. Por defecto solo se puntúan los que aún no
+ * tienen score; con `mode: "all"` se vuelven a puntuar también los ya puntuados, para
+ * comparar claves y modelos. El título que ya tenía el clip se respeta.
  *
  * Después se puede borrar de la galería todo lo que no llega al umbral. El borrado es
  * explícito y confirmado desde el panel (ADR-15): este módulo no lo hace solo.
@@ -165,10 +167,14 @@ function runRate(engine: Engine, files: string[]): Promise<unknown[]> {
  * Puntúa los clips sin score y asigna el título de la edición a todos. Devuelve el
  * informe con el umbral aplicado, sin borrar nada.
  */
-export async function scoreLibrary(rawThreshold?: unknown): Promise<ScoreReport> {
+export async function scoreLibrary(
+  rawThreshold?: unknown,
+  rawMode?: unknown,
+): Promise<ScoreReport> {
   const threshold = parseScoreThreshold(rawThreshold ?? process.env.OPENRANKS_SCORE_MIN);
+  const mode = parseScoreMode(rawMode);
   const items = readLibrary();
-  const pending = items.filter(needsScore);
+  const pending = mode === "all" ? items : items.filter(needsScore);
   const alreadyScored = items.length - pending.length;
   const failed: ScoreFailure[] = [];
 

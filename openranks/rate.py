@@ -123,14 +123,16 @@ def rate_many(
     if not frames:
         return [results[index] for index in range(1, len(paths) + 1)]
 
+    # Sin tope configurado (0) no se frena nada: el gasto lo decide la clave elegida. Un
+    # tope explícito por entorno sigue vigente si el operador lo pone.
     estimated = estimate_cost(config, len(frames))
-    if estimated > config.max_cost_usd + 1e-12:
+    if config.max_cost_usd > 0 and estimated > config.max_cost_usd + 1e-12:
         raise RateError(
             f"Puntuar {len(frames)} clips costaría unos {estimated:.4f} USD y supera el "
             f"tope de {config.max_cost_usd:g} USD por trabajo."
         )
 
-    say(f"Puntuando {len(frames)} clips con {config.model}")
+    say(f"Puntuando {len(frames)} clips con {config.model} (~{estimated:.4f} USD)")
     try:
         payload = post_json(config, build_request(config, frames))
     except LlmError as exc:

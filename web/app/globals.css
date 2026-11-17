@@ -39,6 +39,33 @@ a {
   outline-offset: 2px;
 }
 
+/* Barras de scroll del tema en todo el panel: finas y en el gris de borde, sin la
+   barra blanca del sistema que rompía los colores de la página al desplazar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a4150 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #3a4150 padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #4a5263 padding-box;
+}
+
 .shell {
   max-width: 1180px;
   margin: 0 auto;
@@ -821,6 +848,72 @@ pre.log {
 .auto-total {
   margin: 0;
   font-weight: 700;
+}
+
+/* Elegir qué se puntúa (RF-21): la pasada se ve de cuatro en cuatro dentro de una
+   ventana con scroll, con la miniatura encima de su estado. Los clips que el modo
+   elegido no toca se quedan a la vista, atenuados. */
+.score-pick-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.score-pick {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.score-pick.skipped {
+  opacity: 0.55;
+}
+
+.score-pick-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+}
+
+/* En una tarjeta de cuatro columnas el texto va más justo que en la lista de filas. */
+.score-pick .auto-name {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.score-pick .auto-meta {
+  font-size: 12px;
+}
+
+.score-pick .auto-role {
+  text-align: left;
+  font-size: 11px;
+  white-space: normal;
+}
+
+@media (max-width: 900px) {
+  .score-pick-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .score-pick-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
