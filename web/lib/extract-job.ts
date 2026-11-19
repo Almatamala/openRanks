@@ -27,7 +27,6 @@ import {
   parseLink,
   sourceProblems,
   type SourceDeclaration,
-  type SourcePlatform,
 } from "./extract";
 import { extensionOf } from "./gallery";
 import { isSafePathSegment, JOBS_DIR, PROJECT_ROOT, resolveEngine } from "./paths";
@@ -94,11 +93,6 @@ export interface ExtractionStatus {
   progress: number;
   /** Lo que publica yt-dlp: tamaño, velocidad y tiempo restante. */
   download: DownloadProgress | null;
-  /** Fuente con la que se pidió, sin rutas: es lo que viajará al clip aprobado (RF-20.2). */
-  source: {
-    url: string;
-    platform: SourcePlatform | null;
-  };
   error: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -382,10 +376,6 @@ export async function startExtraction(
     phase: "Descargando el vídeo",
     progress: 0,
     download: null,
-    source: {
-      url: link.href ?? declaration.url.trim(),
-      platform: link.platform,
-    },
     error: null,
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -561,7 +551,6 @@ export async function startLocalExtraction(upload: LocalSourceUpload): Promise<E
     phase: "Subiendo el vídeo",
     progress: 0,
     download: null,
-    source: { url: "", platform: null },
     error: null,
     startedAt: new Date().toISOString(),
     finishedAt: null,

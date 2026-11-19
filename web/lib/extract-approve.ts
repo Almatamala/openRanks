@@ -20,7 +20,7 @@ import { phashOf } from "./phash";
  * Aterrizaje de los tramos aprobados en la galería (F3 · P3-4).
  *
  * Se recorta **solo** cada tramo aprobado desde la fuente temporal (con el motor, que
- * deja un MP4 exacto), se calcula su SHA-256 y se da de alta con su procedencia y su
+ * deja un MP4 exacto), se calcula su SHA-256 y se da de alta con su categoría y su
  * duración. Si ese mismo clip ya está en la galería, se reutiliza la entrada y se borra
  * la copia nueva: reintentar una extracción nunca duplica. Al cerrar la revisión, la
  * fuente y las miniaturas desaparecen: solo ocupan espacio los tramos aprobados.

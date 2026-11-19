@@ -20,8 +20,8 @@ import { phashOf } from "./phash";
  *
  * El detector automático no siempre separa dos escenas que van pegadas en un mismo
  * archivo, así que el operador puede partir un clip por el segundo que él marque: la
- * parte de antes y la de después se guardan como dos clips con su categoría y su
- * procedencia, y el original se borra. Es a propósito manual: el reparto por tiempo es
+ * parte de antes y la de después se guardan como dos clips con su categoría, y el
+ * original se borra. Es a propósito manual: el reparto por tiempo es
  * exacto y previsible, que es lo que hace falta mientras el automático mejore.
  */
 

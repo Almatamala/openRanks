@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Ajustes del panel (RF-22): qué claves de IA hay configuradas y cuál se usa para el
+ * Configuración del panel (RF-22): qué claves de IA hay configuradas y cuál se usa para el
  * score. La respuesta **nunca** incluye la clave ni un fragmento de ella: solo si existe
  * y de dónde sale.
  */

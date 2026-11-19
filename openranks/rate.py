@@ -76,7 +76,7 @@ def rate_many(
     config = settings or LlmSettings.from_env()
 
     if not config.configured:
-        raise RateError("Sin clave de IA: guárdala en Ajustes para puntuar la galería.")
+        raise RateError("Sin clave de IA: guárdala en Configuración para puntuar la galería.")
 
     try:
         ffmpeg_bin = resolve_binary(ffmpeg, "OPENRANKS_FFMPEG", "ffmpeg")

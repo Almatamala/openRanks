@@ -10,7 +10,6 @@ import {
   declarationReady,
   EMPTY_DECLARATION,
   parseLink,
-  platformLabel,
   platformOf,
   sourceProblems,
 } from "../lib/extract.ts";
@@ -91,8 +90,4 @@ test("la casilla sola no basta: hace falta el enlace", () => {
 });
 
 test("nombres visibles de plataforma", () => {
-  assert.equal(platformLabel("youtube"), "YouTube");
-  assert.equal(platformLabel("tiktok"), "TikTok");
-  assert.equal(platformLabel("instagram"), "Instagram");
-  assert.equal(platformLabel(null), null);
 });

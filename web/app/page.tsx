@@ -972,8 +972,8 @@ export default function Page() {
                 </p>
               ) : section === "extraer" ? (
                 <p>
-                  De un vídeo a las escenas: declara la procedencia y los derechos; openRanks lo
-                  divide en escenas y tú eliges las que entran en el ranking.
+                  De un vídeo a las escenas: declara los derechos; openRanks lo divide en
+                  escenas y tú eliges las que entran en el ranking.
                 </p>
               ) : (
                 <p>

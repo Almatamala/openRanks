@@ -51,11 +51,6 @@ export interface ParsedLink {
   problem: string | null;
 }
 
-/** Nombre visible de una plataforma (`YouTube`), o `null` si no hay ninguna. */
-export function platformLabel(platform: SourcePlatform | null): string | null {
-  return SOURCE_PLATFORMS.find((entry) => entry.id === platform)?.label ?? null;
-}
-
 /** «YouTube, TikTok e Instagram», para los mensajes de admisión. */
 function admissionLabel(): string {
   const labels: string[] = SOURCE_PLATFORMS.map((platform) => platform.label);

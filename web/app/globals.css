@@ -380,7 +380,7 @@ input[type="password"]:focus-visible {
   min-width: 0;
 }
 
-/* Ajustes: claves del score con IA. */
+/* Configuración: claves del score con IA. */
 .settings-grid {
   display: grid;
   gap: 18px;
@@ -1994,7 +1994,7 @@ code {
   white-space: nowrap;
 }
 
-/* Extraer clips (F3 · P3-1): origen, declaración de derechos y herramienta de descarga.
+/* Divisor de escenas (F3 · P3-1): origen, declaración de derechos y herramienta de descarga.
    Ocupa todo el ancho de la sección: la parrilla de escenas necesita el espacio. */
 .extract {
   width: 100%;
@@ -2042,17 +2042,6 @@ code {
 .extract-link input[type="text"] {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.platform-pill {
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  border: 1px solid rgba(52, 211, 153, 0.45);
-  border-radius: 999px;
-  background: rgba(52, 211, 153, 0.1);
-  color: var(--ok);
-  font-size: 13px;
-  font-weight: 700;
 }
 
 .field-error {

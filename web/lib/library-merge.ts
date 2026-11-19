@@ -19,8 +19,8 @@ import { phashOf } from "./phash";
  * Fusión **manual** de la galería: de 2 a 4 clips marcados salen como **un** clip, en el
  * orden que dejó el operador en el diálogo (el orden de arriba es el del vídeo).
  *
- * Es la operación inversa al divisor: el resultado se da de alta con la categoría y la
- * procedencia del primer clip y los originales se quitan de la galería. Como en el
+ * Es la operación inversa al divisor: el resultado se da de alta con la categoría del
+ * primer clip y los originales se quitan de la galería. Como en el
  * divisor, nada se borra hasta que el archivo fusionado está escrito y registrado: un
  * fallo a mitad deja la galería como estaba.
  */

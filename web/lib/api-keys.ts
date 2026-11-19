@@ -5,7 +5,7 @@ import { HttpError } from "./http-error";
 import { JOBS_DIR } from "./paths";
 
 /**
- * Claves de API del score con LLM, guardadas desde **Ajustes** (RF-22, P3-10).
+ * Claves de API del score con LLM, guardadas desde **Configuración** (RF-22, P3-10).
  *
  * El motor (`openranks/core/llm.py`) ya sabía leer la clave del entorno; lo que faltaba
  * era poder dejarla puesta sin editar variables ni reiniciar la terminal. Este módulo

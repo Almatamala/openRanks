@@ -5,8 +5,6 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   EMPTY_DECLARATION,
   formatBytes,
-  parseLink,
-  platformLabel,
   sourceProblems,
   type DeclarationField,
   type DeclarationProblem,
@@ -56,8 +54,6 @@ type Extraction = {
     speed: string | null;
     eta: string | null;
   } | null;
-  /** De dónde salió: un enlace (URL) o un vídeo local (URL vacía). */
-  source: { url: string; platform: string | null };
   error: string | null;
   file: { name: string; bytes: number } | null;
   limits: { maxMinutes: number; maxMB: number };
@@ -217,7 +213,7 @@ const FILE_FORMATS = "MP4, MOV, MKV, WEBM, M4V y AVI";
 const FILE_MAX_MB = 2048;
 
 /**
- * Extraer clips (F3 · P3-1 y P3-2): la entrada de material de la extractora. Un enlace o un
+ * Divisor de escenas (F3 · P3-1 y P3-2): la entrada de material de la extractora. Un enlace o un
  * vídeo completo del equipo, la casilla de cumplimiento justo debajo y, si el panel puede
  * trabajar, el avance real con su botón de cancelar.
  *
@@ -290,8 +286,6 @@ function Extract({
         ? []
         : [{ field: "terms", message: TERMS_PROBLEM }]
       : sourceProblems(declaration);
-  const link = parseLink(declaration.url);
-  const platform = platformLabel(link.platform);
   const busy = starting || extraction?.state === "downloading";
   const ready =
     problems.length === 0 && !busy && (mode === "file" ? file !== null : downloader?.ready === true);
@@ -558,7 +552,7 @@ function Extract({
   );
 
   // «Extraer aprobados a la galería» (P3-4): el servidor recorta cada tramo, lo da de
-  // alta con su procedencia y borra el temporal. Los ya existentes se reutilizan.
+  // alta con su categoría y borra el temporal. Los ya existentes se reutilizan.
   const approve = useCallback(async () => {
     if (!extraction || approving) return;
     setApproving(true);
@@ -611,8 +605,6 @@ function Extract({
   ]
     .filter(Boolean)
     .join(" · ");
-
-  const isLocalSource = extraction?.source.url === "";
 
   const candidates = extraction?.candidates ?? [];
   const approved = candidates.filter((candidate) => candidate.verdict === "approved").length;
@@ -761,7 +753,7 @@ function Extract({
           <p className="hint download-detail">{progressDetail}</p>
           <div className="actions">
             <button className="secondary" type="button" onClick={() => void discard()}>
-              {isLocalSource ? "Cancelar la subida" : "Cancelar la descarga"}
+              Cancelar la extracción
             </button>
           </div>
         </div>
@@ -793,9 +785,7 @@ function Extract({
         <>
           <div className="alert ok" role="status">
             <p>
-              {isLocalSource
-                ? `Vídeo completo listo · ${formatBytes(extraction.file?.bytes ?? null)}. Se queda en el área temporal para dividirlo en escenas; el original no entra en la galería.`
-                : `Descarga lista · ${formatBytes(extraction.file?.bytes ?? null)}. El vídeo se queda en el área temporal y no entra en la galería.`}
+              {`Vídeo listo · ${formatBytes(extraction.file?.bytes ?? null)}. Se queda en el área temporal para dividirlo en escenas; el original no entra en la galería.`}
             </p>
           </div>
           {extraction.candidates ? (
@@ -823,7 +813,7 @@ function Extract({
                   {starting ? "Dividiendo…" : "Dividir en escenas"}
                 </button>
                 <button className="secondary" type="button" onClick={() => void discard()}>
-                  {isLocalSource ? "Descartar el vídeo" : "Descartar la descarga"}
+                  Descartar el vídeo
                 </button>
               </div>
             </>
@@ -932,7 +922,6 @@ function Extract({
                 onChange={(event) => update({ url: event.target.value })}
                 onBlur={() => touch("url")}
               />
-              {platform ? <span className="platform-pill">{platform}</span> : null}
             </div>
             {shownProblem("url") ? (
               <p className="field-error" id="source-url-error" role="alert">

@@ -10,7 +10,7 @@ export const maxDuration = 300;
 
 /**
  * Fusión de la galería: pega los clips de `ids` **en ese orden** en un solo archivo, lo da
- * de alta con la categoría y la procedencia del primero y quita los originales.
+ * de alta con la categoría del primero y quita los originales.
  */
 export async function POST(request: Request) {
   let body: unknown;

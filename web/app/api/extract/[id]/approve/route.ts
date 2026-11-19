@@ -10,7 +10,7 @@ export const maxDuration = 300;
 
 /**
  * Aterrizaje en la galería (P3-4): recorta los tramos aprobados, los da de alta con su
- * procedencia y borra el temporal de la revisión. Devuelve los clips resultantes (los
+ * categoría y borra el temporal de la revisión. Devuelve los clips resultantes (los
  * reutilizados incluidos) para que el panel pueda contar cuántos hay.
  *
  * El cuerpo es opcional: `{ category }` se aplica a **todas** las escenas que entren, para

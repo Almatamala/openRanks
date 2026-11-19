@@ -181,7 +181,7 @@ export async function scoreLibrary(
   if (pending.length > 0) {
     if (!readSettings().configured) {
       throw new ScoreError(
-        "Sin clave de IA: guárdala en Ajustes para puntuar la galería.",
+        "Sin clave de IA: guárdala en Configuración para puntuar la galería.",
         400,
       );
     }

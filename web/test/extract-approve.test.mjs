@@ -1,6 +1,6 @@
 /**
  * Aterrizaje de tramos aprobados (P3-4): recorte real con FFmpeg, alta en la galería con
- * procedencia y duración, deduplicación por SHA-256 y borrado del temporal al cerrar.
+ * categoría y duración, deduplicación por SHA-256 y borrado del temporal al cerrar.
  * El motor es el de verdad (Python + FFmpeg estático de npm): sin red y sin navegador.
  */
 import assert from "node:assert/strict";
@@ -28,7 +28,6 @@ const ffmpeg = (await import("ffmpeg-static")).default;
 
 after(() => rmSync(JOBS_DIR, { recursive: true, force: true }));
 
-const SOURCE_URL = "https://www.youtube.com/watch?v=abc123";
 
 /** Una fuente de 6 s con imagen y audio, como la que deja la descarga fusionada. */
 function makeSource(file) {
@@ -77,7 +76,6 @@ function reviewedJob(id, sourceFile, verdict = "approved") {
       phase: "Tramos propuestos",
       progress: 100,
       download: null,
-      source: { url: SOURCE_URL, platform: "youtube" },
       error: null,
       startedAt: null,
       finishedAt: null,
@@ -112,7 +110,6 @@ test("los aprobados entran en la galería y el temporal se borra", async () => {
   const item = result.items[0];
   assert.equal(item.name, "escena-01.mp4");
   assert.equal(item.category, null);
-  assert.equal(item.source, undefined, "el clip de galería ya no guarda la procedencia");
   assert.ok(item.duration_s > 2 && item.duration_s < 4, item.duration_s);
   assert.match(item.sha256, /^[a-f0-9]{64}$/);
   assert.ok(existsSync(path.join(JOBS_DIR, "library", `${item.id}.mp4`)));
@@ -120,7 +117,6 @@ test("los aprobados entran en la galería y el temporal se borra", async () => {
   // Revisión cerrada: ni fuente, ni miniaturas, ni trabajo.
   assert.equal(existsSync(dir), false);
   assert.equal(readLibrary().length, 1);
-  assert.equal(readLibrary()[0].source, undefined);
 });
 
 test("el mismo tramo no se duplica: se avisa y se reutiliza la entrada", async () => {
@@ -156,7 +152,6 @@ test("varias escenas se recortan en tandas y se dan de alta en orden", async () 
       phase: "Tramos propuestos",
       progress: 100,
       download: null,
-      source: { url: SOURCE_URL, platform: "youtube" },
       error: null,
       startedAt: null,
       finishedAt: null,

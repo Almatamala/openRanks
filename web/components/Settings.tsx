@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { KeyStatus, LlmProvider, SettingsSnapshot } from "@/lib/api-keys";
 
 /**
- * Ajustes del panel (RF-22, P3-10): guarda la clave de Claude o la de Gemini en el
+ * Configuración del panel (RF-22, P3-10): guarda la clave de Claude o la de Gemini en el
  * servidor y elige cuál se usa para el score con LLM.
  *
  * La vista explica sin rodeos dónde actúa la clave: **solo en «Puntuar galería»**, donde

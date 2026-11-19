@@ -430,7 +430,7 @@ docs/plan/       # plan: orden de construcción, estado y verificación
 - **L3 (extractora) está construida y verificada** (P3-1 a P3-11): ingesta, descarga,
   segmentación en escenas, parrilla de revisión, score y títulos con LLM (Claude, Gemini u
   OpenAI), selección automática y puntuación masiva de la galería. **La clave es obligatoria**:
-  sin ella no hay score ni nombres, y el panel pide configurarla en Ajustes. El **set dorado**
+  sin ella no hay score ni nombres, y el panel pide configurarla en Configuración. El **set dorado**
   de `benchmark/golden/` mide **Spearman 0,81** (mínimo 0,6) y **p95 ≈ 0,6 s** por clip; la CI
   lo evalúa solo si hay clave (`OPENRANKS_LLM_API_KEY`).
   **L4 (publicación) sigue fuera del alcance actual**: no hay código, tablas ni endpoints

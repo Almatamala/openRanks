@@ -86,8 +86,6 @@ test("descarga, publica el avance y cierra con el archivo temporal", async () =>
 
   assert.equal(started.state, "downloading");
   assert.equal(started.progress, 0);
-  assert.equal(started.source.platform, "youtube");
-  assert.equal(started.source.url, DECLARATION.url);
   assert.deepEqual(started.limits, { maxMinutes: 60, maxMB: 2048 });
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].args[spawns[0].args.length - 1], DECLARATION.url);
@@ -191,7 +189,6 @@ test("una descarga que quedó a medias se da por interrumpida al leerla", () => 
       phase: "Descargando el vídeo",
       progress: 12,
       download: null,
-      source: { url: "https://youtu.be/abc", platform: "youtube" },
       error: null,
       startedAt: null,
       finishedAt: null,
@@ -251,7 +248,6 @@ test("un vídeo local se sube al área temporal y queda listo", async () => {
 
   assert.equal(started.state, "done");
   assert.equal(started.phase, "Vídeo listo");
-  assert.deepEqual(started.source, { url: "", platform: null });
   assert.deepEqual(started.file, { name: "source.mp4", bytes: body.length });
   assert.deepEqual(tempNames(started.id), ["source.mp4"]);
   job.cancelExtraction(started.id);
@@ -288,7 +284,6 @@ test("un análisis en marcha no se da por interrumpido mientras su proceso vive"
       phase: "Extrayendo los clips",
       progress: 0,
       download: null,
-      source: { url: "", platform: null },
       error: null,
       startedAt: null,
       finishedAt: null,
@@ -318,7 +313,6 @@ test("un análisis muerto sin resultados no borra el vídeo", () => {
       phase: "Extrayendo los clips",
       progress: 0,
       download: null,
-      source: { url: "", platform: null },
       error: null,
       startedAt: null,
       finishedAt: null,
@@ -348,7 +342,6 @@ test("si el análisis terminó pero no llegó a escribir el estado, se lee del d
       phase: "Extrayendo los clips",
       progress: 0,
       download: null,
-      source: { url: "", platform: null },
       error: null,
       startedAt: null,
       finishedAt: null,
@@ -382,7 +375,6 @@ test("el análisis deja candidatos y guarda la decisión de cada tramo", () => {
       phase: "Tramos propuestos",
       progress: 100,
       download: null,
-      source: { url: "", platform: null },
       error: null,
       startedAt: null,
       finishedAt: null,

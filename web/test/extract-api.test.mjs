@@ -110,7 +110,6 @@ test("la fuente temporal se sirve por rangos para reproducir los tramos", async 
       phase: "Tramos propuestos",
       progress: 100,
       download: null,
-      source: { url: "", platform: null },
       error: null,
       startedAt: null,
       finishedAt: null,
